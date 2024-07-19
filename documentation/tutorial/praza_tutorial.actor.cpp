@@ -1,3 +1,4 @@
+#include "flow/Buggify.h"
 #include "fmt/format.h"
 #include "flow/flow.h"
 #include "flow/Platform.h"
@@ -6,53 +7,99 @@
 #include "fdbclient/ReadYourWrites.h"
 #include "flow/TLSConfig.actor.h"
 #include <functional>
+#include <new>
+#include <string>
 #include <unordered_map>
 #include <memory>
+#include <vector>
 #include <iostream>
 #include "flow/actorcompiler.h"
 
-// this is a simple actor that will report how long
-// it is already running once a second.
-ACTOR Future<Void> simpleTimer() {
-	// we need to remember the time when we first
-	// started.
-	// This needs to be a state-variable because
-	// we will use it in different parts of the
-	// actor. If you don't understand how state
-	// variables work, it is a good idea to remove
-	// the state keyword here and look at the
-	// generated C++ code from the actor compiler.
-	state double start_time = g_network->now();
-	loop {
-		wait(delay(1.0));
-		std::cout << format("Time: %.2f\n", g_network->now() - start_time);
+namespace {
+bool DEBUG = true;
+
+void print(const std::string& s) {
+	if (DEBUG) {
+		fmt::print("{}\n", s);
 	}
 }
 
-std::unordered_map<std::string, std::function<Future<Void>()>> actors = {
-	{ "timer", &simpleTimer }, // ./tutorial timer
-}; // ./tutorial -C $CLUSTER_FILE_PATH fdbStatusStresser
+} // namespace
+
+ACTOR Future<double> io_num() {
+	print("io_num: start...");
+	wait(delay(1));
+	print("io_num: done...");
+	return 1;
+}
+
+ACTOR Future<Void> flow_timer() {
+	print("flow_timer: start...");
+	state double x = wait(io_num());
+	print("x: " + std::to_string(x));
+	state double start = g_network->now();
+	loop {
+		wait(delay(x));
+		print("elapsed time: " + std::to_string(g_network->now() - start));
+	}
+}
+
+ACTOR Future<Void> flow_future(Future<int> ready) {
+	int x = wait(ready);
+	print("x: " + std::to_string(x));
+	return Void();
+}
+
+ACTOR Future<Void> flow_promise() {
+	Promise<int> promise;
+	Future<Void> fut = flow_future(promise.getFuture());
+	wait(fut);
+	return Void();
+}
+
+ACTOR Future<Void> nested_delay() {
+	print("nested_delay: enter");
+	wait(delay(3));
+	print("nested_delay: exit");
+	return Void();
+}
+
+ACTOR Future<Void> my_delay() {
+	print("my_delay: enter");
+	wait(delay(3));
+	print("my_delay: mid");
+	wait(nested_delay());
+	print("my_delay: exit");
+	return Void();
+}
+
+ACTOR Future<Void> test() {
+	print("test: enter");
+	state Future<Void> f = my_delay();
+	print("f is ready: " + std::to_string(f.isReady()));
+	wait(f);
+	print("f is ready: " + std::to_string(f.isReady()));
+	print("test: exit");
+	return Void();
+}
+
+std::unordered_map<std::string, std::function<Future<Void>()>> actors = { { "timer", &flow_timer },
+	                                                                      { "promise", &flow_promise },
+	                                                                      { "test", &test } };
 
 int main(int argc, char* argv[]) {
-	std::vector<std::function<Future<Void>()>> toRun;
-	// parse arguments
-	for (int i = 1; i < argc; ++i) {
-		std::string arg(argv[i]);
-		auto actor = actors.find(arg);
-		if (actor == actors.end()) {
-			std::cout << format("Error: actor %s does not exist\n", arg.c_str());
-			return 1;
-		}
-		toRun.push_back(actor->second);
-	}
+	// Start up
 	platformInit();
 	g_network = newNet2(TLSConfig(), false, true);
-	std::vector<Future<Void>> all;
-	all.reserve(toRun.size());
-	for (auto& f : toRun) {
-		all.emplace_back(f());
-	}
-	auto f = stopAfter(waitForAll(all));
+
+	// Decide which actor to run
+	std::function<Future<Void>()> toRun;
+	toRun = actors.at(argv[1]);
+
+	// Run and wait
+	auto f = stopAfter(toRun());
+
+	// Before exiting
 	g_network->run();
 	return 0;
 }
