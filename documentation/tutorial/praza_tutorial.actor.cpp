@@ -73,19 +73,29 @@ ACTOR Future<Void> my_delay() {
 	return Void();
 }
 
-ACTOR Future<Void> test() {
-	print("test: enter");
+ACTOR Future<Void> test1() {
+	print("test1: enter");
 	state Future<Void> f = my_delay();
 	print("f is ready: " + std::to_string(f.isReady()));
 	wait(f);
 	print("f is ready: " + std::to_string(f.isReady()));
-	print("test: exit");
+	print("test1: exit");
 	return Void();
+}
+
+ACTOR void test2() {
+	print("test2: enter");
+	state Future<Void> f = my_delay();
+	print("f is ready: " + std::to_string(f.isReady()));
+	wait(f);
+	print("f is ready: " + std::to_string(f.isReady()));
+	print("test2: exit");
+	return;
 }
 
 std::unordered_map<std::string, std::function<Future<Void>()>> actors = { { "timer", &flow_timer },
 	                                                                      { "promise", &flow_promise },
-	                                                                      { "test", &test } };
+	                                                                      { "test1", &test1 } };
 
 int main(int argc, char* argv[]) {
 	// Start up
@@ -94,6 +104,14 @@ int main(int argc, char* argv[]) {
 
 	// Decide which actor to run
 	std::function<Future<Void>()> toRun;
+
+	// special test that uses test2 fcn which does not return a future
+	if (std::string{ argv[1] } == "test2") {
+		test2();
+		g_network->run();
+		return 0;
+	}
+
 	toRun = actors.at(argv[1]);
 
 	// Run and wait
