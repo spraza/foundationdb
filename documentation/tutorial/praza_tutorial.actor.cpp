@@ -67,7 +67,8 @@ ACTOR Future<Void> nested_delay() {
 ACTOR Future<Void> my_delay() {
 	print("my_delay: enter");
 	wait(delay(3));
-	print("my_delay: mid");
+	print("my_delay: mid1");
+	print("my_delay: mid2");
 	wait(nested_delay());
 	print("my_delay: exit");
 	return Void();
@@ -93,6 +94,31 @@ ACTOR void test2() {
 	return;
 }
 
+ACTOR Future<Void> bar() {
+	// loop {
+	print("bar");
+	wait(delay(1));
+	// }
+	return Void();
+}
+
+ACTOR Future<Void> baz() {
+	// loop {
+	print("baz");
+	wait(delay(5));
+	// }
+	return Void();
+}
+
+ACTOR Future<Void> foo() {
+	std::vector<Future<Void>> deps;
+	deps.reserve(2);
+	deps.emplace_back(bar());
+	deps.emplace_back(baz());
+	waitForAll(deps);
+	return Void();
+}
+
 std::unordered_map<std::string, std::function<Future<Void>()>> actors = { { "timer", &flow_timer },
 	                                                                      { "promise", &flow_promise },
 	                                                                      { "test1", &test1 } };
@@ -105,9 +131,14 @@ int main(int argc, char* argv[]) {
 	// Decide which actor to run
 	std::function<Future<Void>()> toRun;
 
-	// special test that uses test2 fcn which does not return a future
+	// Special cases
 	if (std::string{ argv[1] } == "test2") {
 		test2();
+		g_network->run();
+		return 0;
+	}
+	if (std::string{ argv[1] } == "foo") {
+		auto x = foo();
 		g_network->run();
 		return 0;
 	}
