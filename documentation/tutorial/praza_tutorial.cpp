@@ -1,6 +1,14 @@
 #include <iostream>
 
+extern char** environ;
+
 int main() {
-	std::cout << "hey there\n";
+	char** env = environ;
+
+	while (*env) {
+		std::cout << *env << std::endl;
+		env++;
+	}
+
 	return 0;
 }
