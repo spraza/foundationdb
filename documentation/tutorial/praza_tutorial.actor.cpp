@@ -2,6 +2,7 @@
 #include "fmt/format.h"
 #include "flow/flow.h"
 #include "flow/Platform.h"
+#include "flow/Arena.h"
 #include "flow/DeterministicRandom.h"
 #include "fdbclient/NativeAPI.actor.h"
 #include "fdbclient/ReadYourWrites.h"
@@ -15,24 +16,13 @@
 #include <iostream>
 #include "flow/actorcompiler.h"
 
-ACTOR Future<Void> baz() {
-	fmt::print("baz_start\n");
-	wait(delay(5));
-	fmt::print("baz_end\n");
-	return Void();
-}
-
-ACTOR Future<Void> bar() {
-	fmt::print("bar_start\n");
-	wait(baz());
-	fmt::print("bar_end\n");
-	return Void();
-}
+struct Foo {
+	static inline const Standalone<StringRef> DEFAULT_VERSIONSTAMP =
+	    "\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00"_sr;
+};
 
 ACTOR Future<Void> foo() {
-	fmt::print("foo_start\n");
-	wait(bar());
-	fmt::print("foo_end\n");
+	wait(delay(1));
 	return Void();
 }
 
