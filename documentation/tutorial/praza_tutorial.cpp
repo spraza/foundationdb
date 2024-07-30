@@ -13,7 +13,7 @@ void print_env_variables() {
 	}
 }
 
-int main() {
+void foo() {
 	std::cout << "*** PARENT START, pid = " << getpid() << std::endl;
 	setenv("PARENT_SPECIFIC_BEFORE_CHILD_CREATION", "parent_value", 1);
 	std::cout << "*** PARENT ENV VARIABLES" << std::endl;
@@ -32,6 +32,18 @@ int main() {
 		waitpid(pid, nullptr, 0);
 		std::cout << "*** PARENT END" << std::endl;
 	}
+}
 
+extern char** environ;
+
+void bar() {
+	for (char** env = environ; *env != nullptr; ++env) {
+		std::cout << *env << std::endl;
+	}
+}
+
+int main() {
+	// foo();
+	bar();
 	return 0;
 }
