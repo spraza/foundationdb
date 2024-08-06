@@ -520,6 +520,8 @@ if(WITH_PYTHON)
   add_fdb_test(TEST_FILES status/separate_not_enough_servers.txt)
   add_fdb_test(TEST_FILES status/single_process_too_many_config_params.txt)
 
+  add_fdb_test(TEST_FILES praza/Praza.toml)
+
   if(NOT OPEN_FOR_IDE)
     add_test(
       NAME multiversion_client/unit_tests
