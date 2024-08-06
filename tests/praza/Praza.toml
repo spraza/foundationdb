@@ -1,0 +1,11 @@
+[configuration]
+storageEngineType = 4
+
+[[test]]
+testTitle = 'Praza_experiment_sim_test'
+    
+    [[test.workload]]
+        testName = 'Cycle'
+        testDuration = 2
+        transactionsPerSecond = 1000
+        expectedRate = 0
