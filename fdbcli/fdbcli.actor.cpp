@@ -19,6 +19,7 @@
  */
 
 #include "boost/lexical_cast.hpp"
+#include "flow/Arena.h"
 #include "fmt/format.h"
 #include "fdbclient/ClusterConnectionFile.h"
 #include "fdbclient/NativeAPI.actor.h"
@@ -580,6 +581,10 @@ void initHelp() {
 	helpMap["set"] = CommandHelp("set <KEY> <VALUE>",
 	                             "set a value for a given key",
 	                             "If KEY is not already present in the database, it will be created." ESCAPINGKV);
+	helpMap["praza_experiment"] =
+	    CommandHelp("TODO set <KEY> <VALUE>",
+	                "set a value for a given key",
+	                "If KEY is not already present in the database, it will be created." ESCAPINGKV);
 
 	helpMap["setknob"] = CommandHelp("setknob <KEY> <VALUE> [CONFIG_CLASS]",
 	                                 "updates a knob to specified value",
@@ -726,11 +731,11 @@ Future<T> makeInterruptable(Future<T> f) {
 
 ACTOR Future<Void> commitTransaction(Reference<ITransaction> tr) {
 	wait(makeInterruptable(safeThreadFutureToFuture(tr->commit())));
-	auto ver = tr->getCommittedVersion();
-	if (ver != invalidVersion)
-		fmt::print("Committed ({})\n", ver);
-	else
-		fmt::print("Nothing to commit\n");
+	// auto ver = tr->getCommittedVersion();
+	//  if (ver != invalidVersion)
+	//  	fmt::print("Committed ({})\n", ver);
+	//  else
+	//  fmt::print("Nothing to commit\n");
 	return Void();
 }
 
@@ -1097,6 +1102,24 @@ Future<T> stopNetworkAfter(Future<T> what) {
 }
 
 enum TransType { Db = 0, Config, None };
+
+std::string generateRandomString(size_t length) {
+	const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	const size_t charsetSize = sizeof(charset) - 1;
+
+	std::string result;
+	result.reserve(length);
+
+	std::random_device rd;
+	std::mt19937 generator(rd());
+	std::uniform_int_distribution<> dist(0, charsetSize - 1);
+
+	for (size_t i = 0; i < length; ++i) {
+		result += charset[dist(generator)];
+	}
+
+	return result;
+}
 
 ACTOR Future<int> cli(CLIOptions opt, LineNoise* plinenoise, Reference<ClusterConnectionFile> ccf) {
 	state LineNoise& linenoise = *plinenoise;
@@ -1887,6 +1910,26 @@ ACTOR Future<int> cli(CLIOptions opt, LineNoise* plinenoise, Reference<ClusterCo
 						getTransaction(db, tenant, tr, options, intrans);
 						tr->set(tokens[1], tokens[2]);
 
+						if (!intrans) {
+							wait(commitTransaction(tr));
+						}
+					}
+					continue;
+				}
+
+				if (tokencmp(tokens[0], "praza_experiment")) {
+					if (!writeMode) {
+						fprintf(stderr, "ERROR: writemode must be enabled to set or clear keys in the database.\n");
+						is_error = true;
+						continue;
+					}
+					state int i = -1;
+					for (i = 1; i <= 4 * 100 * 100 * 3; ++i) {
+						getTransaction(db, tenant, tr, options, intrans);
+						for (int j = 1; j <= 10; ++j) {
+							std::string keyStr("key" + std::to_string(i) + "_" + std::to_string(j));
+							tr->set(keyStr, generateRandomString(256));
+						}
 						if (!intrans) {
 							wait(commitTransaction(tr));
 						}
