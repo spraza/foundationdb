@@ -55,6 +55,42 @@ ACTOR static Future<Void> replaceRange_impl(class IKeyValueStore* self,
                                             KeyRange range,
                                             Standalone<VectorRef<KeyValueRef>> data);
 
+inline void printStats(const std::vector<std::chrono::microseconds>& durations) {
+	if (durations.empty()) {
+		std::cout << "No data available." << std::endl;
+		return;
+	}
+
+	std::cout << "Num calls: " << durations.size() << std::endl;
+
+	// Copy the durations vector so we can sort it without modifying the original data
+	std::vector<std::chrono::microseconds> sorted_durations = durations;
+
+	// Sort the vector to make it easier to calculate p50 and p99
+	std::sort(sorted_durations.begin(), sorted_durations.end());
+
+	// Minimum and Maximum durations
+	auto min_duration = sorted_durations.front();
+	auto max_duration = sorted_durations.back();
+
+	// Calculate the p50 (median)
+	size_t mid_index = sorted_durations.size() / 2;
+	auto p50_duration = (sorted_durations.size() % 2 == 0)
+	                        ? (sorted_durations[mid_index - 1] + sorted_durations[mid_index]) / 2
+	                        : sorted_durations[mid_index];
+
+	// Calculate the p99
+	size_t p99_index = static_cast<size_t>(sorted_durations.size() * 0.99);
+	p99_index = (p99_index >= sorted_durations.size()) ? sorted_durations.size() - 1 : p99_index;
+	auto p99_duration = sorted_durations[p99_index];
+
+	// Print the results
+	std::cout << "Min duration: " << min_duration.count() << " microseconds" << std::endl;
+	std::cout << "Max duration: " << max_duration.count() << " microseconds" << std::endl;
+	std::cout << "P50 duration: " << p50_duration.count() << " microseconds" << std::endl;
+	std::cout << "P99 duration: " << p99_duration.count() << " microseconds" << std::endl;
+}
+
 class IKeyValueStore : public IClosable {
 public:
 	virtual KeyValueStoreType getType() const = 0;
@@ -158,7 +194,9 @@ public:
 	virtual Future<EncryptionAtRestMode> encryptionMode() = 0;
 
 protected:
-	virtual ~IKeyValueStore() {}
+	virtual ~IKeyValueStore() { printStats(readRangeLatencies); }
+
+	std::vector<std::chrono::microseconds> readRangeLatencies;
 };
 
 ACTOR static Future<Void> replaceRange_impl(IKeyValueStore* self,

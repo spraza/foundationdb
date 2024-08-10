@@ -41,12 +41,12 @@ int main() {
 	DB* db;
 	Options options;
 	options.create_if_missing = true;
-	options.statistics = rocksdb::CreateDBStatistics();
-	options.statistics->set_stats_level(StatsLevel::kAll);
+	options.statistics = rocksdb::CreateDBStatistics(); // for stats type 2
+	options.statistics->set_stats_level(StatsLevel::kAll); // for stats type 2
 	Status openStatus = DB::Open(options, "/tmp/testdb", &db);
 	assert(openStatus.ok());
 
-	// Bulk write with profiling
+	// Bulk write with profiling, stats type 1
 	rocksdb::SetPerfLevel(PerfLevel::kEnableTime);
 	get_perf_context()->Reset();
 	get_iostats_context()->Reset();
@@ -55,14 +55,14 @@ int main() {
 	std::cout << get_perf_context()->ToString() << "\n\n-------------\n\n"
 	          << get_iostats_context()->ToString() << std::endl;
 
-	// Dump overall stats
+	// Dump overall stats, stats type 2
 	std::cout << "\n\nDB stats below:\n";
 	std::cout << "BLOCK_CACHE_BYTES_WRITE: " << options.statistics->getTickerCount(Tickers::BLOCK_CACHE_BYTES_WRITE)
 	          << std::endl;
 	std::cout << "SST_WRITE_MICROS: " << options.statistics->getHistogramString(Histograms::SST_WRITE_MICROS)
 	          << std::endl;
 
-	// compaction and general db stats
+	// compaction and general db stats, stats type 3
 	std::string outStats;
 	db->GetProperty("rocksdb.stats", &outStats);
 	std::cout << outStats << std::endl;
