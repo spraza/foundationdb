@@ -1177,6 +1177,8 @@ Error statusToError(const rocksdb::Status& s) {
 }
 
 struct RocksDBKeyValueStore : IKeyValueStore {
+	~RocksDBKeyValueStore() override { std::cout << "RocksDBKeyValueStore dtor" << std::endl; }
+
 	struct Writer : IThreadPoolReceiver {
 		struct CheckpointAction : TypedAction<Writer, CheckpointAction> {
 			CheckpointAction(const CheckpointRequest& request) : request(request) {}
@@ -2282,6 +2284,8 @@ struct RocksDBKeyValueStore : IKeyValueStore {
 	                              int rowLimit,
 	                              int byteLimit,
 	                              Optional<ReadOptions> options) override {
+		auto start = std::chrono::high_resolution_clock::now();
+
 		ReadType type = ReadType::NORMAL;
 
 		if (options.present()) {
@@ -2300,7 +2304,12 @@ struct RocksDBKeyValueStore : IKeyValueStore {
 
 		checkWaiters(semaphore, maxWaiters);
 		auto a = std::make_unique<Reader::ReadRangeAction>(keys, rowLimit, byteLimit, type, counters);
-		return read(a.release(), &semaphore, readThreads.getPtr(), &counters.failedToAcquire);
+		auto ret = read(a.release(), &semaphore, readThreads.getPtr(), &counters.failedToAcquire);
+
+		auto end = std::chrono::high_resolution_clock::now();
+		readRangeLatencies.push_back(std::chrono::duration_cast<std::chrono::microseconds>(end - start));
+
+		return ret;
 	}
 
 	StorageBytes getStorageBytes() const override {

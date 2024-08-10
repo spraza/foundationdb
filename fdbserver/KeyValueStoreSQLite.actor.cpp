@@ -2208,6 +2208,8 @@ KeyValueStoreSQLite::KeyValueStoreSQLite(std::string const& filename,
 KeyValueStoreSQLite::~KeyValueStoreSQLite() {
 	// printf("dbf=%lld bytes, wal=%lld bytes\n", getFileSize((filename+".fdb").c_str()),
 	// getFileSize((filename+".fdb-wal").c_str()));
+
+	std::cout << "SQLiteKeyValueStore dtor" << std::endl;
 }
 
 StorageBytes KeyValueStoreSQLite::getStorageBytes() const {
@@ -2273,14 +2275,21 @@ Future<Optional<Value>> KeyValueStoreSQLite::readValuePrefix(KeyRef key, int max
 	readThreads->post(p);
 	return f;
 }
+
 Future<RangeResult> KeyValueStoreSQLite::readRange(KeyRangeRef keys,
                                                    int rowLimit,
                                                    int byteLimit,
                                                    Optional<ReadOptions> options) {
+	auto start = std::chrono::high_resolution_clock::now();
+
 	++readsRequested;
 	auto p = new Reader::ReadRangeAction(keys, rowLimit, byteLimit);
 	auto f = p->result.getFuture();
 	readThreads->post(p);
+
+	auto end = std::chrono::high_resolution_clock::now();
+	readRangeLatencies.push_back(std::chrono::duration_cast<std::chrono::microseconds>(end - start));
+
 	return f;
 }
 Future<KeyValueStoreSQLite::SpringCleaningWorkPerformed> KeyValueStoreSQLite::doClean() {
