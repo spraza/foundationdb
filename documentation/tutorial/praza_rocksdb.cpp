@@ -62,6 +62,11 @@ int main() {
 	std::cout << "SST_WRITE_MICROS: " << options.statistics->getHistogramString(Histograms::SST_WRITE_MICROS)
 	          << std::endl;
 
+	// compaction and general db stats
+	std::string outStats;
+	db->GetProperty("rocksdb.stats", &outStats);
+	std::cout << outStats << std::endl;
+
 	// Close db
 	auto closeStatus = db->Close();
 	assert(closeStatus.ok());
