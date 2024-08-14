@@ -16,20 +16,26 @@
 #include <iostream>
 #include "flow/actorcompiler.h"
 
-struct Foo {
-	static inline const Standalone<StringRef> DEFAULT_VERSIONSTAMP =
-	    "\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00"_sr;
-};
-
-ACTOR Future<Void> foo() {
+ACTOR Future<Void> hop3(int prev) {
+	std::cout << prev + 1 << std::endl;
 	wait(delay(1));
+	return Void();
+}
+
+ACTOR Future<Void> hop2(int prev) {
+	wait(hop3(prev + 1));
+	return Void();
+}
+
+ACTOR Future<Void> hop1(int prev) {
+	wait(hop2(prev + 1));
 	return Void();
 }
 
 int main(int argc, char* argv[]) {
 	platformInit();
 	g_network = newNet2(TLSConfig(), false, true);
-	auto x = stopAfter(foo());
+	auto x = stopAfter(hop1(0));
 	g_network->run();
 	return 0;
 }
