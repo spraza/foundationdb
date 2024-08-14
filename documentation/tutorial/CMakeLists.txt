@@ -17,7 +17,7 @@ else()
 endif()
 
 add_flow_target(EXECUTABLE NAME praza_cpp_tutorial SRCS "${PRAZA_CPP_TUTORIAL_SRCS}")
-target_link_libraries(praza_cpp_tutorial)
+target_link_libraries(praza_cpp_tutorial PUBLIC flow)
 
 if(NOT TARGET rocksdb)
     include(CompileRocksDB)
