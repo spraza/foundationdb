@@ -1,6 +1,8 @@
 #include "fdbrpc/FlowTransport.h"
+#include "fdbrpc/fdbrpc.h"
 #include "flow/Buggify.h"
 #include "flow/TaskPriority.h"
+#include "flow/genericactors.actor.h"
 #include "fmt/format.h"
 #include "flow/flow.h"
 #include "flow/Platform.h"
@@ -20,9 +22,7 @@
 
 NetworkAddress serverAddress = NetworkAddress::parse("127.0.0.1:6666");
 
-enum TutorialWellKnownEndpoints {
-	WLTOKEN_COUNT_SERVER = WLTOKEN_FIRST_AVAILABLE,
-};
+enum TutorialWellKnownEndpoints { WLTOKEN_COUNT_SERVER = WLTOKEN_FIRST_AVAILABLE, WLTOKEN_COUNT_IN_TUTORIAL };
 
 struct CountServerIf {
 	constexpr static FileIdentifier file_identifier = 3152015;
@@ -57,7 +57,7 @@ struct AddRequest {
 
 	template <typename T>
 	void serialize(T& t) {
-		serializer(t, reply);
+		serializer(t, val, reply);
 	}
 };
 
@@ -69,29 +69,14 @@ struct SubtractRequest {
 
 	template <typename T>
 	void serialize(T& t) {
-		serializer(t, reply);
-	}
-};
-
-struct StreamReply : ReplyPromiseStreamReply {
-	constexpr static FileIdentifier file_identifier = 440804;
-
-	int index = 0;
-	StreamReply() = default;
-	explicit StreamReply(int index) : index(index) {}
-
-	size_t expectedSize() const { return 2e6; }
-
-	template <class Ar>
-	void serialize(Ar& ar) {
-		serializer(ar, ReplyPromiseStreamReply::acknowledgeToken, ReplyPromiseStreamReply::sequence, index);
+		serializer(t, val, reply);
 	}
 };
 
 struct GetRequest {
-	constexpr static FileIdentifier file_identifier = 125;
+	constexpr static FileIdentifier file_identifier = 440804;
 
-	ReplyPromiseStream<StreamReply> reply;
+	ReplyPromise<std::string> reply;
 
 	template <typename T>
 	void serialize(T& t) {
@@ -115,7 +100,7 @@ ACTOR Future<Void> countServer() {
 				count -= clientReq.val;
 			}
 			when(GetRequest clientReq = waitNext(csi.get.getFuture())) {
-				clientReq.reply.send(StreamReply(count));
+				clientReq.reply.send(std::to_string(count));
 			}
 		}
 	}
@@ -129,29 +114,38 @@ ACTOR Future<Void> countClient() {
 	CountServerIf rsp = wait(csi.getInterface.getReply(GetInterfaceRequest{}));
 	csi = rsp;
 
-	csi.add.send(10);
-	csi.subtract.send(3);
+	csi.add.send(AddRequest{ .val = 10 });
+	csi.subtract.send(SubtractRequest{ .val = 3 });
 
 	GetRequest getRequest;
-	int value = wait(csi.get.getReply(getRequest));
-	std::cout << value << std::endl;
+	std::string reply = wait(csi.get.getReply(getRequest));
+	std::cout << reply << std::endl;
 
 	return Void();
 }
 
-ACTOR Future<Void> start() {
-	wait(countServer());
-	wait(countClient());
-	return Void();
-}
+// ACTOR Future<Void> start() {
+// 	// wait(countServer());
+// 	// wait(countClient());
+// 	waitForAll(std::vector{ countServer(), countClient() });
+// 	return Void();
+// }
 
 int main(int argc, char* argv[]) {
+	bool isServer = false;
+	for (int i = 1; i < argc; ++i) {
+		std::string arg(argv[i]);
+		if (arg == "-s") {
+			isServer = true;
+			break;
+		}
+	}
+
 	platformInit();
 	g_network = newNet2(TLSConfig(), false, true);
 
 	// RPC setup -- start
-	const bool isServer{ true };
-	FlowTransport::createInstance(!isServer, 0, WLTOKEN_COUNT_SERVER);
+	FlowTransport::createInstance(!isServer, 0, WLTOKEN_COUNT_IN_TUTORIAL);
 	NetworkAddress publicAddress = NetworkAddress::parse("0.0.0.0:0");
 	if (isServer) {
 		publicAddress = NetworkAddress::parse("0.0.0.0:6666");
@@ -168,7 +162,23 @@ int main(int argc, char* argv[]) {
 	}
 	// RPC setup -- end
 
-	auto x = stopAfter(start());
+	// if (isServer) {
+	// 	auto f = countServer();
+	// 	auto x = stopAfter(f);
+	// 	g_network->run();
+	// } else {
+	// 	auto f = countClient();
+	// 	auto x = stopAfter(f);
+	// 	g_network->run();
+	// }
+
+	std::vector<Future<Void>> fs;
+	auto s = countServer();
+	auto c = countClient();
+	fs.push_back(s);
+	fs.push_back(c);
+	auto x = stopAfter(waitForAll(fs));
 	g_network->run();
+
 	return 0;
 }
