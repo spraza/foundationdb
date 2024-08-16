@@ -3,13 +3,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "flow/DeterministicRandom.h"
+#include "flow/FileIdentifier.h"
 #include "flow/Platform.h"
+#include "flow/flow.h"
 
 int main() {
-	auto seed = 132; // platform::getRandomSeed()
-	auto d = DeterministicRandom(seed);
-	for (int i = 0; i < 10; ++i) {
-		std::cout << d.randomUInt64() << std::endl;
-	}
+	Promise<int> p;
+	Future<int> f = p.getFuture();
+	p.send(6);
+	std::cout << f.get() << std::endl;
 	return 0;
 }
