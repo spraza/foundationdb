@@ -20,8 +20,20 @@
 
 #include "flow/actorcompiler.h"
 
+ACTOR Future<Void> bar() {
+	wait(delay(2));
+	int y = 3;
+	std::cout << y << std::endl;
+	return Void();
+}
+
 ACTOR Future<Void> foo() {
 	wait(delay(1));
+	int x1 = 2;
+	std::cout << x1 << std::endl;
+	wait(bar());
+	int x2 = 4;
+	std::cout << x2 << std::endl;
 	return Void();
 }
 
