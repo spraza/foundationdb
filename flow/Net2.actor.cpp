@@ -1803,9 +1803,9 @@ Future<Void> Net2::delay(double seconds, TaskPriority taskId) {
 		return Never();
 
 	PromiseTask* t = new PromiseTask;
-	auto st = boost::stacktrace::stacktrace();
-	auto stS = boost::stacktrace::to_string(st);
-	std::cout << stS << std::endl;
+	// auto st = boost::stacktrace::stacktrace();
+	// auto stS = boost::stacktrace::to_string(st);
+	// std::cout << stS << std::endl;
 	if (seconds <= 0.) {
 		taskQueue.addReady(taskId, t);
 	} else {
