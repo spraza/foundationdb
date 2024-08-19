@@ -21,12 +21,15 @@
 #include "boost/asio/buffer.hpp"
 #include "boost/asio/ip/address.hpp"
 #include "boost/system/system_error.hpp"
+#include <boost/stacktrace.hpp>
 #include "flow/Arena.h"
 #include "flow/Platform.h"
 #include "flow/Trace.h"
 #include "flow/swift.h"
 #include "flow/swift_concurrency_hooks.h"
 #include <algorithm>
+#include <boost/stacktrace/stacktrace.hpp>
+#include <boost/stacktrace/stacktrace_fwd.hpp>
 #include <memory>
 #include <string_view>
 #ifndef BOOST_SYSTEM_NO_LIB
@@ -1800,6 +1803,9 @@ Future<Void> Net2::delay(double seconds, TaskPriority taskId) {
 		return Never();
 
 	PromiseTask* t = new PromiseTask;
+	auto st = boost::stacktrace::stacktrace();
+	auto stS = boost::stacktrace::to_string(st);
+	std::cout << stS << std::endl;
 	if (seconds <= 0.) {
 		taskQueue.addReady(taskId, t);
 	} else {
