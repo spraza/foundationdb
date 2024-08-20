@@ -130,13 +130,15 @@ ACTOR Future<Void> ex2() {
 	// Can get future stream from promise stream
 	FutureStream<int> f = p.getFuture();
 	auto fp1 = ex2_producer(p, 0);
-	// auto fp2 = ex2_producer(p, 100);
+	auto fp2 = ex2_producer(p, 100);
 	auto fc1 = ex2_consumer(f, 0);
 	// auto fc2 = ex2_consumer(f, 1);
-	// auto fc3 = ex2_consumer(f, 2);
+	//  auto fc3 = ex2_consumer(f, 2);
+	//  multiple consumers don't work, why? asserts here:
+	//  https://github.com/spraza/foundationdb/blob/c3e7542cdac55c43f1bcf332db8732d0e64a0cd5/flow/include/flow/flow.h#L1271-L1272
 
 	// std::vector<Future<Void>> all({ fp1, fp2, fc1, fc2, fc3 });
-	std::vector<Future<Void>> all({ fp1, fc1 });
+	std::vector<Future<Void>> all({ fp1, fc1, fp2 });
 	wait(waitForAll(all));
 
 	return Void();
