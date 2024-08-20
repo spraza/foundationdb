@@ -1,6 +1,7 @@
 #include "fdbrpc/FlowTransport.h"
 #include "fdbrpc/fdbrpc.h"
 #include "flow/Buggify.h"
+#include "flow/NetworkAddress.h"
 #include "flow/TaskPriority.h"
 #include "flow/genericactors.actor.h"
 #include "fmt/format.h"
@@ -21,7 +22,6 @@
 
 #include "flow/actorcompiler.h"
 
-NetworkAddress serverAddress;
 enum TutorialWellKnownEndpoints { WLTOKEN_KV_SERVER = WLTOKEN_FIRST_AVAILABLE, WLTOKEN_COUNT_IN_TUTORIAL };
 bool isServer = false;
 
@@ -83,7 +83,6 @@ ACTOR Future<Void> server() {
 	loop {
 		choose {
 			when(ConnectRequest req = waitNext(ifx.connectRequest.getFuture())) {
-				std::cout << "Received connection attempt\n";
 				req.reply.send(ifx);
 			}
 			when(GetRequest req = waitNext(ifx.getRequest.getFuture())) {
@@ -96,18 +95,17 @@ ACTOR Future<Void> server() {
 			}
 			when(SetRequest req = waitNext(ifx.setRequest.getFuture())) {
 				store[req.key] = req.val;
+				req.reply.send(Void());
 			}
 		}
 	}
-	// return Void();
 }
 
 ACTOR Future<KVInterface> connect() {
-	// TODO: can I avoid creating ifx like this and use RequestStream variable directly?
-	KVInterface ifx;
-	ifx.connectRequest =
+	NetworkAddress serverAddress = NetworkAddress::parse("127.0.0.1:6666");
+	auto reqStream =
 	    RequestStream<ConnectRequest>(Endpoint::wellKnown({ .address = serverAddress }, WLTOKEN_KV_SERVER));
-	KVInterface result_ifx = wait(ifx.connectRequest.getReply(ConnectRequest()));
+	KVInterface result_ifx = wait(reqStream.getReply(ConnectRequest()));
 	return result_ifx;
 }
 
