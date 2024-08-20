@@ -20,6 +20,8 @@
 
 #include "flow/actorcompiler.h"
 
+// Good pre-req reading on actor model: https://en.wikipedia.org/wiki/Actor_model
+
 // Based on https://drive.google.com/file/d/1C4piNHl7NRzHHzFomMKW3_uSK9Yw3_Kr/view?usp=sharing
 
 // SAV<T>, single assignment variable, variable type is T
@@ -141,6 +143,16 @@ ACTOR Future<Void> ex2() {
 	std::vector<Future<Void>> all({ fp1, fc1, fp2 });
 	wait(waitForAll(all));
 
+	return Void();
+}
+
+ACTOR Future<Void> ex3() {
+	// RPC equivalents of Promise/Future streams
+	// Used to send messages between actors over the network
+	RequestStream<int> reqStream;
+	ReplyPromise<int> replyPromise;
+	NetSAV<int> netSAV(1, 1);
+	// NetNotifiedQueue<int, true> netNotifiedQueue;
 	return Void();
 }
 
