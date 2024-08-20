@@ -8,9 +8,5 @@
 #include "flow/flow.h"
 
 int main() {
-	Promise<int> p;
-	Future<int> f = p.getFuture();
-	p.send(6);
-	std::cout << f.get() << std::endl;
 	return 0;
 }
