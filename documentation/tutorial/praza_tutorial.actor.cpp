@@ -10,6 +10,7 @@
 #include "fdbclient/NativeAPI.actor.h"
 #include "fdbclient/ReadYourWrites.h"
 #include "flow/TLSConfig.actor.h"
+#include <cstdint>
 #include <functional>
 #include <new>
 #include <string>
@@ -20,154 +21,149 @@
 
 #include "flow/actorcompiler.h"
 
-// Good pre-req reading on actor model: https://en.wikipedia.org/wiki/Actor_model
+NetworkAddress serverAddress;
+enum TutorialWellKnownEndpoints { WLTOKEN_KV_SERVER = WLTOKEN_FIRST_AVAILABLE, WLTOKEN_COUNT_IN_TUTORIAL };
+bool isServer = false;
 
-// Based on https://drive.google.com/file/d/1C4piNHl7NRzHHzFomMKW3_uSK9Yw3_Kr/view?usp=sharing
+// Owned by server
+// Server can serialize and send it to client via getInterface RPC
+struct KVInterface {
+	constexpr static FileIdentifier file_identifier = 3152015;
 
-// SAV<T>, single assignment variable, variable type is T
-// send() - sets the value, asserts if isSet() is true
-// get() or value() - gets the value
-// isSet() - useful to see before sending
-// SAV also has a chain of callbacks which typically
-// a Future (promise.getFuture) can register
-// In practice, the ACTOR compiler generates code that does
-// this callback registration, basically post-wait piece of code
-// is registered as a callback
-// wait() adds to the "front" of the callback list in SAV
-// meaning when we fire the SAV callbacks, it is LIFO
-// yields adds at the end, making if FIFO
+	RequestStream<struct ConnectRequest> connectRequest;
+	RequestStream<struct SetRequest> setRequest;
+	RequestStream<struct GetRequest> getRequest;
 
-// Future, read-only reference to SAV
-// We can wait on future, and:
-// Must (May?) be used to register callbacks if the SAV is not set yet
-// Blocks on callback registration, actual callback runs later when
-// SAV becomes ready (via promise.send())
-// If SAV ready already, wait on future unblocks quickly and so no
-// callback registration is done by ACTOR compiler
-
-// Promise, write-only reference to SAV
-// These primitives are used to communication between ACTORS
-// but can be used in general outside ACTOR functions
-// These are basically at the end just flow (target) classes
-// in flow.h
-// function is actor if it says ACTOR, additionally mostly it should
-// also use wait() on another actor
-
-ACTOR Future<Void> ex1_1(Promise<int> p) {
-	// Default copy-ctor, shallow copy i.e. same SAV shared across promises
-	// SAV's internal promise count = 2, future count = 0
-	Promise<int> p1 = p;
-
-	// From any promise, you can get corresponding future
-	// This references the same SAV, we bump future count = 1
-	Future<int> f1 = p1.getFuture();
-	int x = wait(f1);
-
-	std::cout << "x = " << x << ", ex1_1 code" << std::endl;
-
-	return Void();
-}
-
-ACTOR Future<Void> ex1_2(Promise<int> p) {
-	Future<int> f1 = p.getFuture();
-	int y = wait(f1);
-	std::cout << "y = " << y << ", ex1_2 code" << std::endl;
-	return Void();
-}
-
-ACTOR Future<Void> ex1() {
-	// Creates an internal SAV<int>
-	// The SAV has an internal promise and future count
-	// Here, promise count = 1, future count = 0
-	// From SAV doc:
-	// int promises; // one for each promise (and one for an active actor if this is an actor)
-	// int futures; // one for each future and one more if there are any callbacks
-	// Q: why is future count not incremented more than when adding more than 1 callbacks?
-	// A: cz these counts are used as reference counts to determine when to safely destroy the SAV.
-	//    so when all callbacks are fired, future is decremented by 1.
-	// There's also error_state, it's un-named enum (so just int)
-	// enum { UNSET_ERROR_CODE = -3, NEVER_ERROR_CODE, SET_ERROR_CODE };
-	// And an error object created e.g. auto error = Error::fromCode(UNSET_ERROR_CODE)
-	// error_state = unset
-	state Promise<int> p1;
-
-	Future<Void> f1 = ex1_1(p1);
-	Future<Void> f2 = ex1_2(p1);
-	state std::vector<Future<Void>> all({ f1, f2 });
-
-	wait(delay(2));
-	p1.send(10);
-
-	wait(waitForAll(all));
-	return Void();
-}
-
-ACTOR Future<Void> ex2_producer(PromiseStream<int> p, int startCount) {
-	state int i = startCount;
-	loop {
-		wait(delay(2));
-		p.send(i);
-		i += 1;
+	template <class Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, connectRequest, setRequest, getRequest);
 	}
-}
+};
 
-ACTOR Future<Void> ex2_consumer(FutureStream<int> f, int id) {
-	loop {
-		int x = waitNext(f);
-		std::cout << "Consumer id " << id << " consumed " << x << std::endl;
+struct ConnectRequest {
+	constexpr static FileIdentifier file_identifier = 3152016;
+
+	ReplyPromise<KVInterface> reply;
+
+	template <class Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, reply);
 	}
+};
+
+struct SetRequest {
+	constexpr static FileIdentifier file_identifier = 3152017;
+
+	std::string key;
+	std::string val;
+	ReplyPromise<Void> reply;
+
+	template <class Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, key, val, reply);
+	}
+};
+
+struct GetRequest {
+	constexpr static FileIdentifier file_identifier = 3152018;
+
+	std::string key;
+	ReplyPromise<std::string> reply;
+
+	template <class Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, key, reply);
+	}
+};
+
+ACTOR Future<Void> server() {
+	state KVInterface ifx;
+	state std::unordered_map<std::string, std::string> store;
+	ifx.connectRequest.makeWellKnownEndpoint(WLTOKEN_KV_SERVER, TaskPriority::DefaultEndpoint);
+	loop {
+		choose {
+			when(ConnectRequest req = waitNext(ifx.connectRequest.getFuture())) {
+				std::cout << "Received connection attempt\n";
+				req.reply.send(ifx);
+			}
+			when(GetRequest req = waitNext(ifx.getRequest.getFuture())) {
+				auto iter = store.find(req.key);
+				if (iter == store.end()) {
+					req.reply.sendError(io_error());
+				} else {
+					req.reply.send(iter->second);
+				}
+			}
+			when(SetRequest req = waitNext(ifx.setRequest.getFuture())) {
+				store[req.key] = req.val;
+			}
+		}
+	}
+	// return Void();
 }
 
-// multiple producer multiple consumer
-ACTOR Future<Void> ex2() {
-	// Similar to Promise, except it references a NotifiedQueue (instead of SAV)
-	// Each element of NotifiedQueue is consumed only once, using waitNext
-	// This is a big difference, previously when value 5 is sent to Promise, SAV
-	// becomes "set"/ready, and then fires all callbacks (in LIFO / stack) and forwards
-	// the value 5 to those callbacks. These callbacks execute post-wait chunk of code.
-	// But here, only one waitNext() will get the value produced by promiseStream.send().
-	// However, unlike SAV, multiple elements can be sent to NotifiedQueue, so there's that.
-	PromiseStream<int> p;
-
-	// Can get future stream from promise stream
-	FutureStream<int> f = p.getFuture();
-	auto fp1 = ex2_producer(p, 0);
-	auto fp2 = ex2_producer(p, 100);
-	auto fc1 = ex2_consumer(f, 0);
-	// auto fc2 = ex2_consumer(f, 1);
-	//  auto fc3 = ex2_consumer(f, 2);
-	//  multiple consumers don't work, why? asserts here:
-	//  https://github.com/spraza/foundationdb/blob/c3e7542cdac55c43f1bcf332db8732d0e64a0cd5/flow/include/flow/flow.h#L1271-L1272
-
-	// std::vector<Future<Void>> all({ fp1, fp2, fc1, fc2, fc3 });
-	std::vector<Future<Void>> all({ fp1, fc1, fp2 });
-	wait(waitForAll(all));
-
-	return Void();
+ACTOR Future<KVInterface> connect() {
+	// TODO: can I avoid creating ifx like this and use RequestStream variable directly?
+	KVInterface ifx;
+	ifx.connectRequest =
+	    RequestStream<ConnectRequest>(Endpoint::wellKnown({ .address = serverAddress }, WLTOKEN_KV_SERVER));
+	KVInterface result_ifx = wait(ifx.connectRequest.getReply(ConnectRequest()));
+	return result_ifx;
 }
 
-ACTOR Future<Void> ex3() {
-	// RPC equivalents of Promise/Future streams
-	// Used to send messages between actors over the network
-	RequestStream<int> reqStream;
-	ReplyPromise<int> replyPromise;
-	NetSAV<int> netSAV(1, 1);
-	// NetNotifiedQueue<int, true> netNotifiedQueue;
+ACTOR Future<Void> client() {
+	state KVInterface ifx = wait(connect());
+	wait(ifx.setRequest.getReply(SetRequest{ .key = "foo", .val = "bar" }));
+	state std::string val = wait(ifx.getRequest.getReply(GetRequest{ .key = "foo" }));
+	std::cout << val << std::endl;
 	return Void();
 }
 
 ACTOR Future<Void> start() {
-	// std::vector<Future<Void>> all{ ex1(), ex2() };
-	std::vector<Future<Void>> all{ ex2() };
+	std::vector<Future<Void>> all;
+	if (isServer) {
+		all.push_back(server());
+	} else {
+		all.push_back(client());
+	}
 	wait(waitForAll(all));
 	return Void();
 }
 
+void setup_flow_server_rpc() {
+	const std::string port{ "6666" };
+	FlowTransport::createInstance(false, 0, WLTOKEN_COUNT_IN_TUTORIAL);
+	NetworkAddress publicAddress = NetworkAddress::parse("0.0.0.0:" + port);
+	try {
+		auto listenError = FlowTransport::transport().bind(publicAddress, publicAddress);
+		if (listenError.isError()) {
+			listenError.get();
+		}
+	} catch (Error& e) {
+		std::cout << format("Error while binding to address (%d): %s\n", e.code(), e.what());
+	}
+}
+
+void setup_flow_client_rpc() {
+	FlowTransport::createInstance(true, 0, WLTOKEN_COUNT_IN_TUTORIAL);
+}
+
 int main(int argc, char* argv[]) {
+	for (int i = 1; i < argc; ++i) {
+		std::string arg(argv[i]);
+		if (arg == "--is-server") {
+			isServer = true;
+		}
+	}
+	std::cout << "isServer = " << isServer << std::endl;
 	platformInit();
 	g_network = newNet2(TLSConfig(), false, true);
+	if (isServer) {
+		setup_flow_server_rpc();
+	} else {
+		setup_flow_client_rpc();
+	}
 	auto x = stopAfter(start());
 	g_network->run();
-	std::cout << "Done\n";
 	return 0;
 }
