@@ -479,6 +479,7 @@ struct serialize_raw<ErrorOr<EnsureTable<CachedSerialization<V>>>> : std::true_t
 template <class T>
 struct Callback {
 	Callback<T>*prev, *next;
+	std::string callerBacktrace;
 
 	virtual void fire(T const&) {}
 	virtual void fire(T&&) {}
@@ -1053,7 +1054,8 @@ public:
 			sav->cancel();
 	}
 
-	void addCallbackAndClear(Callback<T>* _Nonnull cb) {
+	void addCallbackAndClear(Callback<T>* _Nonnull cb) {		
+		cb->callerBacktrace = platform::get_backtrace();
 		sav->addCallbackAndDelFutureRef(cb);
 		sav = nullptr;
 	}
@@ -1073,7 +1075,7 @@ public:
 
 	explicit Future(SAV<T>* sav) : sav(sav) {}
 
-private:
+private:	
 	SAV<T>* sav;
 	friend class Promise<T>;
 };
