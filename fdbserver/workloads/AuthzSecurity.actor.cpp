@@ -607,8 +607,7 @@ struct AuthzSecurityWorkload : TestWorkload {
 	ACTOR static Future<Void> testBlobGranuleLocationLeakDisallowed(AuthzSecurityWorkload* self, Database cx) {
 		state Key key = self->randomString();
 		state Value value = self->randomString();
-		state Version v1 =
-		    wait(setAndCommitKeyValueAndGetVersion(self, cx, self->tenant, self->signedToken, key, value));
+		wait(setAndCommitKeyValueAndGetVersion(self, cx, self->tenant, self->signedToken, key, value));
 		state Version v2 = wait(setAndCommitKeyValueAndGetVersion(
 		    self, cx, self->anotherTenant, self->signedTokenAnotherTenant, key, value));
 

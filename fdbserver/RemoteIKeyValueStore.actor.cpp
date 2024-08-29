@@ -139,14 +139,14 @@ ACTOR Future<Void> runIKVS(OpenKVStoreRequest openReq, IKVSInterface ikvsInterfa
 					// onClosed request is not cancelled even this actor is cancelled
 					forwardPromise(onClosedReq.reply, kvStore->onClosed());
 				}
-				when(IKVSDisposeRequest disposeReq = waitNext(ikvsInterface.dispose.getFuture())) {
+				when(waitNext(ikvsInterface.dispose.getFuture())) {
 					TraceEvent(SevDebug, "RemoteIKVSDisposeReceivedRequest").detail("UID", kvsId);
 					kvStore->dispose();
 					guard.invalidate();
 					onClosed.send(Void());
 					return Void();
 				}
-				when(IKVSCloseRequest closeReq = waitNext(ikvsInterface.close.getFuture())) {
+				when(waitNext(ikvsInterface.close.getFuture())) {
 					TraceEvent(SevDebug, "RemoteIKVSCloseReceivedRequest").detail("UID", kvsId);
 					kvStore->close();
 					guard.invalidate();

@@ -38,9 +38,6 @@
 #include "fdbserver/WaitFailure.h"
 #include "flow/actorcompiler.h" // This must be the last #include.
 
-using std::max;
-using std::min;
-
 namespace oldTLog_4_6 {
 
 typedef int16_t OldTag;

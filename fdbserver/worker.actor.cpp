@@ -3733,10 +3733,10 @@ TEST_CASE("/fdbserver/worker/swversion/runIncompatibleOlder") {
 	}
 
 	{
-		ErrorOr<Void> f = wait(errorOr(updateNewestSoftwareVersion(swversionTestDirName,
-		                                                           ProtocolVersion::withStorageInterfaceReadiness(),
-		                                                           ProtocolVersion::withStorageInterfaceReadiness(),
-		                                                           ProtocolVersion::withTSS())));
+		wait(errorOr(updateNewestSoftwareVersion(swversionTestDirName,
+		                                         ProtocolVersion::withStorageInterfaceReadiness(),
+		                                         ProtocolVersion::withStorageInterfaceReadiness(),
+		                                         ProtocolVersion::withTSS())));
 	}
 
 	{

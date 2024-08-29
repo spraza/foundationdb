@@ -43,9 +43,6 @@
 #include "fdbserver/FDBExecHelper.actor.h"
 #include "flow/actorcompiler.h" // This must be the last #include.
 
-using std::max;
-using std::min;
-
 namespace oldTLog_6_2 {
 
 struct TLogQueueEntryRef {

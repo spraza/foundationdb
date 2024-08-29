@@ -509,11 +509,9 @@ ACTOR Future<Void> getValueQ(StorageCacheData* data, GetValueRequest req) {
 			throw future_version();
 		}
 
-		state int path = 0;
 		auto i = data->data().at(version).lastLessOrEqual(req.key);
 		if (i && i->isValue() && i.key() == req.key) {
 			v = (Value)i->getValue();
-			path = 1;
 			// TODO: do we need to check changeCounter here?
 			data->checkChangeCounter(changeCounter, req.key);
 		}

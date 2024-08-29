@@ -93,7 +93,6 @@ struct ShardedRocksDBKeyValueStore;
 
 using rocksdb::BackgroundErrorReason;
 using rocksdb::CompactionReason;
-using rocksdb::FlushReason;
 
 // Returns string representation of RocksDB background error reason.
 // Error reason code:
