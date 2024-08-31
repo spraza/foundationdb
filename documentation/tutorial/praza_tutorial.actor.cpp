@@ -22,8 +22,15 @@
 
 #include "flow/actorcompiler.h"
 
+ACTOR Future<Void> bar(int d) {
+	wait(delay(d));
+	return Void();
+}
+
 ACTOR Future<Void> foo() {
 	wait(delay(1));
+	int d = 1;
+	wait(bar(d));
 	return Void();
 }
 

@@ -478,7 +478,8 @@ struct serialize_raw<ErrorOr<EnsureTable<CachedSerialization<V>>>> : std::true_t
 
 template <class T>
 struct Callback {
-	Callback<T>*prev, *next;
+	Callback<T>*prev, *next;	
+	Callback<T>* parent;
 	std::string callerBacktrace;
 
 	virtual void fire(T const&) {}
@@ -533,6 +534,9 @@ template <class T>
 struct SingleCallback {
 	// Used for waiting on FutureStreams, which don't support multiple callbacks
 	SingleCallback<T>* next;
+
+	SingleCallback<T>* parent;
+	std::string callerBacktrace;
 
 	virtual void fire(T const&) {}
 	virtual void fire(T&&) {}
@@ -1271,6 +1275,7 @@ struct NotifiedQueue : private SingleCallback<T>
 	virtual void cancel() {}
 
 	void addCallbackAndDelFutureRef(SingleCallback<T>* cb) {
+		cb->callerBacktrace = platform::get_backtrace();
 		ASSERT(SingleCallback<T>::next == this);
 		cb->insert(this);
 	}
@@ -1309,6 +1314,7 @@ public:
 		return queue->isError();
 	}
 	void addCallbackAndClear(SingleCallback<T>* cb) {
+		cb->callerBacktrace = platform::get_backtrace();
 		queue->addCallbackAndDelFutureRef(cb);
 		queue = nullptr;
 	}
