@@ -24,6 +24,8 @@ using System.Linq;
 using System.Text;
 using System.IO;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+
 
 namespace actorcompiler
 {
@@ -320,7 +322,7 @@ namespace actorcompiler
         bool LineNumbersEnabled;
         int chooseGroups = 0, whenCount = 0;
         string This;
-        bool generateProbes;
+        bool generateProbes;        
         public Dictionary<(ulong, ulong), string> uidObjects { get; private set; }
 
         public ActorCompiler(Actor actor, string sourceFile, bool isTopLevel, bool lineNumbersEnabled, bool generateProbes)
@@ -840,6 +842,26 @@ namespace actorcompiler
             return !literalBreak.wasCalled;
         }
 
+        // static string DecrementCallbackNumber(string input)
+        // {
+        //     string pattern = @"(static_cast<)(ActorCallback|ActorSingleCallback)<\s*([^,]+)\s*,\s*(\d+)\s*,\s*([^>]+)>";
+            
+        //     string result = Regex.Replace(input, pattern, match =>
+        //     {
+        //         string castType = match.Groups[1].Value;
+        //         string callbackType = match.Groups[2].Value;
+        //         string actorType = match.Groups[3].Value;
+        //         int number = int.Parse(match.Groups[4].Value);
+        //         string returnType = match.Groups[5].Value;
+
+        //         int newNumber = Math.Max(0, number - 1); // Prevent negative numbers
+
+        //         return $"{castType}{callbackType}<{actorType}, {newNumber}, {returnType}>";
+        //     });
+
+        //     return result;
+        // }
+
         void CompileStatement(ChooseStatement stmt, Context cx)
         {
             int group = ++this.chooseGroups;
@@ -992,9 +1014,17 @@ namespace actorcompiler
             }
             cx.target.WriteLine("{1}->actor_wait_state = {0};", group, This);
             foreach (var ch in choices)
-            {
+            {                
                 LineNumber(cx.target, ch.Stmt.wait.FirstSourceLine);
-                cx.target.WriteLine("{0}.addCallbackAndClear(static_cast<{1}*>({2}));", ch.Future, ch.CallbackTypeInStateClass, This);
+                string callbackRhs = string.Format("static_cast<{0}*>({1})", ch.CallbackTypeInStateClass, This);
+                string callbackLhsVarName = string.Format("someVeryLongUniqueName123786_{0}", ch.Index);
+                string callbackAssignment = string.Format("auto {0} = {1};", callbackLhsVarName, callbackRhs);
+                cx.target.WriteLine(callbackAssignment);
+                cx.target.WriteLine("{0}.addCallbackAndClear({1});", ch.Future, callbackLhsVarName);
+                if (ch.Index >= 1) {       
+                    //string callbackRhsPrev = DecrementCallbackNumber(callbackRhs);
+                    cx.target.WriteLine("someVeryLongUniqueName123786_{0}->parent = {1};", ch.Index, callbackRhs);
+                }                                                             
             }
             cx.target.WriteLine("loopDepth = 0;");//cx.target.WriteLine("return 0;");
 
