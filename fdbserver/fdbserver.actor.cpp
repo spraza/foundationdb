@@ -20,6 +20,7 @@
 
 // There's something in one of the files below that defines a macros
 // a macro that makes boost interprocess break on Windows.
+#include "flow/ActorContext.h"
 #define BOOST_DATE_TIME_NO_LIB
 
 #include <algorithm>
@@ -2352,6 +2353,7 @@ int main(int argc, char* argv[]) {
 			simulationSetupAndRun(
 			    dataFolder, opts.testFile, opts.restarting, (isRestoring >= 1), opts.whitelistBinPaths);
 			g_simulator->run();
+			ActorMonitoring::dumpActorCallBacktrace();
 		} else if (role == ServerRole::FDBD) {
 			// Update the global blob credential files list so that both fast
 			// restore workers and backup workers can access blob storage.
@@ -2407,6 +2409,7 @@ int main(int argc, char* argv[]) {
 				f = stopAfter(waitForAll(actors));
 				g_network->run();
 			}
+			ActorMonitoring::dumpActorCallBacktrace();
 		} else if (role == ServerRole::MultiTester) {
 			setupRunLoopProfiler();
 			f = stopAfter(runTests(opts.connectionFile,

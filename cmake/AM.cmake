@@ -9,12 +9,6 @@ if ((FDB_RELEASE OR FDB_RELEASE_CANDIDATE) AND NOT (ACTOR_MONITORING STREQUAL "D
   message(FATAL_ERROR "AM will cause more than 10% slowdown and should not be used in release")
 endif ()
 
-if (ACTOR_MONITORING STREQUAL "DISABLED")
-  add_compile_definitions(-DACTOR_MONITORING=0)
-elseif (ACTOR_MONITORING STREQUAL "MINIMAL")
-  add_compile_definitions(-DACTOR_MONITORING=1)
-elseif (ACTOR_MONITORING STREQUAL "FULL")
-  add_compile_definitions(-DACTOR_MONITORING=2)
-endif ()
+add_compile_definitions(-DACTOR_MONITORING=2)
 
 message(STATUS "ACTOR monitoring level is ${ACTOR_MONITORING}")

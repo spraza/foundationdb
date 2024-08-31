@@ -20,12 +20,13 @@
 
 #ifndef FLOW_ACTOR_CONTEXT_H
 #define FLOW_ACTOR_CONTEXT_H
+#pragma once
 
 #define ACTOR_MONITORING_DISABLED 0
 #define ACTOR_MONITORING_MINIMAL 1
 #define ACTOR_MONITORING_FULL 2
 
-#if ACTOR_MONITORING != ACTOR_MONITORING_DISABLED
+// #if ACTOR_MONITORING != ACTOR_MONITORING_DISABLED
 
 #include <cstdint>
 #include <memory>
@@ -104,6 +105,7 @@ using ActorInfo = ActorInfoMinimal;
 #elif ACTOR_MONITORING == ACTOR_MONITORING_FULL
 using ActorInfo = ActorInfoFull;
 #endif
+using ActorInfo = ActorInfoFull;
 
 using ActiveActor = ActorInfo;
 
@@ -117,7 +119,7 @@ struct ActorExecutionContext {
 };
 
 // Dumps the current ACTORs to a given stream
-extern void dumpActors(std::ostream& stream);
+void dumpActors(std::ostream& stream);
 
 // A helper class that register/unregister the Actor
 class ActiveActorHelper {
@@ -163,32 +165,6 @@ DecodedActorContext decodeActorContext(const std::string& caller);
 
 } // namespace ActorMonitoring
 
-#else // ACTOR_MONITORING != ACTOR_MONITORING_DISABLED
-
-#include "flow/GUID.h"
-
-namespace ActorMonitoring {
-using ActorID = uint64_t;
-using ActorIdentifier = GUID;
-using ActorBlockIdentifier = GUID;
-
-struct ActorExecutionContext {};
-struct ActorInfo {};
-struct ActiveActor {};
-struct ActiveActorHelper {
-	ActiveActorHelper(const ActorIdentifier&) {}
-};
-struct ActorExecutionContextHelper {
-	ActorExecutionContextHelper(const ActorID&, const ActorBlockIdentifier&) {}
-};
-struct ActorYieldHelper {
-	ActorYieldHelper(const ActorID&, const ActorBlockIdentifier&) {}
-};
-
-inline void dumpActorCallBacktrace() {}
-
-} // namespace ActorMonitoring
-
-#endif // ACTOR_MONITORING != ACTOR_MONITORING_DISABLED
+// #endif // ACTOR_MONITORING != ACTOR_MONITORING_DISABLED
 
 #endif // FLOW_ACTOR_CONTEXT_H

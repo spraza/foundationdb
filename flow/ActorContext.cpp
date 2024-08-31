@@ -21,7 +21,7 @@
 #include "flow/ActorContext.h"
 #include "flow/ActorUID.h"
 
-#if ACTOR_MONITORING != ACTOR_MONITORING_DISABLED
+// #if ACTOR_MONITORING != ACTOR_MONITORING_DISABLED
 
 #include <iomanip>
 #include <iostream>
@@ -116,10 +116,10 @@ ActorExecutionContextHelper::ActorExecutionContextHelper(const ActorID& actorID_
 		return;
 	}
 	g_currentExecutionContext.emplace_back(actorID_, blockIdentifier_);
-#if ACTOR_MONITORING == ACTOR_MONITORING_FULL
+	// #if ACTOR_MONITORING == ACTOR_MONITORING_FULL
 	g_activeActors[actorID_].lastResumeTime = gn_now();
 	++g_activeActors[actorID_].numResumes;
-#endif
+	// #endif
 }
 
 ActorExecutionContextHelper::~ActorExecutionContextHelper() {
@@ -134,13 +134,13 @@ ActorExecutionContextHelper::~ActorExecutionContextHelper() {
 }
 
 ActorYieldHelper::ActorYieldHelper(const ActorID& actorID_, const ActorBlockIdentifier& blockIdentifier_) {
-#if ACTOR_MONITORING == ACTOR_MONITORING_FULL
+	// #if ACTOR_MONITORING == ACTOR_MONITORING_FULL
 	if (!isActorOnMainThread()) [[unlikely]] {
 		return;
 	}
 	g_activeActors[actorID_].lastYieldTime = gn_now();
 	g_activeActors[actorID_].yieldBlockID = blockIdentifier_;
-#endif
+	// #endif
 }
 
 namespace {
@@ -187,10 +187,14 @@ auto getActorDebuggingDataFromIdentifier(const ActorIdentifier& actorIdentifier)
 
 } // namespace
 
-void dumpActorCallBacktrace() {
+} // namespace ActorMonitoring
+
+void ActorMonitoring::dumpActorCallBacktrace() {
+	using namespace ActorMonitoring;
+
 	std::cout << "Length of ACTOR stack: " << g_currentExecutionContext.size() << std::endl;
 	std::cout << "NumActors=" << g_activeActors.size() << std::endl;
-	std::cout << "NumDebugDatas=" <<  ACTOR_DEBUGGING_DATA.size() << std::endl;
+	std::cout << "NumDebugDatas=" << ACTOR_DEBUGGING_DATA.size() << std::endl;
 	for (const auto& block : g_currentExecutionContext) {
 		std::cout << std::setw(10) << block.actorID << "\t";
 		if (const auto info = getActorInfoFromActorID(block.actorID); info.has_value()) {
@@ -206,6 +210,4 @@ void dumpActorCallBacktrace() {
 	}
 }
 
-} // namespace ActorMonitoring
-
-#endif
+// #endif

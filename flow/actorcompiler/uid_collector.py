@@ -47,7 +47,8 @@ class Identifier:
     name: str
 
     def parse(line: str) -> "Identifier":
-        nsplit = line.strip().split("|")
+        #print(line)
+        nsplit = line.strip().split("|")        
         assert len(nsplit) == 6, "Expecting 6 terms"
 
         guid1_s, guid2_s, path, line_s, type_, name = nsplit
@@ -58,11 +59,19 @@ class Identifier:
 def parse(stream: io.TextIOWrapper) -> List[Identifier]:
     return [Identifier.parse(line) for line in stream.readlines()]
 
+def glob_compatible(pattern, path, recursive=True):
+    if sys.version_info >= (3, 10):
+        # For Python 3.10 and above, use the original syntax
+        return glob.glob(pattern, root_dir=path, recursive=recursive)
+    else:
+        # For earlier versions, implement the equivalent functionality
+        full_path = os.path.join(path, pattern)
+        return glob.glob(full_path, recursive=recursive)
 
 def collect(path: pathlib.Path) -> List[Identifier]:
     result = []
 
-    for item in glob.glob("**/*.uid", root_dir=path, recursive=True):
+    for item in glob_compatible("**/*.uid", path, recursive=True):
         logger.info(f"Parsing {path}...")
         full_path = os.path.join(path, item)
         with open(full_path, "r") as stream:
@@ -78,8 +87,8 @@ def generate_binary_version() -> Tuple[int, int]:
     The ACTOR identifiers/block identifiers mapping are versioned using this.
     """
     return (
-        int.from_bytes(secrets.token_bytes(8)),
-        int.from_bytes(secrets.token_bytes(8)),
+        int.from_bytes(secrets.token_bytes(8), byteorder='big'),
+        int.from_bytes(secrets.token_bytes(8), byteorder='big'),
     )
 
 
