@@ -433,6 +433,55 @@ int nChooseK(int n, int k) {
 	return ret;
 }
 
+static const Dwfl_Callbacks proc_callbacks = { .find_elf = dwfl_linux_proc_find_elf,
+	                                           .find_debuginfo = dwfl_standard_find_debuginfo,
+	                                           .section_address = dwfl_offline_section_address,
+	                                           .debuginfo_path = nullptr };
+
+std::string demangle(const char* name) {
+	int status;
+	char* demangled = abi::__cxa_demangle(name, nullptr, nullptr, &status);
+	if (status == 0) {
+		std::string result(demangled);
+		free(demangled);
+		return result;
+	}
+	return name;
+}
+
+std::string get_function_name(void* addr) {
+	Dwfl* dwfl = dwfl_begin(&proc_callbacks);
+	assert(dwfl);
+	if (dwfl_linux_proc_report(dwfl, getpid()) != 0) {
+		assert(false);
+	}
+	if (dwfl_report_end(dwfl, nullptr, nullptr) != 0) {
+		assert(false);
+	}
+	Dwfl_Module* module = dwfl_addrmodule(dwfl, reinterpret_cast<Dwarf_Addr>(addr));
+	assert(module);
+	const char* name = dwfl_module_addrname(module, reinterpret_cast<Dwarf_Addr>(addr));
+	assert(name);
+	return std::string{ demangle(name) };
+}
+
+std::unordered_map<void*, std::vector<void*>> calleeToCaller;
+
+void print_stack(void* callbackThisPtr) {
+	void* curr = callbackThisPtr;
+	while (curr && calleeToCaller.find(curr) != calleeToCaller.end()) {
+		void* prev = calleeToCaller[curr][0];
+		std::cout << get_function_name(prev) << std::endl;
+		curr = prev;
+	}
+}
+
+void pp_calleeToCaller(std::unordered_map<void*, std::vector<void*>>& m) {
+	for (auto& [k, v] : m) {
+		std::cout << "key = " << k << ", val = " << v[0] << std::endl;
+	}
+}
+
 namespace {
 // Simple message for flatbuffers unittests
 struct Int {

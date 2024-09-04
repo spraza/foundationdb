@@ -40,6 +40,8 @@
 #include <mutex>
 #include <queue>
 #include <stack>
+#include <elfutils/libdwfl.h>
+#include <cxxabi.h>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -476,11 +478,28 @@ struct serialize_raw<ErrorOr<EnsureTable<CachedSerialization<V>>>> : std::true_t
 	}
 };
 
+///
+extern std::unordered_map<void*, std::vector<void*>> calleeToCaller;
+
+__attribute__((noinline))
+extern std::string demangle(const char* name);
+
+__attribute__((noinline))
+extern std::string get_function_name(void* addr);
+
+__attribute__((noinline))
+extern void print_stack(void* callbackThisPtr);
+
+__attribute__((noinline))
+extern void pp_calleeToCaller(std::unordered_map<void*, std::vector<void*>>& m);
+
+///
+
+
 template <class T>
 struct Callback {
-	Callback<T>*prev, *next;
-	std::string callerBacktrace;
-
+	Callback<T>*prev, *next;	
+	
 	virtual void fire(T const&) {}
 	virtual void fire(T&&) {}
 	virtual void error(Error) {}
@@ -1055,7 +1074,8 @@ public:
 	}
 
 	void addCallbackAndClear(Callback<T>* _Nonnull cb) {		
-		cb->callerBacktrace = platform::get_backtrace();
+		//assert(calleeToCaller.find(this) == calleeToCaller.end());
+		calleeToCaller[cb].push_back(__builtin_return_address(0));
 		sav->addCallbackAndDelFutureRef(cb);
 		sav = nullptr;
 	}
