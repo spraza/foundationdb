@@ -269,5 +269,3 @@ if (WITH_SWIFT)
     add_dependencies(flow_sampling flow_swift)
 endif() # WITH SWIFT
 
-target_link_libraries(flow PUBLIC dw)
-

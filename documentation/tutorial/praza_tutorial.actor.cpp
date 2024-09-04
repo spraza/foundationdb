@@ -22,34 +22,15 @@
 
 #include "flow/actorcompiler.h"
 
-ACTOR Future<Void> baz(int d) {
-	state int x = d;
-	wait(delay(x));
-	x = x + 1;
-	wait(delay(x));
-	return Void();
-}
-
-ACTOR Future<Void> bar(int d) {
-	state int x = d;
-	wait(baz(x));
-	x = x + 1;
-	wait(baz(x));
-	return Void();
-}
-
-ACTOR Future<Void> foo(int d) {
-	state int x = d;
-	wait(bar(x));
-	x = x + 1;
-	wait(bar(x));
+ACTOR Future<Void> foo() {
+	wait(delay(1));
 	return Void();
 }
 
 int main(int argc, char* argv[]) {
 	platformInit();
 	g_network = newNet2(TLSConfig(), false, true);
-	auto x = stopAfter(foo(1));
+	auto x = stopAfter(foo());
 	g_network->run();
 	return 0;
 }
