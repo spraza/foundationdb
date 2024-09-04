@@ -16,8 +16,6 @@
 #include <memory>
 #include <string>
 
-namespace praza {
-
 ///
 std::string demangle(const char* name) {
 	int status;
@@ -118,11 +116,7 @@ void function1(StackTrace trace) {
 	std::cout << "Function 1 executed\n";
 }
 
-} // namespace praza
-
 int main() {
-	using namespace praza;
-
 	auto initial_trace = std::make_shared<std::vector<StackTraceEntry>>();
 	event_loop.push_task([initial_trace]() { function1(initial_trace); }, initial_trace);
 	event_loop.run();
