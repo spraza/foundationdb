@@ -3515,8 +3515,8 @@ std::string format_backtrace(void** addresses, int numAddresses) {
 }
 
 std::string get_backtrace() {
-	void* addresses[50];
-	size_t size = raw_backtrace(addresses, 50);
+	void* addresses[1000];
+	size_t size = raw_backtrace(addresses, 1000);
 	return format_backtrace(addresses, size);
 }
 } // namespace platform
