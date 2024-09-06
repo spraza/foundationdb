@@ -22,20 +22,8 @@
 
 #include "flow/actorcompiler.h"
 
-ACTOR Future<Void> baz() {
-	wait(delay(1));
-	wait(delay(1));
-	return Void();
-}
-
-ACTOR Future<Void> bar() {
-	wait(delay(1));
-	wait(baz());
-	return Void();
-}
-
 ACTOR Future<Void> foo() {
-	wait(bar());
+	wait(delay(1));
 	return Void();
 }
 
