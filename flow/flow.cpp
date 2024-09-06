@@ -20,7 +20,6 @@
 
 #include "flow/flow.h"
 
-#include <cstdint>
 #include <stdarg.h>
 
 #include <cinttypes>
@@ -447,47 +446,6 @@ struct Int {
 	}
 };
 } // namespace
-
-std::unordered_map<CallbackBase*, std::vector<CbInfo>> cbInfo;
-
-std::vector<CallbackBase*> firedCbStack;
-
-std::string printActorStack(CallbackBase* cb, uint64_t max_depth, bool dbg) {
-	std::string out{ "" };
-	if (dbg) {
-		std::cout << "cbInfo.size = " << cbInfo.size() << std::endl;
-		std::cout << "cbInfo dump: " << std::endl;
-		for (auto& [cb, v] : cbInfo) {
-			std::cout << "cb = " << cb << ", info.callerCb = ";
-			for (auto& e : v) {
-				std::cout << e.callerCb << ", ";
-			}
-			std::cout << std::endl;
-		}
-		std::cout << "***********" << std::endl;
-	}
-	auto curr = cb;
-	uint64_t curr_depth = 0;
-	while (curr && cbInfo.find(curr) != cbInfo.end()) {
-		// size_t idx = cbInfo[curr].size() - 1;
-		size_t idx = 0;
-		out += (cbInfo[curr][idx].callerBt) + "\n";
-		curr_depth += 1;
-		if (dbg) {
-			for (size_t i = 0; i < cbInfo[curr].size(); ++i) {
-				std::cout << cbInfo[curr][i].callerBt << std::endl;
-			}
-		}
-		if (max_depth > 0 && curr_depth >= max_depth) {
-			break;
-		}
-		if (dbg) {
-			std::cout << curr << " -> " << cbInfo[curr][idx].callerCb << std::endl;
-		}
-		curr = cbInfo[curr][idx].callerCb;
-	}
-	return out;
-}
 
 TEST_CASE("/flow/FlatBuffers/ErrorOr") {
 	{

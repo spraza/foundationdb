@@ -476,12 +476,10 @@ struct serialize_raw<ErrorOr<EnsureTable<CachedSerialization<V>>>> : std::true_t
 	}
 };
 
-struct CallbackBase {
-};
-
 template <class T>
-struct Callback : public CallbackBase {
+struct Callback {
 	Callback<T>*prev, *next;
+	std::string callerBacktrace;
 
 	virtual void fire(T const&) {}
 	virtual void fire(T&&) {}
@@ -531,20 +529,8 @@ struct Callback : public CallbackBase {
 	}
 };
 
-struct CbInfo {
-	std::string callerBt; 
-	CallbackBase* callerCb{nullptr}; // should be lowest cb object in callerBt above (from callback::fire)
-};
-
-extern std::unordered_map<CallbackBase*, std::vector<CbInfo>> cbInfo;
-
-extern std::vector<CallbackBase*> firedCbStack;
-
-__attribute__((__noinline__))
-extern std::string printActorStack(CallbackBase* cb, uint64_t max_depth = 0 /* inf */, bool dbg = false);
-
 template <class T>
-struct SingleCallback : public CallbackBase {
+struct SingleCallback {
 	// Used for waiting on FutureStreams, which don't support multiple callbacks
 	SingleCallback<T>* next;
 
@@ -1068,38 +1054,18 @@ public:
 			sav->cancel();
 	}
 
-	void addCallbackAndClear(Callback<T>* _Nonnull cb) {	
-		cbInfo[cb].push_back({platform::get_backtrace(), firedCbStack.empty() ? nullptr : firedCbStack[0]});
-		if (cbInfo[cb].size() >= 2) {
-			int x = 1;
-			x = x + 1;
-		}
+	void addCallbackAndClear(Callback<T>* _Nonnull cb) {		
+		cb->callerBacktrace = platform::get_backtrace();
 		sav->addCallbackAndDelFutureRef(cb);
 		sav = nullptr;
 	}
 
 	void addYieldedCallbackAndClear(Callback<T>* _Nonnull cb) {
-		cbInfo[cb].push_back({platform::get_backtrace(), firedCbStack.empty() ? nullptr : firedCbStack[0]});
-		if (cbInfo[cb].size() >= 2) {
-			int x = 1;
-			x = x + 1;
-		}
 		sav->addYieldedCallbackAndDelFutureRef(cb);
 		sav = nullptr;
 	}
 
 	void addCallbackChainAndClear(Callback<T>* cb) {
-		{
-			auto curr = cb;
-			while (curr) {
-				cbInfo[curr].push_back({platform::get_backtrace(), firedCbStack.empty() ? nullptr : firedCbStack[0]});
-				if (cbInfo[curr].size() >= 2) {
-					int x = 1;
-					x = x + 1;
-				}		
-				curr = curr->next;
-			}
-		}
 		sav->addCallbackChainAndDelFutureRef(cb);
 		sav = nullptr;
 	}
@@ -1343,13 +1309,6 @@ public:
 		return queue->isError();
 	}
 	void addCallbackAndClear(SingleCallback<T>* cb) {
-		if (cb) {
-			cbInfo[cb].push_back({platform::get_backtrace(), firedCbStack.empty() ? nullptr : firedCbStack[0]});
-			if (cbInfo[cb].size() >= 2) {
-				int x = 1;
-				x = x + 1;
-			}
-		}
 		queue->addCallbackAndDelFutureRef(cb);
 		queue = nullptr;
 	}
@@ -1570,29 +1529,18 @@ struct Actor<void> {
 #endif
 };
 
-struct Raii {
-	Raii(CallbackBase* cb) {
-		firedCbStack.push_back(cb);
-	}
-	~Raii() {				
-		cbInfo[firedCbStack.back()].erase(cbInfo[firedCbStack.back()].begin());
-		firedCbStack.pop_back();		
-	}
-};
-
 template <class ActorType, int CallbackNumber, class ValueType>
 struct ActorCallback : Callback<ValueType> {
 	virtual void fire(ValueType const& value) override {
 #ifdef ENABLE_SAMPLING
 		LineageScope _(static_cast<ActorType*>(this)->lineageAddr());
 #endif
-		Raii raii(this);
 		static_cast<ActorType*>(this)->a_callback_fire(this, value);
 	}
 	virtual void error(Error e) override {
 #ifdef ENABLE_SAMPLING
 		LineageScope _(static_cast<ActorType*>(this)->lineageAddr());
-#endif		
+#endif
 		static_cast<ActorType*>(this)->a_callback_error(this, e);
 	}
 };
@@ -1603,21 +1551,18 @@ struct ActorSingleCallback : SingleCallback<ValueType> {
 #ifdef ENABLE_SAMPLING
 		LineageScope _(static_cast<ActorType*>(this)->lineageAddr());
 #endif
-		Raii raii(this);
 		static_cast<ActorType*>(this)->a_callback_fire(this, value);
 	}
 	void fire(ValueType&& value) override {
 #ifdef ENABLE_SAMPLING
 		LineageScope _(static_cast<ActorType*>(this)->lineageAddr());
 #endif
-		Raii raii(this);
 		static_cast<ActorType*>(this)->a_callback_fire(this, std::move(value));
 	}
 	void error(Error e) override {
 #ifdef ENABLE_SAMPLING
 		LineageScope _(static_cast<ActorType*>(this)->lineageAddr());
 #endif
-		//Raii raii(this);
 		static_cast<ActorType*>(this)->a_callback_error(this, e);
 	}
 };
