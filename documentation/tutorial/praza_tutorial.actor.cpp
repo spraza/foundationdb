@@ -34,14 +34,19 @@ ACTOR Future<Void> bar(Reference<AsyncVar<int>> av) {
 
 ACTOR Future<Void> foo() {
 	state Reference<AsyncVar<int>> av = makeReference<AsyncVar<int>>(5);
+	state Future<Void> f = bar(av);
+	state Future<Void> d10 = delay(10);
+	state Future<Void> d3 = delay(3);
 	loop {
 		choose {
-			when(wait(bar(av))) {}
-			// when(wait(delay(5))) {
-			// 	av->set(av->get() + 5);
-			// }
-			when(wait(delay(2))) {
-				// av->trigger();
+			when(wait(f)) {}
+			when(wait(d10)) {
+				av->set(av->get() + 5);
+				d10 = delay(10);
+			}
+			when(wait(d3)) {
+				av->trigger();
+				d3 = delay(3);
 			}
 		}
 	}
