@@ -90,17 +90,34 @@ struct ClogRemoteTLog : TestWorkload {
 		return Void();
 	}
 
-	ACTOR static Future<Void> clogTLog(ClogRemoteTLog* self) {
-		wait(delay(self->clogInitDelaySec));
-		std::vector<IPAddress> remoteIPs;
-		for (const auto& process : g_simulator->getAllProcesses()) {
-			const auto& ip = process->address.ip;
-			if (process->locality.dcId().present() && process->locality.dcId() == g_simulator->remoteDcId) {
-				remoteIPs.push_back(ip);
+	ACTOR static Future<std::vector<IPAddress>> remoteSSAddresses(Database cx) {
+		state std::vector<IPAddress> ret;
+		Transaction tr(cx);
+		tr.setOption(FDBTransactionOptions::READ_SYSTEM_KEYS);
+		tr.setOption(FDBTransactionOptions::PRIORITY_SYSTEM_IMMEDIATE);
+		tr.setOption(FDBTransactionOptions::LOCK_AWARE);
+		// get all storage servers
+		std::vector<std::pair<StorageServerInterface, ProcessClass>> results =
+		    wait(NativeAPI::getServerListAndProcessClasses(&tr));
+		for (auto& [ssi, p] : results) {
+			if (ssi.locality.dcId().present() && ssi.locality.dcId().get() == g_simulator->remoteDcId) {
+				ret.push_back(ssi.address().ip);
 			}
 		}
+		return ret;
+	}
+
+	ACTOR static Future<Void> clogTLog(ClogRemoteTLog* self, Database db) {
+		wait(delay(self->clogInitDelaySec));
+		std::vector<IPAddress> remoteIPs = wait(remoteSSAddresses(db));
+		// for (const auto& process : g_simulator->getAllProcesses()) {
+		// 	const auto& ip = process->address.ip;
+		// 	if (process->locality.dcId().present() && process->locality.dcId().get() == g_simulator->remoteDcId) {
+		// 		remoteIPs.push_back(ip);
+		// 	}
+		// }
 		ASSERT(!remoteIPs.empty());
-		std::vector<IPAddress> remoteTLogIPs;
+		std::vector<IPAddress> remoteTLogIPs; // todo: confirm this covers remote satellite tlogs
 		for (const auto& tLogSet : self->dbInfo->get().logSystemConfig.tLogs) {
 			if (tLogSet.isLocal) {
 				continue;
@@ -117,6 +134,8 @@ struct ClogRemoteTLog : TestWorkload {
 				TraceEvent("ClogRemoteTLog").detail("RemoteTLogIPSrc", remoteTLogIP).detail("RemoteIPDst", remoteIP);
 				g_simulator->clogPair(remoteTLogIP, remoteIP, self->testDuration);
 				cloggedRemoteIPs.push_back(remoteIP);
+				break; // clog 1 connection bw remote tlog and remote ss for now, and that is from random remote tlog to
+				       // first ss (in our vector)
 			}
 		}
 		ASSERT(!cloggedRemoteIPs.empty());
@@ -134,7 +153,7 @@ struct ClogRemoteTLog : TestWorkload {
 	}
 
 	ACTOR Future<Void> workload(ClogRemoteTLog* self, Database db) {
-		state Future<Void> clog = self->clogTLog(self);
+		state Future<Void> clog = self->clogTLog(self, db);
 		loop choose {
 			when(wait(delay(self->lagMeasurementFrequencySec))) {
 				wait(fetchSSVersionLag(db));

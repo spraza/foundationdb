@@ -3260,7 +3260,8 @@ public:
 			return false;
 		}
 
-		return transactionSystemContainsDegradedServers();
+		return true;
+		// return transactionSystemContainsDegradedServers();
 	}
 
 	// Returns true when the cluster controller should trigger a failover due to degraded servers used in the

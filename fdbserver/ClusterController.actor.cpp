@@ -3004,6 +3004,7 @@ ACTOR Future<Void> workerHealthMonitor(ClusterControllerData* self) {
 							                                     self->degradationInfo.disconnectedServers.end());
 							TraceEvent(SevWarnAlways, "DegradedServerDetectedAndTriggerRecovery")
 							    .detail("RecentRecoveryCountDueToHealth", self->recentRecoveryCountDueToHealth());
+							std::cout << "Triggering recovery..." << std::endl;
 							self->db.forceMasterFailure.trigger();
 						}
 					} else {

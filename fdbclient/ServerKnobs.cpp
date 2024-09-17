@@ -781,7 +781,7 @@ void ServerKnobs::initialize(Randomize randomize, ClientKnobs* clientKnobs, IsSi
 	init( ENCRYPT_KEY_PROXY_FAILURE_TIME,                        0.1 ); if ( isSimulated ) ENCRYPT_KEY_PROXY_FAILURE_TIME = 1.0 + deterministicRandom()->random01();
 	init( CC_DEGRADED_PEER_DEGREE_TO_EXCLUDE,                      3 );
 	init( CC_MAX_EXCLUSION_DUE_TO_HEALTH,                          2 );
-	init( CC_HEALTH_TRIGGER_RECOVERY,                          false );
+	init( CC_HEALTH_TRIGGER_RECOVERY,                          true );
 	init( CC_TRACKING_HEALTH_RECOVERY_INTERVAL,               3600.0 );
 	init( CC_MAX_HEALTH_RECOVERY_COUNT,                            5 );
 	init( CC_HEALTH_TRIGGER_FAILOVER,                          false );

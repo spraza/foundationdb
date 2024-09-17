@@ -750,6 +750,10 @@ ACTOR Future<Void> registrationClient(
 	}
 }
 
+bool isSS(const NetworkAddress& address, Reference<AsyncVar<ServerDBInfo> const> dbInfo) {
+	return true;
+}
+
 // Returns true if `address` is used in the db (indicated by `dbInfo`) transaction system and in the db's primary DC.
 bool addressInDbAndPrimaryDc(const NetworkAddress& address, Reference<AsyncVar<ServerDBInfo> const> dbInfo) {
 	const auto& dbi = dbInfo->get();
@@ -962,11 +966,16 @@ TEST_CASE("/fdbserver/worker/addressInDbAndPrimarySatelliteDc") {
 
 } // namespace
 
-bool addressInDbAndRemoteDc(const NetworkAddress& address, Reference<AsyncVar<ServerDBInfo> const> dbInfo) {
+bool addressInDbAndRemoteDc(const NetworkAddress& address,
+                            Reference<AsyncVar<ServerDBInfo> const> dbInfo,
+                            bool considerSatellite) {
 	const auto& dbi = dbInfo->get();
 
 	for (const auto& logSet : dbi.logSystemConfig.tLogs) {
-		if (logSet.isLocal || logSet.locality == tagLocalitySatellite) {
+		if (logSet.isLocal) {
+			continue;
+		}
+		if (!considerSatellite && logSet.locality == tagLocalitySatellite) {
 			continue;
 		}
 		for (const auto& tlog : logSet.tLogs) {
@@ -985,9 +994,12 @@ bool addressInDbAndRemoteDc(const NetworkAddress& address, Reference<AsyncVar<Se
 	return false;
 }
 
-bool addressesInDbAndRemoteDc(const NetworkAddressList& addresses, Reference<AsyncVar<ServerDBInfo> const> dbInfo) {
-	return addressInDbAndRemoteDc(addresses.address, dbInfo) ||
-	       (addresses.secondaryAddress.present() && addressInDbAndRemoteDc(addresses.secondaryAddress.get(), dbInfo));
+bool addressesInDbAndRemoteDc(const NetworkAddressList& addresses,
+                              Reference<AsyncVar<ServerDBInfo> const> dbInfo,
+                              bool considerSatellite = false) {
+	return addressInDbAndRemoteDc(addresses.address, dbInfo, considerSatellite) ||
+	       (addresses.secondaryAddress.present() &&
+	        addressInDbAndRemoteDc(addresses.secondaryAddress.get(), dbInfo, considerSatellite));
 }
 
 namespace {
@@ -1003,12 +1015,14 @@ TEST_CASE("/fdbserver/worker/addressInDbAndRemoteDc") {
 	testDbInfo.logSystemConfig.tLogs.push_back(TLogSet());
 	testDbInfo.logSystemConfig.tLogs.back().isLocal = true;
 	testDbInfo.logSystemConfig.tLogs.back().tLogs.push_back(OptionalInterface<TLogInterface>());
-	ASSERT(!addressInDbAndRemoteDc(g_network->getLocalAddress(), makeReference<AsyncVar<ServerDBInfo>>(testDbInfo)));
+	ASSERT(!addressInDbAndRemoteDc(
+	    g_network->getLocalAddress(), makeReference<AsyncVar<ServerDBInfo>>(testDbInfo), false));
 
 	TLogInterface localTlog(testLocal);
 	localTlog.initEndpoints();
 	testDbInfo.logSystemConfig.tLogs.back().tLogs.push_back(OptionalInterface(localTlog));
-	ASSERT(!addressInDbAndRemoteDc(g_network->getLocalAddress(), makeReference<AsyncVar<ServerDBInfo>>(testDbInfo)));
+	ASSERT(!addressInDbAndRemoteDc(
+	    g_network->getLocalAddress(), makeReference<AsyncVar<ServerDBInfo>>(testDbInfo), false));
 
 	// Create a remote TLog, and it should be considered as in remote DC.
 	LocalityData fakeRemote;
@@ -1019,7 +1033,8 @@ TEST_CASE("/fdbserver/worker/addressInDbAndRemoteDc") {
 	testDbInfo.logSystemConfig.tLogs.push_back(TLogSet());
 	testDbInfo.logSystemConfig.tLogs.back().isLocal = false;
 	testDbInfo.logSystemConfig.tLogs.back().tLogs.push_back(OptionalInterface(remoteTlog));
-	ASSERT(addressInDbAndRemoteDc(g_network->getLocalAddress(), makeReference<AsyncVar<ServerDBInfo>>(testDbInfo)));
+	ASSERT(
+	    addressInDbAndRemoteDc(g_network->getLocalAddress(), makeReference<AsyncVar<ServerDBInfo>>(testDbInfo), false));
 
 	// Create a remote log router, and it should be considered as in remote DC.
 	NetworkAddress logRouterAddress(IPAddress(0x26262626), 1);
@@ -1027,7 +1042,7 @@ TEST_CASE("/fdbserver/worker/addressInDbAndRemoteDc") {
 	remoteLogRouter.initEndpoints();
 	remoteLogRouter.peekMessages = RequestStream<struct TLogPeekRequest>(Endpoint({ logRouterAddress }, UID(1, 2)));
 	testDbInfo.logSystemConfig.tLogs.back().logRouters.push_back(OptionalInterface(remoteLogRouter));
-	ASSERT(addressInDbAndRemoteDc(logRouterAddress, makeReference<AsyncVar<ServerDBInfo>>(testDbInfo)));
+	ASSERT(addressInDbAndRemoteDc(logRouterAddress, makeReference<AsyncVar<ServerDBInfo>>(testDbInfo), false));
 
 	// Create a satellite tlog, and it shouldn't be considered as in remote DC.
 	testDbInfo.logSystemConfig.tLogs.push_back(TLogSet());
@@ -1037,7 +1052,7 @@ TEST_CASE("/fdbserver/worker/addressInDbAndRemoteDc") {
 	satelliteTLog.initEndpoints();
 	satelliteTLog.peekMessages = RequestStream<struct TLogPeekRequest>(Endpoint({ satelliteTLogAddress }, UID(1, 2)));
 	testDbInfo.logSystemConfig.tLogs.back().tLogs.push_back(OptionalInterface(satelliteTLog));
-	ASSERT(!addressInDbAndRemoteDc(satelliteTLogAddress, makeReference<AsyncVar<ServerDBInfo>>(testDbInfo)));
+	ASSERT(!addressInDbAndRemoteDc(satelliteTLogAddress, makeReference<AsyncVar<ServerDBInfo>>(testDbInfo), false));
 
 	return Void();
 }
@@ -1111,17 +1126,17 @@ bool shouldCheckPeer(Reference<Peer> peer) {
 		return true;
 	}
 
-	if (peer->pingLatencies.getPopulationSize() >= SERVER_KNOBS->PEER_LATENCY_CHECK_MIN_POPULATION) {
-		// Ignore peers that don't have enough samples.
-		// TODO(zhewu): Currently, FlowTransport latency monitor clears ping latency samples on a
-		// regular basis, which may affect the measurement count. Currently,
-		// WORKER_HEALTH_MONITOR_INTERVAL is much smaller than the ping clearance interval, so it may be
-		// ok. If this ends to be a problem, we need to consider keep track of last ping latencies
-		// logged.
-		return true;
-	}
+	// if (peer->pingLatencies.getPopulationSize() >= SERVER_KNOBS->PEER_LATENCY_CHECK_MIN_POPULATION) {
+	// 	// Ignore peers that don't have enough samples.
+	// 	// TODO(zhewu): Currently, FlowTransport latency monitor clears ping latency samples on a
+	// 	// regular basis, which may affect the measurement count. Currently,
+	// 	// WORKER_HEALTH_MONITOR_INTERVAL is much smaller than the ping clearance interval, so it may be
+	// 	// ok. If this ends to be a problem, we need to consider keep track of last ping latencies
+	// 	// logged.
+	// 	return true;
+	// }
 
-	return false;
+	return true;
 }
 
 // Returns true if `address` is a degraded/disconnected peer in `lastReq` sent to CC.
@@ -1155,7 +1170,7 @@ UpdateWorkerHealthRequest doPeerHealthCheck(const WorkerInterface& interf,
 	WorkerLocation workerLocation = None;
 	if (addressesInDbAndPrimaryDc(interf.addresses(), dbInfo)) {
 		workerLocation = Primary;
-	} else if (addressesInDbAndRemoteDc(interf.addresses(), dbInfo)) {
+	} else if (addressesInDbAndRemoteDc(interf.addresses(), dbInfo, true)) {
 		workerLocation = Remote;
 	} else if (addressesInDbAndPrimarySatelliteDc(interf.addresses(), dbInfo)) {
 		workerLocation = Satellite;
@@ -1195,7 +1210,8 @@ UpdateWorkerHealthRequest doPeerHealthCheck(const WorkerInterface& interf,
 		    .detail("PingTimeoutCount", peer->timeoutCount)
 		    .detail("ConnectionFailureCount", peer->connectFailedCount);
 		if ((workerLocation == Primary && addressInDbAndPrimaryDc(address, dbInfo)) ||
-		    (workerLocation == Remote && addressInDbAndRemoteDc(address, dbInfo))) {
+		    (workerLocation == Remote && addressInDbAndRemoteDc(address, dbInfo, false)) ||
+		    (workerLocation == Remote && isSS(address, dbInfo))) {
 			// Monitors intra DC latencies between servers that in the primary or remote DC's transaction
 			// systems. Note that currently we are not monitor storage servers, since lagging in storage
 			// servers today already can trigger server exclusion by data distributor.
@@ -1325,7 +1341,7 @@ UpdateWorkerHealthRequest doPeerHealthCheck(const WorkerInterface& interf,
 			}
 
 			if ((workerLocation == Primary && addressInDbAndPrimaryDc(address, dbInfo)) ||
-			    (workerLocation == Remote && addressInDbAndRemoteDc(address, dbInfo)) ||
+			    (workerLocation == Remote && addressInDbAndRemoteDc(address, dbInfo, false)) ||
 			    (workerLocation == Primary && addressInDbAndPrimarySatelliteDc(address, dbInfo)) ||
 			    (checkRemoteLogRouterConnectivity && (workerLocation == Primary || workerLocation == Satellite) &&
 			     addressIsRemoteLogRouter(address, dbInfo))) {

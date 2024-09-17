@@ -1296,7 +1296,9 @@ void registerThreadForProfiling();
 bool addressInDbAndPrimarySatelliteDc(const NetworkAddress& address, Reference<AsyncVar<ServerDBInfo> const> dbInfo);
 
 // Returns true if `address` is used in the db (indicated by `dbInfo`) transaction system and in the db's remote DC.
-bool addressInDbAndRemoteDc(const NetworkAddress& address, Reference<AsyncVar<ServerDBInfo> const> dbInfo);
+bool addressInDbAndRemoteDc(const NetworkAddress& address,
+                            Reference<AsyncVar<ServerDBInfo> const> dbInfo,
+                            bool considerSatellite = false);
 
 void updateCpuProfiler(ProfilerRequest req);
 

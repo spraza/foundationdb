@@ -50,6 +50,7 @@
 #include "flow/UnitTest.h"
 #include "flow/WatchFile.actor.h"
 #include "flow/IConnection.h"
+#include "fdbrpc/SimulatorProcessInfo.h"
 #define XXH_INLINE_ALL
 #include "flow/xxhash.h"
 #include "flow/actorcompiler.h" // This must be the last #include.
@@ -579,7 +580,14 @@ ACTOR Future<Void> connectionMonitor(Reference<Peer> peer) {
 				}
 				when(wait(pingRequest.reply.getFuture())) {
 					if (peer->destination.isPublic()) {
-						peer->pingLatencies.addSample(now() - startTime);
+						auto d = now() - startTime;
+						if (g_simulator->getCurrentProcess()->address.ip.toString() == "abcd::2:1:1:0") {
+							// std::cout << "ping info\n";
+							// std::cout << "peer address: " << peer->destination.ip.toString() << std::endl;
+							// std::cout << "delay: " << d << std::endl;
+							// d = 10; // todo: hack, see why clogging from sim test is not increasing ping latency
+						}
+						peer->pingLatencies.addSample(d);
 					}
 					break;
 				}
