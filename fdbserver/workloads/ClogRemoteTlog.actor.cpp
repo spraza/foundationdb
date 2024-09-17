@@ -63,6 +63,7 @@ struct ClogRemoteTLog : TestWorkload {
 			TraceEvent("NoProcesses");
 			return Void();
 		}
+		double maxSSLag{ 0 };
 		for (auto p : processMap.obj()) {
 			StatusObjectReader process(p.second);
 			if (process.has("roles")) {
@@ -78,9 +79,13 @@ struct ClogRemoteTLog : TestWorkload {
 						    .detail("Role", role["role"].get_str())
 						    .detail("SecondLag", dataLag["seconds"].get_value<double>())
 						    .detail("VersionLag", dataLag["versions"].get_int64());
+						maxSSLag = std::max(maxSSLag, dataLag["seconds"].get_value<double>());
 					}
 				}
 			}
+		}
+		if (maxSSLag > 0) {
+			std::cout << "maxSSLag is " << maxSSLag << std::endl;
 		}
 		return Void();
 	}

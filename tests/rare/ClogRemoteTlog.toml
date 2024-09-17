@@ -25,5 +25,5 @@ expectedRate = 0
 testName = 'ClogRemoteTLog'
 testDuration = 120.0
 lagMeasurementFrequencySec = 5
-clogInitDelaySec = 12
-clogDuration = 20
+clogInitDelaySec = 17
+clogDuration = 60
