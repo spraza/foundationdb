@@ -24,30 +24,30 @@
 
 #include "flow/actorcompiler.h"
 
-ACTOR Future<Void> bar(Reference<AsyncVar<int>> av) {
-	loop {
-		std::cout << "av.get() = " << av->get() << std::endl;
-		wait(av->onChange()); // notificiation
-		// wait(delay(1)); // poll every 1 second
-	}
+int x{ 0 };
+
+ACTOR Future<Void> measure() {
+	wait(delay(0.1));
+	std::cout << x << std::endl;
+	return Void();
+}
+
+ACTOR Future<Void> increase() {
+	wait(delay(5));
+	x += 1;
+	wait(Never());
+	UNREACHABLE();
+	return Void();
 }
 
 ACTOR Future<Void> foo() {
-	state Reference<AsyncVar<int>> av = makeReference<AsyncVar<int>>(5);
-	state Future<Void> f = bar(av);
-	state Future<Void> d10 = delay(10);
-	state Future<Void> d3 = delay(3);
-	loop {
-		choose {
-			when(wait(f)) {}
-			when(wait(d10)) {
-				av->set(av->get() + 5);
-				d10 = delay(10);
-			}
-			when(wait(d3)) {
-				av->trigger();
-				d3 = delay(3);
-			}
+	state Future<Void> f = increase();
+	loop choose {
+		when(wait(delay(3))) {
+			wait(measure());
+		}
+		when(wait(f)) {
+			std::cout << "bar\n";
 		}
 	}
 }
