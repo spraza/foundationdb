@@ -109,13 +109,8 @@ struct ClogRemoteTLog : TestWorkload {
 
 	ACTOR static Future<Void> clogTLog(ClogRemoteTLog* self, Database db) {
 		wait(delay(self->clogInitDelaySec));
+
 		std::vector<IPAddress> remoteIPs = wait(remoteSSAddresses(db));
-		// for (const auto& process : g_simulator->getAllProcesses()) {
-		// 	const auto& ip = process->address.ip;
-		// 	if (process->locality.dcId().present() && process->locality.dcId().get() == g_simulator->remoteDcId) {
-		// 		remoteIPs.push_back(ip);
-		// 	}
-		// }
 		ASSERT(!remoteIPs.empty());
 		std::vector<IPAddress> remoteTLogIPs; // todo: confirm this covers remote satellite tlogs
 		for (const auto& tLogSet : self->dbInfo->get().logSystemConfig.tLogs) {
@@ -129,23 +124,29 @@ struct ClogRemoteTLog : TestWorkload {
 		ASSERT(!remoteTLogIPs.empty());
 		state IPAddress remoteTLogIP = remoteTLogIPs[deterministicRandom()->randomInt(0, remoteTLogIPs.size())];
 		state std::vector<IPAddress> cloggedRemoteIPs;
+		std::cout << "Clogging start\n";
 		for (const auto& remoteIP : remoteIPs) {
 			if (remoteIP != remoteTLogIP) {
 				TraceEvent("ClogRemoteTLog").detail("RemoteTLogIPSrc", remoteTLogIP).detail("RemoteIPDst", remoteIP);
+				std::cout << "clog src ip: " << remoteTLogIP.toString() << std::endl;
+				std::cout << "clog dst ip: " << remoteIP.toString() << std::endl;
 				g_simulator->clogPair(remoteTLogIP, remoteIP, self->testDuration);
 				cloggedRemoteIPs.push_back(remoteIP);
 				break; // clog 1 connection bw remote tlog and remote ss for now, and that is from random remote tlog to
 				       // first ss (in our vector)
 			}
 		}
+		std::cout << "Clogging done\n";
 		ASSERT(!cloggedRemoteIPs.empty());
 
 		wait(delay(self->clogDuration));
 		TraceEvent("UnclogRemoteTLogStart");
+		std::cout << "Un-clogging start\n";
 		for (const auto& remoteIP : cloggedRemoteIPs) {
 			TraceEvent("UnclogRemoteTLog").detail("RemoteTLogIPSrc", remoteTLogIP).detail("RemoteIPDst", remoteIP);
 			g_simulator->unclogPair(remoteTLogIP, remoteIP);
 		}
+		std::cout << "Un-clogging done\n";
 		TraceEvent("UnclogRemoteTLogFinished");
 
 		wait(Never());
@@ -153,13 +154,23 @@ struct ClogRemoteTLog : TestWorkload {
 	}
 
 	ACTOR Future<Void> workload(ClogRemoteTLog* self, Database db) {
-		state Future<Void> clog = self->clogTLog(self, db);
-		loop choose {
-			when(wait(delay(self->lagMeasurementFrequencySec))) {
-				wait(fetchSSVersionLag(db));
-			}
-			when(wait(clog)) {}
+		while (self->dbInfo->get().recoveryState < RecoveryState::FULLY_RECOVERED) {
+			wait(self->dbInfo->onChange());
 		}
+
+		try {
+			state Future<Void> clog = self->clogTLog(self, db);
+			loop choose {
+				when(wait(delay(self->lagMeasurementFrequencySec))) {
+					wait(fetchSSVersionLag(db));
+				}
+				when(wait(clog)) {}
+			}
+		} catch (Error& e) {
+			std::cout << "error: " << e.code() << ", " << e.name() << ", " << e.what() << std::endl;
+			throw e;
+		}
+		// return Void();
 	}
 };
 

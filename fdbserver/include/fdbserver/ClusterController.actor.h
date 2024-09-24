@@ -676,6 +676,8 @@ public:
 				continue;
 			}
 			if (isExcludedDegradedServer(worker_details.interf.addresses())) {
+				std::cout << "degraded server not recruited, tlog complex type, ip: "
+				          << worker_details.interf.address().toString() << std::endl;
 				logWorkerUnavailable(SevInfo,
 				                     id,
 				                     "complex",
@@ -926,6 +928,8 @@ public:
 				continue;
 			}
 			if (isExcludedDegradedServer(worker_details.interf.addresses())) {
+				std::cout << "degraded server not recruited, tlog type, ip: "
+				          << worker_details.interf.address().toString() << std::endl;
 				logWorkerUnavailable(SevInfo,
 				                     id,
 				                     "simple",

@@ -1,8 +1,8 @@
 [configuration]
 processesPerMachine = 1
-machineCount = 10
+machineCount = 20
 generateFearless = true
-storageEngineType = 0
+minimumRegions = 2
 
 [[knobs]]
 enable_worker_health_monitor = true
@@ -10,6 +10,8 @@ cc_enable_worker_health_monitor = true
 cc_worker_health_checking_interval = 15
 cc_min_degradation_interval = 30
 cc_health_trigger_recovery = true
+cc_tracking_health_recovery_interval = 300
+cc_max_health_recovery_count = 1
 peer_latency_degradation_threshold = 1
 peek_tracker_expiration_time = 600
 
@@ -25,5 +27,5 @@ expectedRate = 0
 testName = 'ClogRemoteTLog'
 testDuration = 240.0
 lagMeasurementFrequencySec = 5
-clogInitDelaySec = 17
+clogInitDelaySec = 30
 clogDuration = 120

@@ -2969,6 +2969,7 @@ ACTOR Future<Void> workerHealthMonitor(ClusterControllerData* self) {
 				if (self->degradationInfo.degradedServers.find(*it) == self->degradationInfo.degradedServers.end() &&
 				    self->degradationInfo.disconnectedServers.find(*it) ==
 				        self->degradationInfo.disconnectedServers.end()) {
+					std::cout << "cc erased some degraded server(s)\n";
 					self->excludedDegradedServers.erase(it++);
 					hasRecoveredServer = true;
 				} else {
@@ -2997,9 +2998,18 @@ ACTOR Future<Void> workerHealthMonitor(ClusterControllerData* self) {
 					TraceEvent(SevWarnAlways, "HealthMonitorPaused");
 				} else if (self->shouldTriggerRecoveryDueToDegradedServers()) {
 					if (SERVER_KNOBS->CC_HEALTH_TRIGGER_RECOVERY) {
+						std::cout << "may recover, condition: " << self->recentRecoveryCountDueToHealth() << " < "
+						          << SERVER_KNOBS->CC_MAX_HEALTH_RECOVERY_COUNT << std::endl;
 						if (self->recentRecoveryCountDueToHealth() < SERVER_KNOBS->CC_MAX_HEALTH_RECOVERY_COUNT) {
 							self->recentHealthTriggeredRecoveryTime.push(now());
 							self->excludedDegradedServers = self->degradationInfo.degradedServers;
+							std::cout << "cc thinks degraded servers are: ";
+							for (auto& e : self->degradationInfo.degradedServers) {
+								std::cout << e.toString() << ", ";
+							}
+							std::cout << std::endl;
+							std::cout << "disconnected servers size: "
+							          << self->degradationInfo.disconnectedServers.size() << std::endl;
 							self->excludedDegradedServers.insert(self->degradationInfo.disconnectedServers.begin(),
 							                                     self->degradationInfo.disconnectedServers.end());
 							TraceEvent(SevWarnAlways, "DegradedServerDetectedAndTriggerRecovery")
@@ -3008,6 +3018,7 @@ ACTOR Future<Void> workerHealthMonitor(ClusterControllerData* self) {
 							self->db.forceMasterFailure.trigger();
 						}
 					} else {
+						std::cout << "cc erased all degraded server(s)\n";
 						self->excludedDegradedServers.clear();
 						TraceEvent(SevWarn, "DegradedServerDetectedAndSuggestRecovery").log();
 					}
