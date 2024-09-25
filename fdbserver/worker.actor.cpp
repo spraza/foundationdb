@@ -1406,6 +1406,11 @@ ACTOR Future<Void> healthMonitor(Reference<AsyncVar<Optional<ClusterControllerFu
 
 				// Disconnected or degraded peers are reported to the cluster controller.
 				req.address = FlowTransport::transport().getLocalAddress();
+				std::cout << "worker " << req.address.toString() << " complained about these links/servers: ";
+				for (const auto& e : req.degradedPeers) {
+					std::cout << e.toString() << ", ";
+				}
+				std::cout << std::endl;
 				ccInterface->get().get().updateWorkerHealth.send(req);
 			}
 		}

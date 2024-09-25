@@ -91,20 +91,29 @@ struct ClogRemoteTLog : TestWorkload {
 	}
 
 	ACTOR static Future<std::vector<IPAddress>> remoteSSAddresses(Database cx) {
-		state std::vector<IPAddress> ret;
-		Transaction tr(cx);
-		tr.setOption(FDBTransactionOptions::READ_SYSTEM_KEYS);
-		tr.setOption(FDBTransactionOptions::PRIORITY_SYSTEM_IMMEDIATE);
-		tr.setOption(FDBTransactionOptions::LOCK_AWARE);
-		// get all storage servers
-		std::vector<std::pair<StorageServerInterface, ProcessClass>> results =
-		    wait(NativeAPI::getServerListAndProcessClasses(&tr));
-		for (auto& [ssi, p] : results) {
-			if (ssi.locality.dcId().present() && ssi.locality.dcId().get() == g_simulator->remoteDcId) {
-				ret.push_back(ssi.address().ip);
+		std::vector<IPAddress> ips; // all FDB process IPs
+		for (const auto& process : g_simulator->getAllProcesses()) {
+			const auto& ip = process->address.ip;
+			if (process->startingClass != ProcessClass::TesterClass) {
+				ips.push_back(ip);
 			}
 		}
-		return ret;
+		return ips;
+
+		// state std::vector<IPAddress> ret;
+		// Transaction tr(cx);
+		// tr.setOption(FDBTransactionOptions::READ_SYSTEM_KEYS);
+		// tr.setOption(FDBTransactionOptions::PRIORITY_SYSTEM_IMMEDIATE);
+		// tr.setOption(FDBTransactionOptions::LOCK_AWARE);
+		// // get all storage servers
+		// std::vector<std::pair<StorageServerInterface, ProcessClass>> results =
+		//     wait(NativeAPI::getServerListAndProcessClasses(&tr));
+		// for (auto& [ssi, p] : results) {
+		// 	if (ssi.locality.dcId().present() && ssi.locality.dcId().get() == g_simulator->remoteDcId) {
+		// 		ret.push_back(ssi.address().ip);
+		// 	}
+		// }
+		// return ret;
 	}
 
 	ACTOR static Future<Void> clogTLog(ClogRemoteTLog* self, Database db) {
@@ -131,23 +140,26 @@ struct ClogRemoteTLog : TestWorkload {
 				std::cout << "clog src ip: " << remoteTLogIP.toString() << std::endl;
 				std::cout << "clog dst ip: " << remoteIP.toString() << std::endl;
 				g_simulator->clogPair(remoteTLogIP, remoteIP, self->testDuration);
+				// g_simulator->clogPair(remoteIP, remoteTLogIP, self->testDuration);
 				cloggedRemoteIPs.push_back(remoteIP);
-				break; // clog 1 connection bw remote tlog and remote ss for now, and that is from random remote tlog to
-				       // first ss (in our vector)
+				// break; // clog 1 connection bw remote tlog and remote ss for now, and that is from random remote tlog
+				// to
+				//  first ss (in our vector)
 			}
 		}
 		std::cout << "Clogging done\n";
 		ASSERT(!cloggedRemoteIPs.empty());
 
-		wait(delay(self->clogDuration));
-		TraceEvent("UnclogRemoteTLogStart");
-		std::cout << "Un-clogging start\n";
-		for (const auto& remoteIP : cloggedRemoteIPs) {
-			TraceEvent("UnclogRemoteTLog").detail("RemoteTLogIPSrc", remoteTLogIP).detail("RemoteIPDst", remoteIP);
-			g_simulator->unclogPair(remoteTLogIP, remoteIP);
-		}
-		std::cout << "Un-clogging done\n";
-		TraceEvent("UnclogRemoteTLogFinished");
+		// wait(delay(self->clogDuration));
+		// TraceEvent("UnclogRemoteTLogStart");
+		// std::cout << "Un-clogging start\n";
+		// for (const auto& remoteIP : cloggedRemoteIPs) {
+		// 	TraceEvent("UnclogRemoteTLog").detail("RemoteTLogIPSrc", remoteTLogIP).detail("RemoteIPDst", remoteIP);
+		// 	g_simulator->unclogPair(remoteTLogIP, remoteIP);
+		// 	g_simulator->unclogPair(remoteIP, remoteTLogIP);
+		// }
+		// std::cout << "Un-clogging done\n";
+		// TraceEvent("UnclogRemoteTLogFinished");
 
 		wait(Never());
 		return Void();
