@@ -1,0 +1,27 @@
+[configuration]
+processesPerMachine = 1
+generateFearless = true
+minimumRegions = 2
+machineCount = 20
+desiredTLogCount = 4
+commitProxyCount = 2
+grvProxyCount = 2
+resolverCount = 2
+storageEngineType = 0
+
+[[knobs]]
+connection_monitor_timeout = 10
+
+[[test]]
+testTitle = 'ExperimentClogLatency'
+
+[[test.workload]]
+testName = 'Cycle'
+nodeCount = 30000
+transactionsPerSecond = 2500.0
+testDuration = 300.0
+expectedRate = 0
+
+[[test.workload]]
+testName = 'ExperimentClogLatency'
+testDuration = 300.0

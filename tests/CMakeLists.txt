@@ -226,6 +226,7 @@ if(WITH_PYTHON)
   add_fdb_test(TEST_FILES fast/Watches.toml)
   add_fdb_test(TEST_FILES fast/WriteDuringRead.toml)
   add_fdb_test(TEST_FILES fast/WriteDuringReadClean.toml)
+  add_fdb_test(TEST_FILES fast/ExperimentClogLatency.toml)
   add_fdb_test(TEST_FILES noSim/RandomUnitTests.toml IGNORE)
 
   if(WITH_ROCKSDB)

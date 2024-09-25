@@ -506,7 +506,15 @@ ACTOR Future<Void> connectionMonitor(Reference<Peer> peer) {
 	state Endpoint remotePingEndpoint({ peer->destination }, Endpoint::wellKnownToken(WLTOKEN_PING_PACKET));
 	// set this to not immediately close the connection as idle if the peer already existed
 	peer->lastDataPacketSentTime = now();
+	// state double lastPrintTime1 = now();
+	// state double lastPrintTime2 = now();
 	loop {
+		// state bool x = FlowTransport::transport().getLocalAddress().ip.toString() == "abcd::2:2:1:3" &&
+		//                peer->destination.ip.toString().starts_with("abcd::2:0:1:0");
+		// if (x) {
+		// 	std::cout << "foo1 - flow transport found connection between abcd::2:2:1:3 and abcd::2:0:1:0" << std::endl;
+		// }
+
 		if (!FlowTransport::isClient() && !peer->destination.isPublic() && peer->compatible) {
 			// Don't send ping messages to clients unless necessary. Instead monitor incoming client pings.
 			// We ignore this block for incompatible clients because pings from server would trigger the
@@ -527,10 +535,18 @@ ACTOR Future<Void> connectionMonitor(Reference<Peer> peer) {
 			}
 		}
 
+		// if (x) {
+		// 	std::cout << "foo2 - flow transport found connection between abcd::2:2:1:3 and abcd::2:0:1:0" << std::endl;
+		// }
+
 		// We cannot let an error be thrown from connectionMonitor while still on the stack from scanPackets in
 		// connectionReader because then it would not call the destructor of connectionReader when connectionReader is
 		// cancelled.
 		wait(delay(0, TaskPriority::ReadSocket));
+
+		// if (x) {
+		// 	std::cout << "foo3 - flow transport found connection between abcd::2:2:1:3 and abcd::2:0:1:0" << std::endl;
+		// }
 
 		if (peer->reliable.empty() && peer->unsent.empty() && peer->outstandingReplies == 0) {
 			if (peer->peerReferences == 0 &&
@@ -545,7 +561,15 @@ ACTOR Future<Void> connectionMonitor(Reference<Peer> peer) {
 			}
 		}
 
+		// if (x) {
+		// 	std::cout << "foo4 - flow transport found connection between abcd::2:2:1:3 and abcd::2:0:1:0" << std::endl;
+		// }
+
 		wait(delayJittered(FLOW_KNOBS->CONNECTION_MONITOR_LOOP_TIME, TaskPriority::ReadSocket));
+
+		// if (x) {
+		// 	std::cout << "foo5 - flow transport found connection between abcd::2:2:1:3 and abcd::2:0:1:0" << std::endl;
+		// }
 
 		// TODO: Stop monitoring and close the connection with no onDisconnect requests outstanding
 		state PingRequest pingRequest;
@@ -554,11 +578,48 @@ ACTOR Future<Void> connectionMonitor(Reference<Peer> peer) {
 		state int timeouts = 0;
 		state double startTime = now();
 		loop {
+			// if (x) {
+			// 	std::cout << "foo6 - flow transport found connection between abcd::2:2:1:3 and abcd::2:0:1:0"
+			// 	          << std::endl;
+			// }
 			choose {
 				when(wait(delay(FLOW_KNOBS->CONNECTION_MONITOR_TIMEOUT))) {
+					// if (x) {
+					// 	std::cout << "foo7 - flow transport found connection between abcd::2:2:1:3 and abcd::2:0:1:0"
+					// 	          << std::endl;
+					// }
 					peer->timeoutCount++;
 					if (startingBytes == peer->bytesReceived) {
 						if (peer->destination.isPublic()) {
+							// double currentTime = now();
+							//   std::cout << "currentTime: " << currentTime << std::endl;
+							//   std::cout << "lastPrintTime = " << lastPrintTime << std::endl;
+							//   std::cout << "currentTime - lastPrintTime = " << currentTime - lastPrintTime <<
+							//   std::endl;
+							//  if (currentTime - lastPrintTime2 >= 10) {
+							//  	// if (now() - startTime > 1) {
+							//  	if (FlowTransport::transport().getLocalAddress().ip.toString() == "abcd::2:0:1:2" ||
+							//  	    peer->destination.ip.toString() == "abcd::2:0:1:2") {
+							//  		std::cout << "ping metric - self = "
+							//  		          << FlowTransport::transport().getLocalAddress().toString()
+							//  		          << ", peer = " << peer->destination.toString()
+							//  		          << ", latency = " << now() - startTime << std::endl;
+							//  	}
+							//  	//}
+							//  	lastPrintTime2 = now();
+							//  }
+							if (FlowTransport::transport().getLocalAddress().ip.toString() == "abcd::2:0:1:3" &&
+							    peer->destination.ip.toString().starts_with("abcd::2:0:1:1")) {
+								// if (now() - startTime > 1) {
+								//   std::cout << FlowTransport::transport().getLocalAddress().ip.toString() <<
+								//   std::endl; std::cout << peer->destination.ip.toString() << std::endl;
+
+								std::cout << "foo1 - ping metric - self = "
+								          << FlowTransport::transport().getLocalAddress().toString()
+								          << ", peer = " << peer->destination.toString()
+								          << ", latency = " << now() - startTime << std::endl;
+								// }
+							}
 							peer->pingLatencies.addSample(now() - startTime);
 						}
 						TraceEvent("ConnectionTimeout").suppressFor(1.0).detail("WithAddr", peer->destination);
@@ -574,7 +635,30 @@ ACTOR Future<Void> connectionMonitor(Reference<Peer> peer) {
 					timeouts++;
 				}
 				when(wait(pingRequest.reply.getFuture())) {
+					// if (x) {
+					// 	std::cout << "foo8 - flow transport found connection between abcd::2:2:1:3 and abcd::2:0:1:0"
+					// 	          << std::endl;
+					// }
+					// lastPrintTime1 = now();
+					// }
 					if (peer->destination.isPublic()) {
+						if (FlowTransport::transport().getLocalAddress().ip.toString() == "abcd::2:0:1:3" &&
+						    peer->destination.ip.toString().starts_with("abcd::2:0:1:1")) {
+							// if (now() - startTime > 1) {
+							//   std::cout << FlowTransport::transport().getLocalAddress().ip.toString() << std::endl;
+							//   std::cout << peer->destination.ip.toString() << std::endl;
+
+							std::cout << "foo2 - ping metric - self = "
+							          << FlowTransport::transport().getLocalAddress().toString()
+							          << ", peer = " << peer->destination.toString()
+							          << ", latency = " << now() - startTime << std::endl;
+							// }
+						}
+						// double currentTime = now();
+						//   std::cout << "currentTime: " << currentTime << std::endl;
+						//   std::cout << "lastPrintTime = " << lastPrintTime << std::endl;
+						//   std::cout << "currentTime - lastPrintTime = " << currentTime - lastPrintTime << std::endl;
+						//  if (currentTime - lastPrintTime1 >= 10) {
 						peer->pingLatencies.addSample(now() - startTime);
 					}
 					break;
@@ -705,6 +789,8 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 						when(Reference<IConnection> _conn =
 						         wait(INetworkConnections::net()->connect(self->destination))) {
 							conn = _conn;
+							// bool x = conn->isStableConnection();
+							// std::cout << x << std::endl;
 							wait(conn->connectHandshake());
 							self->connectLatencies.addSample(now() - self->lastConnectTime);
 							if (FlowTransport::isClient()) {

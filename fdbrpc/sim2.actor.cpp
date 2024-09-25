@@ -251,7 +251,22 @@ struct SimClogging {
 		if (!g_simulator->speedUpSimulation && !stableConnection && clogRecvUntil.count(to.ip))
 			t = std::max(t, clogRecvUntil[to.ip]);
 
-		return t - tnow;
+		auto ret = t - tnow;
+
+		if (!g_simulator->speedUpSimulation && !stableConnection && clogPairUntil.count(pair)) {
+			if (ret > 8) {
+				ret = 8;
+			}
+		}
+
+		if (from.ip.toString() == "abcd::2:0:1:3" && to.ip.toString() == "abcd::2:0:1:1") {
+			if (ret > 1) {
+				std::cout << "getRecvDelay between src = abcd::2:0:1:2 and dst = " << to.ip.toString() << " is " << ret
+				          << std::endl;
+			}
+		}
+
+		return ret;
 	}
 
 	bool disconnected(const IPAddress& from, const IPAddress& to) {
@@ -359,6 +374,13 @@ struct Sim2Conn final : IConnection, ReferenceCounted<Sim2Conn> {
 		                   std::any_of(peerProcess->childs.begin(),
 		                               peerProcess->childs.end(),
 		                               [&](ISimulator::ProcessInfo* child) { return child && child == process; });
+		// if (stableConnection && process->address.ip.toString() == "abcd::2:0:1:2" &&
+		//     peer->getPeerAddress().ip.toString().starts_with("abcd::2")) {
+		// 	std::cout << "found something\n";
+		// }
+		// if (stableConnection) {
+		// 	// std::cout << "found something\n";
+		// }
 
 		if (g_clogging.disconnected(process->address.ip, peerProcess->address.ip)) {
 			TraceEvent("SimulatedDisconnection")
@@ -528,6 +550,12 @@ private:
 			ASSERT(g_simulator->getCurrentProcess() == self->process);
 			wait(delay(g_clogging.getRecvDelay(
 			    self->peerProcess->address, self->process->address, self->isStableConnection())));
+			// if (self->isStableConnection()) {
+			// 	std::cout << "stable connection is true\n";
+			// } else {
+			// 	std::cout << "stable connection is false\n";
+			// }
+
 			ASSERT(g_simulator->getCurrentProcess() == self->process);
 			if (self->stopReceive.isReady()) {
 				wait(Future<Void>(Never()));

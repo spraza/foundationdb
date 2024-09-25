@@ -1143,6 +1143,15 @@ UpdateWorkerHealthRequest doPeerHealthCheck(const WorkerInterface& interf,
                                             Reference<AsyncVar<bool>> enablePrimaryTxnSystemHealthCheck) {
 	const auto& allPeers = FlowTransport::transport().getAllPeers();
 
+	// if (FlowTransport::transport().getLocalAddress().ip.toString() == "abcd::2:2:1:3") {
+	// 	std::cout << "peers of " << FlowTransport::transport().getLocalAddress().toString() << " are:\n";
+	// 	for (const auto& [address, peer] : allPeers) {
+	// 		std::cout << "\t"
+	// 		          << "(" << address.toString() << ", " << peer->destination.toString() << ")";
+	// 	}
+	// 	std::cout << std::endl;
+	// }
+
 	// Check remote log router connectivity only when remote TLogs are recruited and in use.
 	bool checkRemoteLogRouterConnectivity = dbInfo->get().recoveryState == RecoveryState::ALL_LOGS_RECRUITED ||
 	                                        dbInfo->get().recoveryState == RecoveryState::FULLY_RECOVERED;
