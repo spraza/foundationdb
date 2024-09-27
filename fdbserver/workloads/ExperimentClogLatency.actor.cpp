@@ -117,25 +117,77 @@ struct ExperimentClogLatency : TestWorkload {
 		return ret;
 	}
 
-	ACTOR Future<Void> workload(ExperimentClogLatency* self, Database db) {
-		while (self->dbInfo->get().recoveryState < RecoveryState::FULLY_RECOVERED) {
-			wait(self->dbInfo->onChange());
+	ACTOR static Future<Void> measureMaxSSLagSec(ExperimentClogLatency* self, Database db) {
+		try {
+			StatusObject status = wait(StatusClient::statusFetcher(db));
+			StatusObjectReader reader(status);
+			StatusObjectReader cluster;
+			StatusObjectReader processMap;
+			if (!reader.get("cluster", cluster)) {
+				TraceEvent("NoCluster");
+				return Void();
+			}
+			if (!cluster.get("processes", processMap)) {
+				TraceEvent("NoProcesses");
+				return Void();
+			}
+			double maxSSLagSec{ -1 };
+			for (auto p : processMap.obj()) {
+				StatusObjectReader process(p.second);
+				if (process.has("roles")) {
+					StatusArray roles = p.second.get_obj()["roles"].get_array();
+					for (StatusObjectReader role : roles) {
+						ASSERT(role.has("role"));
+						if (role.has("data_lag")) {
+							ASSERT(role["role"].get_str() == "storage");
+							auto dataLag = role["data_lag"].get_obj();
+							ASSERT(dataLag.contains("seconds"));
+							ASSERT(dataLag.contains("versions"));
+							TraceEvent("SSDataLag")
+							    .detail("Process", p.first)
+							    .detail("Role", role["role"].get_str())
+							    .detail("SecondLag", dataLag["seconds"].get_value<double>())
+							    .detail("VersionLag", dataLag["versions"].get_int64());
+							maxSSLagSec = std::max(maxSSLagSec, dataLag["seconds"].get_value<double>());
+						}
+					}
+				}
+			}
+			std::cout << "maxSSLag = " << maxSSLagSec << std::endl;
+		} catch (Error& e) {
+			std::cout << "measure error, " << e.name() << ", " << e.code() << ", " << e.what() << std::endl;
+			ASSERT(false);
 		}
+		// TODO (praza): Uncomment this assert when gray failure detection is improved to automatically fix this issue
+		// ASSERT(maxSSLagSec < self->lagThresholdSec);
+		return Void();
+	}
 
-		wait(delay(5.0));
-
-		wait(printStatusJson(db));
-
+	ACTOR static Future<Void> doClog(ExperimentClogLatency* self, Database db) {
+		wait(delay(40.0));
 		std::cout << "ready to clog\n";
 
 		// NetworkAddress tlog = wait(getRandomPrimaryTLog(db));
-		NetworkAddress tlog = getRandomPrimaryTLog(self);
+		state NetworkAddress tlog;
+		try {
+			tlog = getRandomPrimaryTLog(self);
+		} catch (Error& e) {
+			std::cout << "get tlog error: " << e.name() << ", " << e.code() << ", " << e.what() << std::endl;
+			ASSERT(false);
+		}
 		state IPAddress tlogIP = tlog.ip;
 		// state IPAddress tlogIP = IPAddress::parse("abcd::2:2:1:3").get();
 
 		state IPAddress cc = self->dbInfo->get().clusterInterface.address().ip;
 
-		std::vector<IPAddress> primarySSIps = wait(getPrimarySSIPs(db));
+		state std::vector<IPAddress> primarySSIps;
+		try {
+			std::vector<IPAddress> x = wait(getPrimarySSIPs(db));
+			primarySSIps = x;
+		} catch (Error& e) {
+			std::cout << "get ss error: " << e.name() << ", " << e.code() << ", " << e.what() << std::endl;
+			ASSERT(false);
+		}
 		ASSERT(!primarySSIps.empty());
 
 		for (const auto& ip : primarySSIps) {
@@ -158,6 +210,25 @@ struct ExperimentClogLatency : TestWorkload {
 
 		ASSERT(false);
 		return Void();
+	}
+
+	ACTOR Future<Void> workload(ExperimentClogLatency* self, Database db) {
+		while (self->dbInfo->get().recoveryState < RecoveryState::FULLY_RECOVERED) {
+			wait(self->dbInfo->onChange());
+		}
+
+		wait(delay(5.0));
+
+		wait(printStatusJson(db));
+
+		state Future<Void> clogFuture = doClog(self, db);
+
+		loop choose {
+			when(wait(clogFuture)) {}
+			when(wait(delay(5))) {
+				wait(measureMaxSSLagSec(self, db));
+			}
+		}
 	}
 };
 
