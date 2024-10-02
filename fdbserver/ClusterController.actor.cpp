@@ -2921,6 +2921,8 @@ ACTOR Future<Void> dbInfoUpdater(ClusterControllerData* self) {
 ACTOR Future<Void> workerHealthMonitor(ClusterControllerData* self) {
 	loop {
 		try {
+			TraceEvent("FooBar").detail("Val", SERVER_KNOBS->CC_HEALTH_TRIGGER_RECOVERY ? "True" : "False");
+
 			while (!self->goodRecruitmentTime.isReady()) {
 				wait(lowPriorityDelay(SERVER_KNOBS->CC_WORKER_HEALTH_CHECKING_INTERVAL));
 			}
