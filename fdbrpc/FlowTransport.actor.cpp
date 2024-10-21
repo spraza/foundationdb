@@ -1148,6 +1148,14 @@ ACTOR static void deliver(TransportData* self,
                           bool isTrustedPeer,
                           InReadSocket inReadSocket,
                           Future<Void> disconnect) {
+	state bool isclient0 = destination.token.toString() == "eb1490a48b1fd9a0039cc74300000032";
+	state bool isclient6 = destination.token.toString() == "f3fba3bf0c6c5afcfe7f6f2500000027";
+	if (isclient0) {
+		std::cout << "client, client 0 found\n";
+	}
+	if (isclient6) {
+		std::cout << "client, client 6 found\n";
+	}
 	// We want to run the task at the right priority. If the priority is higher than the current priority (which is
 	// ReadSocket) we can just upgrade. Otherwise we'll context switch so that we don't block other tasks that might run
 	// with a higher priority. ReplyPromiseStream needs to guarantee that messages are received in the order they were
@@ -1160,6 +1168,12 @@ ACTOR static void deliver(TransportData* self,
 	}
 
 	auto receiver = self->endpoints.get(destination.token);
+	if (isclient0) {
+		std::cout << "client, client 0, receiver/sav address: " << receiver << std::endl;
+	}
+	if (isclient6) {
+		std::cout << "client, client 6, receiver/sav address: " << receiver << std::endl;
+	}
 	if (receiver && (isTrustedPeer || receiver->isPublic())) {
 		if (!checkCompatible(receiver->peerCompatibilityPolicy(), reader.protocolVersion())) {
 			return;
@@ -2065,6 +2079,14 @@ void FlowTransport::cancelReliable(ReliablePacket* p) {
 Reference<Peer> FlowTransport::sendUnreliable(ISerializeSource const& what,
                                               const Endpoint& destination,
                                               bool openConnection) {
+	bool isclient2 = destination.token.toString() == "f15563d38351f4d8883b7e0a00000034";
+	bool isclient6 = destination.token.toString() == "f3fba3bf0c6c5afcfe7f6f2500000027";
+	if (isclient2) {
+		std::cout << "server, client 2 found\n";
+	}
+	if (isclient6) {
+		std::cout << "server, client 6 found\n";
+	}
 	if (self->isLocalAddress(destination.getPrimaryAddress())) {
 		sendLocal(self, what, destination);
 		return Reference<Peer>();
@@ -2076,6 +2098,12 @@ Reference<Peer> FlowTransport::sendUnreliable(ISerializeSource const& what,
 		peer = self->getPeer(destination.getPrimaryAddress());
 	}
 
+	if (isclient2) {
+		std::cout << "server, client 2 packet sent\n";
+	}
+	if (isclient6) {
+		std::cout << "server, client 6 packet sent\n";
+	}
 	sendPacket(self, peer, what, destination, false);
 	return peer;
 }
@@ -2169,6 +2197,10 @@ void FlowTransport::loadPublicKeyFile(const std::string& filePath) {
 		auto json = readFileBytes(filePath, len);
 		self->applyPublicKeySet(StringRef(json));
 	}
+}
+
+NetworkMessageReceiver* FlowTransport::getFromEndpointMap(Endpoint::Token const& token) {
+	return self->endpoints.get(token);
 }
 
 ACTOR static Future<Void> watchPublicKeyJwksFile(std::string filePath, TransportData* self) {

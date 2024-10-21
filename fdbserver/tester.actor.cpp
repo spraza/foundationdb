@@ -900,7 +900,12 @@ ACTOR Future<Void> testerServerWorkload(WorkloadRequest work,
 		}
 		Future<Void> test = runWorkloadAsync(cx, workIface, workload, work.databasePingDelay) ||
 		                    traceRole(Role::TESTER, workIface.id());
+		auto endpoint = work.reply.getEndpoint();
 		work.reply.send(workIface);
+		std::cout << "server, reply sent with title: " << work.title.toString() << ", clientId: " << work.clientId
+		          << std::endl;
+		std::cout << "server, sent to address: " << endpoint.getPrimaryAddress().toString()
+		          << ", token: " << endpoint.token.toString() << std::endl;
 		replied = true;
 
 		if (work.timeout > 0) {
@@ -1195,6 +1200,7 @@ ACTOR Future<DistributedTestResults> runWorkload(Database cx,
 	state int success = 0;
 	state int failure = 0;
 	int64_t sharedRandom = deterministicRandom()->randomInt64(0, 10000000);
+	state bool isConsistencyChecker = spec.title.toString() == "ConsistencyCheck";
 	for (; i < testers.size(); i++) {
 		WorkloadRequest req;
 		req.title = spec.title;
@@ -1209,9 +1215,53 @@ ACTOR Future<DistributedTestResults> runWorkload(Database cx,
 		req.defaultTenant = defaultTenant.castTo<TenantNameRef>();
 		req.disabledFailureInjectionWorkloads = spec.disabledFailureInjectionWorkloads;
 		workRequests.push_back(testers[i].recruitments.getReply(req));
+		std::cout << "client, req.clientId = " << req.clientId << std::endl;
+		std::cout << "client, sending to server address: "
+		          << testers[i].recruitments.getEndpoint().getPrimaryAddress().toString()
+		          << ", reqstream token: " << testers[i].recruitments.getEndpoint().token.toString() << std::endl;
+		if (req.clientId == 0 || req.clientId == 6) {
+			std::string replyPromiseToken;
+			if (req.clientId == 0) {
+				replyPromiseToken = "eb1490a48b1fd9a0039cc74300000032";
+			} else if (req.clientId == 6) {
+				replyPromiseToken = "f3fba3bf0c6c5afcfe7f6f2500000027";
+			}
+			std::cout << "client, getreply token: " << replyPromiseToken << ", sav address: "
+			          << FlowTransport::transport().getFromEndpointMap(Endpoint::Token::fromString(replyPromiseToken))
+			          << std::endl;
+		}
 	}
 
-	state std::vector<WorkloadInterface> workloads = wait(getAll(workRequests));
+	state std::vector<WorkloadInterface> workloads;
+
+	// if (!isConsistencyChecker) {
+
+	// }
+
+	if (!isConsistencyChecker) {
+		std::vector<WorkloadInterface> workloads_ = wait(getAll(workRequests));
+		workloads = workloads_;
+		std::cout << "client: got all\n";
+	} else {
+		loop choose {
+			when(std::vector<WorkloadInterface> rsp = wait(getAll(workRequests))) {
+				workloads = rsp;
+				std::cout << "client: got all\n";
+				break;
+			}
+			when(wait(delay(100))) {
+				if (isConsistencyChecker) {
+					for (size_t i = 0; i < testers.size(); ++i) {
+						std::cout << "client: consistency checker clientId " << i
+						          << " ready: " << workRequests[i].isReady() << std::endl;
+					}
+				}
+			}
+		}
+	}
+
+	// state std::vector<WorkloadInterface> workloads_ = wait(getAll(workRequests));
+	// std::cout << "got all\n";
 	state double waitForFailureTime = g_network->isSimulated() ? 24 * 60 * 60 : 60;
 	if (g_network->isSimulated() && spec.simCheckRelocationDuration)
 		debug_setCheckRelocationDuration(true);

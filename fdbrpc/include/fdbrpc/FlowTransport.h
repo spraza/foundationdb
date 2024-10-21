@@ -309,6 +309,9 @@ public:
 	// Periodically read JWKS (RFC 7517) public key file to refresh public key set.
 	void watchPublicKeyFile(const std::string& publicKeyFilePath);
 
+	// const?
+	NetworkMessageReceiver* getFromEndpointMap(Endpoint::Token const& token);
+
 private:
 	class TransportData* self;
 };
