@@ -115,6 +115,10 @@ void SimpleFailureMonitor::setStatus(NetworkAddress const& address, FailureStatu
 }
 
 void SimpleFailureMonitor::endpointNotFound(Endpoint const& endpoint) {
+	if (endpoint.token.toString() == "7ed35781a1518e37602790bf00000025") {
+		int x = 1;
+		(void)x;
+	}
 	// SOMEDAY: Expiration (this "leaks" memory)
 	if (endpoint.token.first() == -1) {
 		TraceEvent("WellKnownEndpointNotFound")

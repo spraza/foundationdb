@@ -399,15 +399,27 @@ Future<ErrorOr<X>> waitValueOrSignal(Future<X> value,
 
 ACTOR template <class T>
 Future<T> sendCanceler(ReplyPromise<T> reply, ReliablePacket* send, Endpoint endpoint) {
+	// state bool tester = endpoint.token.toString() == "7ed35781a1518e37602790bf00000025";
+	// if (tester) {
+	// 	int x = 2;
+	// 	(void)x;
+	// }
 	state bool didCancelReliable = false;
 	try {
 		loop {
-			if (IFailureMonitor::failureMonitor().permanentlyFailed(endpoint)) {
+			if (/*!tester && FIX */ IFailureMonitor::failureMonitor().permanentlyFailed(endpoint)) {
 				FlowTransport::transport().cancelReliable(send);
 				didCancelReliable = true;
 				if (IFailureMonitor::failureMonitor().knownUnauthorized(endpoint)) {
+					std::cout << "foo1\n";
 					throw unauthorized_attempt();
 				} else {
+					if (endpoint.token.toString() == "7ed35781a1518e37602790bf00000025") {
+						int x = 2;
+						(void)x;
+					}
+					std::cout << "foo2, endpoint token: " << endpoint.token.toString()
+					          << "endpoint address: " << endpoint.getPrimaryAddress().toString() << std::endl;
 					wait(Never());
 				}
 			}

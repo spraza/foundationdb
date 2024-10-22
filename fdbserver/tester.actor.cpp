@@ -30,6 +30,7 @@
 #include <fmt/ranges.h>
 #include <toml.hpp>
 
+#include "fdbrpc/FlowTransport.h"
 #include "flow/ActorCollection.h"
 #include "flow/DeterministicRandom.h"
 #include "flow/Histogram.h"
@@ -1214,7 +1215,8 @@ ACTOR Future<DistributedTestResults> runWorkload(Database cx,
 		req.sharedRandomNumber = sharedRandom;
 		req.defaultTenant = defaultTenant.castTo<TenantNameRef>();
 		req.disabledFailureInjectionWorkloads = spec.disabledFailureInjectionWorkloads;
-		workRequests.push_back(testers[i].recruitments.getReply(req));
+		auto fut = testers[i].recruitments.getReply(req);
+		workRequests.push_back(fut);
 		std::cout << "client, req.clientId = " << req.clientId << std::endl;
 		std::cout << "client, sending to server address: "
 		          << testers[i].recruitments.getEndpoint().getPrimaryAddress().toString()
@@ -1226,9 +1228,14 @@ ACTOR Future<DistributedTestResults> runWorkload(Database cx,
 			} else if (req.clientId == 6) {
 				replyPromiseToken = "f3fba3bf0c6c5afcfe7f6f2500000027";
 			}
-			std::cout << "client, getreply token: " << replyPromiseToken << ", sav address: "
-			          << FlowTransport::transport().getFromEndpointMap(Endpoint::Token::fromString(replyPromiseToken))
-			          << std::endl;
+			auto savAddr =
+			    FlowTransport::transport().getFromEndpointMap(Endpoint::Token::fromString(replyPromiseToken));
+			if (savAddr && dynamic_cast<NetSAV<WorkloadInterface>*>(savAddr)) {
+				auto p = dynamic_cast<NetSAV<WorkloadInterface>*>(savAddr);
+				std::cout << "client, sav promise count: " << p->promises << ", sav future count: " << p->futures
+				          << std::endl;
+			}
+			std::cout << "client, getreply token: " << replyPromiseToken << ", sav address: " << savAddr << std::endl;
 		}
 	}
 
@@ -1253,7 +1260,9 @@ ACTOR Future<DistributedTestResults> runWorkload(Database cx,
 				if (isConsistencyChecker) {
 					for (size_t i = 0; i < testers.size(); ++i) {
 						std::cout << "client: consistency checker clientId " << i
-						          << " ready: " << workRequests[i].isReady() << std::endl;
+						          << " ready: " << workRequests[i].isReady() << ", sav address: ";
+						workRequests[i].printSAVAddress();
+						std::cout << std::endl;
 					}
 				}
 			}
@@ -1521,10 +1530,27 @@ ACTOR Future<std::unordered_set<int>> runUrgentConsistencyCheckWorkload(
 		req.clientCount = testers.size();
 		req.sharedRandomNumber = consistencyCheckerId;
 		req.rangesToCheck = assignment[i];
+		if (i == 6) {
+			std::cout << "before1: "
+			          << IFailureMonitor::failureMonitor().permanentlyFailed(testers[6].recruitments.getEndpoint())
+			          << std::endl;
+		}
 		workRequests.push_back(testers[i].recruitments.getReplyUnlessFailedFor(req, 10, 0));
+		if (i == 6) {
+			std::cout << "after1: "
+			          << IFailureMonitor::failureMonitor().permanentlyFailed(testers[6].recruitments.getEndpoint())
+			          << std::endl;
+		}
 		// workRequests follows the order of clientId of assignment
 	}
+
+	std::cout << "before1.5: "
+	          << IFailureMonitor::failureMonitor().permanentlyFailed(testers[6].recruitments.getEndpoint())
+	          << std::endl;
 	wait(waitForAll(workRequests));
+	std::cout << "after1.5: "
+	          << IFailureMonitor::failureMonitor().permanentlyFailed(testers[6].recruitments.getEndpoint())
+	          << std::endl;
 
 	// Step 2: Run workloads via the interfaces
 	TraceEvent(SevInfo, "ConsistencyCheckUrgent_TriggerWorkloads")
@@ -1542,11 +1568,28 @@ ACTOR Future<std::unordered_set<int>> runUrgentConsistencyCheckWorkload(
 			    .detail("TesterId", i)
 			    .detail("ConsistencyCheckerId", consistencyCheckerId);
 		} else {
+			if (i == 6) {
+				std::cout << "before2: "
+				          << IFailureMonitor::failureMonitor().permanentlyFailed(testers[6].recruitments.getEndpoint())
+				          << std::endl;
+			}
 			jobs.push_back(workRequests[i].get().get().start.template getReplyUnlessFailedFor<Void>(10, 0));
+			if (i == 6) {
+				std::cout << "after2: "
+				          << IFailureMonitor::failureMonitor().permanentlyFailed(testers[6].recruitments.getEndpoint())
+				          << std::endl;
+			}
 			clientIds.push_back(i);
 		}
 	}
+	std::cout << "before3: "
+	          << IFailureMonitor::failureMonitor().permanentlyFailed(testers[6].recruitments.getEndpoint())
+	          << std::endl;
+
 	wait(waitForAll(jobs));
+	std::cout << "after3: "
+	          << IFailureMonitor::failureMonitor().permanentlyFailed(testers[6].recruitments.getEndpoint())
+	          << std::endl;
 	for (int i = 0; i < jobs.size(); i++) {
 		if (jobs[i].isError()) {
 			TraceEvent(SevInfo, "ConsistencyCheckUrgent_RunWorkloadError1")
@@ -1937,8 +1980,14 @@ ACTOR Future<Void> runConsistencyCheckerUrgentCore(Reference<AsyncVar<Optional<C
 			assignment = makeTaskAssignment(cx, consistencyCheckerId, shardsToCheck, ts.size(), round);
 
 			// Step 5: Run checking on testers
+			// std::cout << "before: "
+			//           << IFailureMonitor::failureMonitor().permanentlyFailed(ts[6].recruitments.getEndpoint())
+			//           << std::endl;
 			std::unordered_set<int> completeClients =
 			    wait(runUrgentConsistencyCheckWorkload(cx, ts, consistencyCheckerId, assignment));
+			// std::cout << "after: "
+			//           << IFailureMonitor::failureMonitor().permanentlyFailed(ts[6].recruitments.getEndpoint())
+			//           << std::endl;
 			if (g_network->isSimulated() && deterministicRandom()->random01() < 0.05) {
 				throw operation_failed(); // Introduce random failure
 			}

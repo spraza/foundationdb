@@ -1071,6 +1071,10 @@ public:
 	int getFutureReferenceCount() const { return sav->getFutureReferenceCount(); }
 	int getPromiseReferenceCount() const { return sav->getPromiseReferenceCount(); }
 
+	void printSAVAddress() const {
+		std::cout << sav;
+	}
+
 	explicit Future(SAV<T>* sav) : sav(sav) {}
 
 private:
