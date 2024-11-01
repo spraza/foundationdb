@@ -3014,8 +3014,9 @@ ACTOR Future<Void> workerHealthMonitor(ClusterControllerData* self) {
 			// recovered.
 			bool hasRecoveredServer = false;
 			for (auto it = self->excludedDegradedServers.begin(); it != self->excludedDegradedServers.end();) {
-				if (self->degradationInfo.degradedServers.find(*it) == self->degradationInfo.degradedServers.end() &&
-				    self->degradationInfo.disconnectedServers.find(*it) ==
+				if (self->degradationInfo.degradedServers.find(it->first) ==
+				        self->degradationInfo.degradedServers.end() &&
+				    self->degradationInfo.disconnectedServers.find(it->first) ==
 				        self->degradationInfo.disconnectedServers.end()) {
 					self->excludedDegradedServers.erase(it++);
 					hasRecoveredServer = true;
@@ -3045,9 +3046,13 @@ ACTOR Future<Void> workerHealthMonitor(ClusterControllerData* self) {
 					if (SERVER_KNOBS->CC_HEALTH_TRIGGER_RECOVERY) {
 						if (self->recentRecoveryCountDueToHealth() < SERVER_KNOBS->CC_MAX_HEALTH_RECOVERY_COUNT) {
 							self->recentHealthTriggeredRecoveryTime.push(now());
-							self->excludedDegradedServers = self->degradationInfo.degradedServers;
-							self->excludedDegradedServers.insert(self->degradationInfo.disconnectedServers.begin(),
-							                                     self->degradationInfo.disconnectedServers.end());
+							self->excludedDegradedServers.clear();
+							for (const auto& degradedServer : self->degradationInfo.degradedServers) {
+								self->excludedDegradedServers[degradedServer] = now();
+							}
+							for (const auto& disconnectedServer : self->degradationInfo.disconnectedServers) {
+								self->excludedDegradedServers[disconnectedServer] = now();
+							}
 							TraceEvent(SevWarnAlways, "DegradedServerDetectedAndTriggerRecovery")
 							    .detail("RecentRecoveryCountDueToHealth", self->recentRecoveryCountDueToHealth());
 							self->db.forceMasterFailure.trigger();
