@@ -77,6 +77,25 @@ struct BulkLoadingS3Client : TestWorkload {
 		return _start(this, cx);
 	}
 
+	ACTOR static Future<bool> checkForSeaweed(std::string s3url) {
+		std::string resource;
+		state S3BlobStoreEndpoint::ParametersT parameters;
+			std::string error;
+		Reference<S3BlobStoreEndpoint> endpoint =
+			S3BlobStoreEndpoint::fromString(s3url, {}, &resource, &error, &parameters);
+		if (error.size()) {
+			TraceEvent(SevError, "CheckForSeaweedGetEndpointError").detail("s3url", s3url).detail("error", error);
+			throw backup_invalid_url();
+		}
+		// Test seaweedfs is up.
+		// curl -L -vvv  http://localhost:9334/dir/assign
+		HTTP::Headers headers;
+		Reference<HTTP::IncomingResponse> response = wait(endpoint->doRequest("GET", "/dir/assign", headers, nullptr, 0, { 200 }));
+		bool exists = response ->code == 200;
+		TraceEvent("CheckForSeaweed").detail("url", s3url).detail("exists", exists);
+		return exists;
+	}
+
 	ACTOR Future<Void> _start(BulkLoadingS3Client* self, Database cx) {
 		if (self->clientId != 0) {
 			// Our simulation test can trigger multiple same workloads at the same time
