@@ -1,0 +1,9 @@
+[[test]]
+testTitle = 'BulkLoadingS3ClientWorkload'
+useDB = true # TODO(BulkLoad): remove if do not use FDB database in the test
+ 
+    [[test.workload]]
+    testName = 'BulkLoadingS3ClientWorkload'
+    masterPort = 9334
+    s3Port = 8334
+    verbose = false
