@@ -19,6 +19,7 @@
  */
 
 #include "fdbserver/RocksDBCheckpointUtils.actor.h"
+#include "rocksdb/iterator.h"
 
 #ifdef WITH_ROCKSDB
 #include <rocksdb/db.h>
@@ -263,6 +264,28 @@ ACTOR Future<Void> fetchCheckpointBytesSampleFile(Database cx,
 	return Void();
 }
 
+template <typename T>
+struct LoggingUniquePtr : public std::unique_ptr<T> {
+	LoggingUniquePtr() = delete;
+
+	// Constructor with raw pointer
+	explicit LoggingUniquePtr(T* ptr, const std::string& dbPath, const std::string& cfName)
+	  : std::unique_ptr<T>(ptr), dbPath_{ dbPath }, cfName_{ cfName } {
+		TraceEvent("DebugShardedRocksCreateIterator").detail("DbPath", dbPath_).detail("CfName", cfName_);
+	}
+
+	// Move constructor
+	LoggingUniquePtr(LoggingUniquePtr&& other) = delete;
+
+	// Destructor
+	~LoggingUniquePtr() {
+		TraceEvent("DebugShardedRocksDeleteIterator").detail("DbPath", dbPath_).detail("CfName", cfName_);
+	}
+
+	std::string dbPath_;
+	std::string cfName_;
+};
+
 // RocksDBColumnFamilyReader reads a RocksDB checkpoint, and returns the key-value pairs via nextKeyValues.
 class RocksDBColumnFamilyReader : public ICheckpointReader {
 public:
@@ -287,7 +310,13 @@ public:
 				    reader->db->GetEnv()->NowMicros() + SERVER_KNOBS->ROCKSDB_READ_CHECKPOINT_TIMEOUT * 1000000;
 				options.deadline = std::chrono::microseconds(deadlineMicros);
 			}
-			this->iterator = std::unique_ptr<rocksdb::Iterator>(reader->db->NewIterator(options, reader->cf));
+			if (reader->cf->GetName() == "RocksDBCheckpoint") {
+				this->iterator = LoggingUniquePtr<rocksdb::Iterator>(
+				    reader->db->NewIterator(options, reader->cf), reader->path, reader->cf->GetName());
+			} else {
+				this->iterator = std::unique_ptr<rocksdb::Iterator>(reader->db->NewIterator(options, reader->cf));
+			}
+
 			iterator->Seek(this->beginSlice);
 		}
 
@@ -465,6 +494,7 @@ std::unique_ptr<ICheckpointIterator> RocksDBColumnFamilyReader::getIterator(KeyR
 RocksDBColumnFamilyReader::Reader::Reader(DB& db, CF& cf, const UID& logId) : db(db), cf(cf), logId(logId) {}
 
 void RocksDBColumnFamilyReader::Reader::action(RocksDBColumnFamilyReader::Reader::OpenAction& a) {
+	TraceEvent("DebugShardedRocksCFReaderOpenActionStart");
 	TraceEvent(SevDebug, "RocksDBCheckpointReaderInitBegin", logId).detail("Checkpoint", a.checkpoint.toString());
 	ASSERT(cf == nullptr);
 
@@ -500,14 +530,17 @@ void RocksDBColumnFamilyReader::Reader::action(RocksDBColumnFamilyReader::Reader
 	}
 
 	a.done.send(Void());
+	TraceEvent("DebugShardedRocksCFReaderOpenActionEnd");
 	TraceEvent(SevDebug, "RocksDBCheckpointReaderInitEnd", logId)
 	    .detail("Path", path)
 	    .detail("ColumnFamily", cf->GetName());
 }
 
 void RocksDBColumnFamilyReader::Reader::action(RocksDBColumnFamilyReader::Reader::CloseAction& a) {
+	TraceEvent("DebugShardedRocksCFReaderCloseActionStart");
 	closeInternal(a.path, a.deleteOnClose);
 	a.done.send(Void());
+	TraceEvent("DebugShardedRocksCFReaderCloseActionEnd");
 }
 
 void RocksDBColumnFamilyReader::Reader::action(RocksDBColumnFamilyReader::Reader::ReadRangeAction& a) {
@@ -526,6 +559,7 @@ void RocksDBColumnFamilyReader::Reader::action(RocksDBColumnFamilyReader::Reader
 	rocksdb::Iterator* iter = a.iterator->getIterator();
 	int accumulatedBytes = 0;
 	rocksdb::Status s;
+	TraceEvent("DebugShardedRocksReadRangeIterationStart");
 	while (iter->Valid() && iter->key().compare(a.iterator->end()) < 0) {
 		KeyValueRef kv(toStringRef(iter->key()), toStringRef(iter->value()));
 		accumulatedBytes += sizeof(KeyValueRef) + kv.expectedSize();
@@ -537,6 +571,8 @@ void RocksDBColumnFamilyReader::Reader::action(RocksDBColumnFamilyReader::Reader
 	}
 
 	s = iter->status();
+
+	TraceEvent("DebugShardedRocksReadRangeIterationEnd");
 
 	if (!s.ok()) {
 		logRocksDBError(s, "ReadRange", logId);
@@ -562,9 +598,20 @@ rocksdb::Status RocksDBColumnFamilyReader::Reader::tryOpenForRead(const std::str
 
 	const rocksdb::ColumnFamilyOptions cfOptions = getCFOptions();
 	std::vector<rocksdb::ColumnFamilyDescriptor> descriptors;
+	bool chkp{ false };
 	for (const std::string& name : columnFamilies) {
+		if (name == "RocksDBCheckpoint") {
+			chkp = true;
+		}
 		descriptors.emplace_back(name, cfOptions);
 	}
+	if (chkp) {
+		TraceEvent("DebugShardedRocksDbOpenWithChkpCf")
+		    .detail("Path", path)
+		    .detail("DescriptorsSize", descriptors.size())
+		    .detail("HandlesSize", handles.size());
+	}
+	TraceEvent("DebugShardedRocksDBOpenReadOnly");
 	status = rocksdb::DB::OpenForReadOnly(options, path, descriptors, &handles, &db);
 	if (!status.ok()) {
 		logRocksDBError(status, "OpenForReadOnly", logId);
@@ -624,6 +671,7 @@ rocksdb::Status RocksDBColumnFamilyReader::Reader::importCheckpoint(const std::s
 		descriptors.emplace_back(name, cfOptions);
 	}
 
+	TraceEvent("DebugShardedRocksDBOpenNormal");
 	status = rocksdb::DB::Open(options, path, descriptors, &handles, &db);
 	if (!status.ok()) {
 		TraceEvent(SevWarn, "CheckpointReaderOpenedFailed", logId)
@@ -665,14 +713,22 @@ rocksdb::Status RocksDBColumnFamilyReader::Reader::closeInternal(const std::stri
 		return rocksdb::Status::OK();
 	}
 
+	bool chkp{ false };
 	for (rocksdb::ColumnFamilyHandle* handle : handles) {
 		if (handle != nullptr) {
+			if (handle->GetName() == "RocksDBCheckpoint") {
+				chkp = true;
+			}
 			TraceEvent("RocksDBCheckpointReaderDestroyCF", logId).detail("Path", path).detail("CF", handle->GetName());
 			db->DestroyColumnFamilyHandle(handle);
 		}
 	}
+	if (chkp) {
+		TraceEvent("DebugShardedRocksHandlesClear").detail("OrigHandlesSize", handles.size()).detail("Path", path);
+	}
 	handles.clear();
 
+	TraceEvent("DebugShardedRocksDBClose");
 	rocksdb::Status s = db->Close();
 	if (!s.ok()) {
 		logRocksDBError(s, "Close", logId);

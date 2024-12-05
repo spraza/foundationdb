@@ -2946,6 +2946,7 @@ ACTOR Future<Void> fetchCheckpointKeyValuesQ(StorageServer* self, FetchCheckpoin
 	state std::unique_ptr<ICheckpointIterator> iter;
 	try {
 		wait(reader->init(BinaryWriter::toValue(req.range, IncludeVersion())));
+		TraceEvent("DebugShardedRocksSSCreateCheckpointIter");
 		iter = reader->getIterator(req.range);
 
 		loop {
@@ -2989,6 +2990,7 @@ ACTOR Future<Void> fetchCheckpointKeyValuesQ(StorageServer* self, FetchCheckpoin
 		}
 	}
 
+	TraceEvent("DebugShardedRocksSSResetCheckpointIter");
 	iter.reset();
 	if (!reader->inUse()) {
 		self->liveCheckpointReaders.erase(req.checkpointID);
