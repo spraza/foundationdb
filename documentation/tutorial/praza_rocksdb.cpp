@@ -10,14 +10,17 @@ int main() {
 	rocksdb::Options options;
 	options.create_if_missing = true;
 	rocksdb::ColumnFamilyHandle* cf;
+	std::vector<rocksdb::ColumnFamilyHandle*> handles;
 	{
 		auto status = rocksdb::DB::Open(options, path, &db);
 		assert(status.ok());
 		auto status2 = db->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), "MyRocksDBCheckpoint", &cf);
+		handles.push_back(cf);
 		assert(status2.ok());
 		assert(db->Put(rocksdb::WriteOptions(), cf, "foo", "bar").ok());
 		assert(db->DestroyColumnFamilyHandle(cf).ok());
 		assert(db->Close().ok());
+		// delete db;
 	}
 	std::vector<rocksdb::ColumnFamilyDescriptor> cfDescriptors;
 	{
@@ -28,13 +31,14 @@ int main() {
 		}
 	}
 	{
-		std::vector<rocksdb::ColumnFamilyHandle*> handles;
-		handles.push_back(cf);
 		auto status = rocksdb::DB::OpenForReadOnly(options, path, cfDescriptors, &handles, &db);
 		assert(status.ok());
-		std::string val;
-		assert(db->Get(rocksdb::ReadOptions(), "foo", &val).ok());
-		std::cout << fmt::format("get({}) = {}", "foo", val);
+		// std::string val;
+		//  assert(db->Get(rocksdb::ReadOptions(), "foo", &val).ok());
+		//  std::cout << fmt::format("get({}) = {}", "foo", val);
+		for (auto handle : handles) {
+			assert(db->DestroyColumnFamilyHandle(handle).ok());
+		}
 		assert(db->Close().ok());
 	}
 	// std::cout << fmt::format("my str is {}", "blah") << std::endl;
