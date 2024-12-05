@@ -11,17 +11,18 @@ int main() {
 	options.create_if_missing = true;
 	rocksdb::ColumnFamilyHandle* cf;
 	{
-		rocksdb::Status status = rocksdb::DB::Open(options, path, &db);
+		auto status = rocksdb::DB::Open(options, path, &db);
 		assert(status.ok());
-		db->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), "MyRocksDBCheckpoint", &cf);
-		db->Put(rocksdb::WriteOptions(), cf, "foo", "bar");
-		db->DestroyColumnFamilyHandle(cf);
-		db->Close();
+		auto status2 = db->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), "MyRocksDBCheckpoint", &cf);
+		assert(status2.ok());
+		assert(db->Put(rocksdb::WriteOptions(), cf, "foo", "bar").ok());
+		assert(db->DestroyColumnFamilyHandle(cf).ok());
+		assert(db->Close().ok());
 	}
 	std::vector<rocksdb::ColumnFamilyDescriptor> cfDescriptors;
 	{
 		std::vector<std::string> columnFamilies;
-		rocksdb::Status status = rocksdb::DB::ListColumnFamilies(options, path, &columnFamilies);
+		assert(rocksdb::DB::ListColumnFamilies(options, path, &columnFamilies).ok());
 		for (const std::string& name : columnFamilies) {
 			cfDescriptors.emplace_back(name, rocksdb::ColumnFamilyOptions());
 		}
@@ -29,12 +30,12 @@ int main() {
 	{
 		std::vector<rocksdb::ColumnFamilyHandle*> handles;
 		handles.push_back(cf);
-		rocksdb::Status status = rocksdb::DB::OpenForReadOnly(options, path, cfDescriptors, &handles, &db);
+		auto status = rocksdb::DB::OpenForReadOnly(options, path, cfDescriptors, &handles, &db);
+		assert(status.ok());
 		std::string val;
-		rocksdb::Status getStatus = db->Get(rocksdb::ReadOptions(), "foo", &val);
+		assert(db->Get(rocksdb::ReadOptions(), cf, "foo", &val).ok());
 		std::cout << fmt::format("get({}) = {}", "foo", val);
-		db->DestroyColumnFamilyHandle(cf);
-		db->Close();
+		assert(db->Close().ok());
 	}
 	// std::cout << fmt::format("my str is {}", "blah") << std::endl;
 	return 0;
