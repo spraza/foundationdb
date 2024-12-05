@@ -612,7 +612,8 @@ rocksdb::Status RocksDBColumnFamilyReader::Reader::tryOpenForRead(const std::str
 		    .detail("HandlesSize", handles.size());
 	}
 	TraceEvent("DebugShardedRocksDBOpenReadOnly");
-	status = rocksdb::DB::OpenForReadOnly(options, path, descriptors, &handles, &db);
+	std::vector<rocksdb::ColumnFamilyHandle*> handles2;
+	status = rocksdb::DB::OpenForReadOnly(options, path, descriptors, &handles2, &db);
 	if (!status.ok()) {
 		logRocksDBError(status, "OpenForReadOnly", logId);
 		return status;
@@ -637,8 +638,8 @@ rocksdb::Status RocksDBColumnFamilyReader::Reader::tryOpenForRead(const std::str
 		}
 	}
 
-	ASSERT(handles.size() == 2);
-	for (rocksdb::ColumnFamilyHandle* handle : handles) {
+	ASSERT(handles2.size() == 2);
+	for (rocksdb::ColumnFamilyHandle* handle : handles2) {
 		if (handle->GetName() == checkpointCf) {
 			TraceEvent(SevDebug, "RocksDBCheckpointCF", logId)
 			    .detail("Path", path)
@@ -647,6 +648,8 @@ rocksdb::Status RocksDBColumnFamilyReader::Reader::tryOpenForRead(const std::str
 			break;
 		}
 	}
+
+	handles = handles2;
 
 	ASSERT(db != nullptr && cf != nullptr);
 	return rocksdb::Status::OK();
