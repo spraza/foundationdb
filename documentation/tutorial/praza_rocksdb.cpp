@@ -33,7 +33,7 @@ int main() {
 		auto status = rocksdb::DB::OpenForReadOnly(options, path, cfDescriptors, &handles, &db);
 		assert(status.ok());
 		std::string val;
-		assert(db->Get(rocksdb::ReadOptions(), cf, "foo", &val).ok());
+		assert(db->Get(rocksdb::ReadOptions(), "foo", &val).ok());
 		std::cout << fmt::format("get({}) = {}", "foo", val);
 		assert(db->Close().ok());
 	}
