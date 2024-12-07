@@ -20,3 +20,7 @@ target_link_libraries(praza_rocksdb_tutorial PUBLIC fmt::fmt)
 add_dependencies(praza_rocksdb_tutorial rocksdb)
 target_include_directories(praza_rocksdb_tutorial PUBLIC ${ROCKSDB_INCLUDE_DIR})
 target_link_libraries(praza_rocksdb_tutorial PUBLIC ${ROCKSDB_LIBRARIES} ${lz4_STATIC_LIBRARIES})
+
+# FDB Client Example
+add_executable(praza_fdb_client_example praza_fdb_client.cpp)
+target_link_libraries(praza_fdb_client_example PRIVATE fdb_c)
