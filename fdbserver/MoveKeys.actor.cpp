@@ -55,6 +55,9 @@ struct Shard {
 };
 
 bool shouldCreateCheckpoint(const UID& dataMoveId) {
+	if (g_network->isSimulated() && !noUnseed) {
+		noUnseed = true;
+	}
 	bool assigned, emptyRange;
 	DataMoveType type;
 	DataMovementReason reason;
