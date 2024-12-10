@@ -23,20 +23,24 @@
 #include "flow/DeterministicRandom.h"
 
 #include <cstring>
+#include <iostream>
 
-uint64_t DeterministicRandom::gen64() {
+uint64_t DeterministicRandom::gen64(const std::string& caller) {
 	uint64_t curr = next;
 	next = (uint64_t(random()) << 32) ^ random();
 	if (TRACE_SAMPLE())
 		TraceEvent(SevSample, "Random").log();
+	if (tag == "sim") {
+		std::cerr << caller << "\n";
+	}
 	return curr;
 }
 
-DeterministicRandom::DeterministicRandom(uint32_t seed, bool useRandLog)
-  : random((unsigned long)seed), next((uint64_t(random()) << 32) ^ random()), useRandLog(useRandLog) {}
+DeterministicRandom::DeterministicRandom(uint32_t seed, bool useRandLog, const std::string& tag)
+  : random((unsigned long)seed), next((uint64_t(random()) << 32) ^ random()), useRandLog(useRandLog), tag(tag) {}
 
 double DeterministicRandom::random01() {
-	double d = gen64() / double(uint64_t(-1));
+	double d = gen64(fmt::format("random01()")) / double(uint64_t(-1));
 	if (randLog && useRandLog)
 		fprintf(randLog, "R01  %f\n", d);
 	return d;
@@ -51,7 +55,7 @@ int DeterministicRandom::randomInt(int min, int maxPlusOne) {
 		range = maxPlusOne;
 		range -= min;
 	}
-	uint64_t v = (gen64() % range);
+	uint64_t v = (gen64(fmt::format("randomInt({}, {})", min, maxPlusOne)) % range);
 	int i;
 	if (min < 0 && (-static_cast<unsigned int>(min + 1)) >= v)
 		i = -static_cast<int>(-static_cast<unsigned int>(min + 1) - v) - 1;
@@ -71,7 +75,7 @@ int64_t DeterministicRandom::randomInt64(int64_t min, int64_t maxPlusOne) {
 		range = maxPlusOne;
 		range -= min;
 	}
-	uint64_t v = (gen64() % range);
+	uint64_t v = (gen64(fmt::format("randomInt64({}, {})", min, maxPlusOne)) % range);
 	int64_t i;
 	if (min < 0 && (-static_cast<uint64_t>(min + 1)) >= v)
 		i = -static_cast<int64_t>(-static_cast<uint64_t>(min + 1) - v) - 1;
@@ -83,11 +87,11 @@ int64_t DeterministicRandom::randomInt64(int64_t min, int64_t maxPlusOne) {
 }
 
 uint32_t DeterministicRandom::randomUInt32() {
-	return gen64();
+	return gen64("randomUInt32()");
 }
 
 uint64_t DeterministicRandom::randomUInt64() {
-	return gen64();
+	return gen64("randomUInt32()");
 }
 
 uint32_t DeterministicRandom::randomSkewedUInt32(uint32_t min, uint32_t maxPlusOne) {
@@ -101,8 +105,8 @@ uint32_t DeterministicRandom::randomSkewedUInt32(uint32_t min, uint32_t maxPlusO
 
 UID DeterministicRandom::randomUniqueID() {
 	uint64_t x, y;
-	x = gen64();
-	y = gen64();
+	x = gen64("randomUniqueID1()");
+	y = gen64("randomUniqueID2()");
 	if (randLog && useRandLog)
 		fmt::print(randLog, "Ruid {0} {1}\n", x, y);
 	return UID(x, y);
@@ -110,7 +114,7 @@ UID DeterministicRandom::randomUniqueID() {
 
 char DeterministicRandom::randomAlphaNumeric() {
 	static const char alphanum[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-	char c = alphanum[gen64() % 62];
+	char c = alphanum[gen64("randomAlphaNumeric()") % 62];
 	if (randLog && useRandLog)
 		fprintf(randLog, "Rchar %c\n", c);
 	return c;
@@ -125,9 +129,9 @@ std::string DeterministicRandom::randomAlphaNumeric(int length) {
 }
 
 void DeterministicRandom::randomBytes(uint8_t* buf, int length) {
-	constexpr const int unitLen = sizeof(decltype(gen64()));
+	constexpr const int unitLen = sizeof(decltype(gen64("randomBytes1(...)")));
 	for (int i = 0; i < length; i += unitLen) {
-		auto val = gen64();
+		auto val = gen64("randomBytes2(..)");
 		memcpy(buf + i, &val, std::min(unitLen, length - i));
 	}
 	if (randLog && useRandLog) {

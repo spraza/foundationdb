@@ -108,7 +108,7 @@ uint64_t debug_lastLoadBalanceResultEndpointToken = 0;
 bool noUnseed = false;
 
 void setThreadLocalDeterministicRandomSeed(uint32_t seed) {
-	seededRandom = Reference<IRandom>(new DeterministicRandom(seed, true));
+	seededRandom = Reference<IRandom>(new DeterministicRandom(seed, true, "sim"));
 	seededDebugRandom = Reference<IRandom>(new DeterministicRandom(seed));
 }
 

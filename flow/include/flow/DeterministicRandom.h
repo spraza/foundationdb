@@ -41,11 +41,12 @@ private:
 	std::mt19937 random;
 	uint64_t next;
 	bool useRandLog;
+	std::string tag;
 
-	uint64_t gen64();
+	uint64_t gen64(const std::string& caller);
 
 public:
-	DeterministicRandom(uint32_t seed, bool useRandLog = false);
+	DeterministicRandom(uint32_t seed, bool useRandLog = false, const std::string& tag = "");
 	double random01() override;
 	int randomInt(int min, int maxPlusOne) override;
 	int64_t randomInt64(int64_t min, int64_t maxPlusOne) override;
