@@ -1852,12 +1852,12 @@ SimulationStorageEngine chooseSimulationStorageEngine(const TestConfig& testConf
 		if (testConfig.excludedStorageEngineType(result) ||
 		    std::find(std::begin(SIMULATION_STORAGE_ENGINE), std::end(SIMULATION_STORAGE_ENGINE), result) ==
 		        std::end(SIMULATION_STORAGE_ENGINE)) {
-
 			TraceEvent(SevError, "StorageEngineNotSupported").detail("StorageEngineType", result);
 			ASSERT(false);
 		}
 	} else {
 		std::unordered_set<SimulationStorageEngine> storageEngineAvailable;
+		const bool rocksDbExcluded{ testConfig.storageEngineExcludeTypes.contains(SimulationStorageEngine::ROCKSDB) };
 		for (const auto& storageEngine : SIMULATION_STORAGE_ENGINE) {
 			storageEngineAvailable.insert(storageEngine);
 		}
@@ -1890,8 +1890,13 @@ SimulationStorageEngine chooseSimulationStorageEngine(const TestConfig& testConf
 				storageEngineCandidates.push_back(storageEngine);
 			}
 		}
-		reason = "RandomlyChosen"_sr;
-		result = deterministicRandom()->randomChoice(storageEngineCandidates);
+		if (rocksDbExcluded) {
+			reason = "RandomlyChosen"_sr;
+			result = deterministicRandom()->randomChoice(storageEngineCandidates);
+		} else {
+			reason = "RocksDbForceTest"_sr;
+			result = SimulationStorageEngine::ROCKSDB;
+		}
 		if (result == SimulationStorageEngine::SIMULATION_STORAGE_ENGINE_INVALID_VALUE) {
 			UNREACHABLE();
 		}
