@@ -29,6 +29,7 @@
 #include "flow/FastRef.h"
 
 #include <random>
+#include <fstream>
 
 // FIXME: Remove once https://github.com/apple/swift/issues/61620 is fixed.
 #define SWIFT_CXX_REF_DETERMINISTICRANDOM                                                                              \
@@ -42,6 +43,7 @@ private:
 	uint64_t next;
 	bool useRandLog;
 	std::string tag;
+	std::ifstream inputFile{ "/tmp/sim1/run1.txt" };
 
 	uint64_t gen64(const std::string& caller);
 
