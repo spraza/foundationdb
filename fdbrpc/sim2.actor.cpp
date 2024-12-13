@@ -419,6 +419,13 @@ struct Sim2Conn final : IConnection, ReferenceCounted<Sim2Conn> {
 	// Writes as many bytes as possible from the given SendBuffer chain into the write buffer and returns the number of
 	// bytes written (might be 0) (or may throw an error if the connection dies)
 	int write(SendBuffer const* buffer, int limit) override {
+		// std::string srcAddr = FlowTransport::transport().getLocalAddress().toString();
+		// std::string dstAddr = this->getPeerAddress().toString();
+		// if ((srcAddr == "[abcd::2:0:1:0]:1" && dstAddr == "[abcd::2:2:1:3c00]:43124") ||
+		//     (dstAddr == "[abcd::2:0:1:0]:1" && srcAddr == "[abcd::2:2:1:3c00]:43124")) {
+		// 	int x = 2;
+		// 	(void)x;
+		// }
 		rollRandomClose();
 		ASSERT(limit > 0);
 
@@ -495,6 +502,13 @@ private:
 
 	ACTOR static Future<Void> sender(Sim2Conn* self) {
 		loop {
+			// const auto srcAddr = FlowTransport::transport().getLocalAddress().toString();
+			// const auto dstAddr = self->getPeerAddress().toString();
+			// if (srcAddr == "[abcd::2:0:1:0]:1" && dstAddr == "[abcd::2:2:1:3c00]:43124") {
+			// 	// if (dstAddr == "[abcd::2:2:1:0]:1" && srcAddr == "[abcd::2:2:1:3c00]:43124") {
+			// 	int x = 2;
+			// 	(void)x;
+			// }
 			wait(self->writtenBytes.onChange()); // takes place on peer!
 			ASSERT(g_simulator->getCurrentProcess() == self->peerProcess);
 			wait(delay(.002 * deterministicRandom()->random01()));
@@ -503,6 +517,13 @@ private:
 	}
 	ACTOR static Future<Void> receiver(Sim2Conn* self) {
 		loop {
+			state std::string srcAddr = FlowTransport::transport().getLocalAddress().toString();
+			state std::string dstAddr = self->getPeerAddress().toString();
+			if (srcAddr == "[abcd::2:0:1:0]:1" && dstAddr == "[abcd::2:2:1:3c00]:43124") {
+				// if (dstAddr == "[abcd::2:2:1:0]:1" && srcAddr == "[abcd::2:2:1:3c00]:43124") {
+				int x = 2;
+				(void)x;
+			}
 			if (self->sentBytes.get() != self->receivedBytes.get())
 				wait(g_simulator->onProcess(self->peerProcess));
 			while (self->sentBytes.get() == self->receivedBytes.get())

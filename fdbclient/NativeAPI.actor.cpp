@@ -9217,7 +9217,8 @@ ACTOR static Future<CheckpointMetaData> getCheckpointMetaDataInternal(KeyRange r
 	    .detail("Range", range)
 	    .detail("Version", version)
 	    .detail("Format", static_cast<int>(format))
-	    .detail("Locations", alternatives->description());
+	    .detail("Locations", alternatives->description())
+	    .detail("ActionID", actionId.present() ? actionId.get().toString() : "NONE");
 
 	state std::vector<Future<ErrorOr<CheckpointMetaData>>> futures;
 	state int index = 0;

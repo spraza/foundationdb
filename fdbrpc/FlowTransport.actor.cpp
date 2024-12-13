@@ -1148,6 +1148,14 @@ ACTOR static void deliver(TransportData* self,
                           bool isTrustedPeer,
                           InReadSocket inReadSocket,
                           Future<Void> disconnect) {
+	const auto srcAddr = FlowTransport::transport().getLocalAddress().toString();
+	const auto dstAddr = destination.getPrimaryAddress().toString();
+	// if ((srcAddr == "[abcd::2:0:1:0]:1" && dstAddr == "[abcd::2:2:1:0]:1") ||
+	//     (dstAddr == "[abcd::2:0:1:0]:1" && srcAddr == "[abcd::2:2:1:0]:1")) {
+	if (srcAddr == "[abcd::2:0:1:0]:1" && dstAddr == "[abcd::2:2:1:0]:1") {
+		int x = 2;
+		(void)x;
+	}
 	// We want to run the task at the right priority. If the priority is higher than the current priority (which is
 	// ReadSocket) we can just upgrade. Otherwise we'll context switch so that we don't block other tasks that might run
 	// with a higher priority. ReplyPromiseStream needs to guarantee that messages are received in the order they were
@@ -2047,6 +2055,14 @@ static ReliablePacket* sendPacket(TransportData* self,
 }
 
 ReliablePacket* FlowTransport::sendReliable(ISerializeSource const& what, const Endpoint& destination) {
+	const auto srcAddr = FlowTransport::transport().getLocalAddress().toString();
+	const auto dstAddr = destination.getPrimaryAddress().toString();
+	// if ((srcAddr == "[abcd::2:0:1:0]:1" && dstAddr == "[abcd::2:2:1:0]:1") ||
+	//     (dstAddr == "[abcd::2:0:1:0]:1" && srcAddr == "[abcd::2:2:1:0]:1")) {
+	if (srcAddr == "[abcd::2:0:1:0]:1" && dstAddr == "[abcd::2:2:1:0]:1") {
+		int x = 2;
+		(void)x;
+	}
 	if (self->isLocalAddress(destination.getPrimaryAddress())) {
 		sendLocal(self, what, destination);
 		return nullptr;
@@ -2065,6 +2081,14 @@ void FlowTransport::cancelReliable(ReliablePacket* p) {
 Reference<Peer> FlowTransport::sendUnreliable(ISerializeSource const& what,
                                               const Endpoint& destination,
                                               bool openConnection) {
+	const auto srcAddr = FlowTransport::transport().getLocalAddress().toString();
+	const auto dstAddr = destination.getPrimaryAddress().toString();
+	// if ((srcAddr == "[abcd::2:0:1:0]:1" && dstAddr == "[abcd::2:2:1:0]:1") ||
+	//     (dstAddr == "[abcd::2:0:1:0]:1" && srcAddr == "[abcd::2:2:1:0]:1")) {
+	if (dstAddr == "[abcd::2:0:1:0]:1" && srcAddr == "[abcd::2:2:1:0]:1") {
+		int x = 2;
+		(void)x;
+	}
 	if (self->isLocalAddress(destination.getPrimaryAddress())) {
 		sendLocal(self, what, destination);
 		return Reference<Peer>();

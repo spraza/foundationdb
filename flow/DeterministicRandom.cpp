@@ -29,6 +29,7 @@
 #include <cxxabi.h>
 
 std::string GetCallerInfo() {
+	return "";
 	constexpr int maxFrames = 10;
 	void* callstack[maxFrames];
 	int frames = backtrace(callstack, maxFrames);

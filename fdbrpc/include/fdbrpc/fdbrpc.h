@@ -732,6 +732,15 @@ public:
 
 	template <class U>
 	void send(U&& value) const {
+		// const auto srcAddr = FlowTransport::transport().getLocalAddress().toString();
+		// const auto dstAddr = getEndpoint().getPrimaryAddress().toString();
+		// if ((srcAddr == "[abcd::2:0:1:0]:1" &&
+		// 		dstAddr == "[abcd::2:2:1:3c00]:43124") ||
+		// 	(dstAddr == "[abcd::2:0:1:0]:1" &&
+		// 		srcAddr == "[abcd::2:2:1:3c00]:43124")) {
+		// 		int x = 2;
+		// 		(void)x;
+		// }
 		if (queue->isRemoteEndpoint()) {
 			FlowTransport::transport().sendUnreliable(SerializeSource<T>(std::forward<U>(value)), getEndpoint(), true);
 		} else
@@ -751,7 +760,16 @@ public:
 	//   If cancelled, request was or will be delivered zero or more times.
 	template <class X>
 	Future<REPLY_TYPE(X)> getReply(const X& value) const {
-		// Ensure the same request isn't used multiple times
+		// const auto srcAddr = FlowTransport::transport().getLocalAddress().toString();
+		// const auto dstAddr = getEndpoint().getPrimaryAddress().toString();
+		// if ((srcAddr == "[abcd::2:0:1:0]:1" &&
+		// 		dstAddr == "[abcd::2:2:1:3c00]:43124") ||
+		// 	(dstAddr == "[abcd::2:0:1:0]:1" &&
+		// 		srcAddr == "[abcd::2:2:1:3c00]:43124")) {
+		// 		int x = 2;
+		// 		(void)x;
+		// }
+        // Ensure the same request isn't used multiple times
 		ASSERT(!getReplyPromise(value).getFuture().isReady());
 		if (queue->isRemoteEndpoint()) {
 			return sendCanceler(getReplyPromise(value),
