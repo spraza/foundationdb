@@ -125,7 +125,8 @@ struct CheckpointMetaData {
 		                  " [Checkpoint Dir:] " + dir + " [Server]: " + describe(src) +
 		                  " [ID]: " + checkpointID.toString() + " [State]: " + std::to_string(static_cast<int>(state)) +
 		                  (actionId.present() ? (" [Action ID]: " + actionId.get().toString()) : "") +
-		                  (bytesSampleFile.present() ? " [bytesSampleFile]: " + bytesSampleFile.get() : "");
+		                  (bytesSampleFile.present() ? " [bytesSampleFile]: " + bytesSampleFile.get() : "") +
+		                  " [SerializedCheckpoint]: " + serializedCheckpoint.toString();
 		;
 		return res;
 	}
