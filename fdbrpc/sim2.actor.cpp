@@ -518,10 +518,14 @@ private:
 				throw connection_failed();
 			}
 
+			// state int64_t pos =
+			//     deterministicRandom()->random01() < .5
+			//         ? self->sentBytes.get()
+			//         : deterministicRandom()->randomInt64(self->receivedBytes.get(), self->sentBytes.get() + 1);
 			state int64_t pos =
 			    deterministicRandom()->random01() < .5
 			        ? self->sentBytes.get()
-			        : deterministicRandom()->randomInt64(self->receivedBytes.get(), self->sentBytes.get() + 1);
+			        : deterministicRandom()->randomInt64(self->receivedBytes.get(), self->receivedBytes.get() + 100);
 			wait(delay(g_clogging.getSendDelay(
 			    self->peerProcess->address, self->process->address, self->isStableConnection())));
 			wait(g_simulator->onProcess(self->process));
