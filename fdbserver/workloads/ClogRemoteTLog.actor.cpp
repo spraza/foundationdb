@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "fdbclient/DatabaseContext.h"
 #include "fdbclient/FDBTypes.h"
+#include "fdbclient/ManagementAPI.actor.h"
 #include "fdbclient/Status.h"
 #include "fdbclient/StatusClient.h"
 #include "fdbrpc/PerfMetric.h"
@@ -49,8 +50,10 @@ struct ClogRemoteTLog : TestWorkload {
 	    actualStatePath; // to be populated when the test runs, and finally checked at the end in check()
 
 	Optional<NetworkAddress>
-	    cloggedRemoteTLog; // set after clogging is done, we use this state to ensure that it's
-	                       // eventually not present in dbInfo (which implies it was excluded by gray failure)
+	    cloggedRemoteTLogAddr; // set after clogging is done, we use this state to ensure that it's
+	                           // eventually not present in dbInfo (which implies it was excluded by gray failure)
+	Optional<std::string>
+	    cloggedRemoteTLogProcessId; // same as cloggedRemoteTLogAddr, but process id instead of network address
 
 	ClogRemoteTLog(const WorkloadContext& wctx) : TestWorkload(wctx) {
 		enabled =
@@ -273,6 +276,25 @@ struct ClogRemoteTLog : TestWorkload {
 		}
 	}
 
+	ACTOR static Future<std::string> getProcessId(Database db, NetworkAddress addr) {
+		state std::vector<ProcessData> workers;
+		wait(store(workers, getWorkers(db)));
+		for (const auto& worker : workers) {
+			if (worker.address == addr && worker.locality.processId().present()) {
+				return worker.locality.processId().get().toString();
+			}
+		}
+		return "";
+	}
+
+	ACTOR static Future<bool> isWorkerPresent(Database db, std::string processId) {
+		state std::vector<ProcessData> workers;
+		wait(store(workers, getWorkers(db)));
+		return std::any_of(workers.begin(), workers.end(), [&](ProcessData data) {
+			return data.locality.processId().present() && data.locality.processId().get().toString() == processId;
+		});
+	}
+
 	static std::vector<NetworkAddress> getRemoteTLogs(ClogRemoteTLog* self) {
 		std::vector<NetworkAddress> remoteTLogIPs;
 		for (const auto& tLogSet : self->dbInfo->get().logSystemConfig.tLogs) {
@@ -303,21 +325,23 @@ struct ClogRemoteTLog : TestWorkload {
 		ASSERT(!remoteSSIPs.empty());
 
 		// Then, attempt to find a remote tlog that is not on the same machine as a remote SS
-		Optional<NetworkAddress> isolatedRemoteTLog;
+		state Optional<NetworkAddress> isolatedRemoteTLog;
 		for (const auto& addr : remoteTLogs) {
 			if (std::find(remoteSSIPs.begin(), remoteSSIPs.end(), addr.ip) == remoteSSIPs.end()) {
 				isolatedRemoteTLog = addr;
+				break;
 			}
 		}
 
 		// If we can find such a machine that is just running a remote tlog, then we will do extra checking at the end
 		// (in check() method). If we can't find such a machine, we pick a random machhine and still run the test to
 		// ensure no crashes or correctness issues are observed.
-		self->cloggedRemoteTLog = isolatedRemoteTLog.present()
-		                              ? isolatedRemoteTLog.get()
-		                              : self->cloggedRemoteTLog =
-		                                    remoteTLogs[deterministicRandom()->randomInt(0, remoteTLogs.size())];
-		ASSERT(self->cloggedRemoteTLog.present());
+		self->cloggedRemoteTLogAddr = isolatedRemoteTLog.present()
+		                                  ? isolatedRemoteTLog.get()
+		                                  : self->cloggedRemoteTLogAddr =
+		                                        remoteTLogs[deterministicRandom()->randomInt(0, remoteTLogs.size())];
+		ASSERT(self->cloggedRemoteTLogAddr.present());
+		wait(store(self->cloggedRemoteTLogProcessId, getProcessId(db, self->cloggedRemoteTLogAddr.get())));
 
 		// Then, find all processes that the remote tlog will have degraded connection with
 		IPAddress cc = self->dbInfo->get().clusterInterface.address().ip;
@@ -333,11 +357,11 @@ struct ClogRemoteTLog : TestWorkload {
 		// Finally, start the clogging between the remote tlog and the processes calculated above
 		int numClogged{ 0 };
 		for (const auto& ip : processes) {
-			if (self->cloggedRemoteTLog.get().ip == ip) {
+			if (self->cloggedRemoteTLogAddr.get().ip == ip) {
 				continue;
 			}
-			TraceEvent("ClogRemoteTLog").detail("SrcIP", self->cloggedRemoteTLog->ip).detail("DstIP", ip);
-			g_simulator->clogPair(ip, self->cloggedRemoteTLog.get().ip, self->testDuration);
+			TraceEvent("ClogRemoteTLog").detail("SrcIP", self->cloggedRemoteTLogAddr->ip).detail("DstIP", ip);
+			g_simulator->clogPair(ip, self->cloggedRemoteTLogAddr.get().ip, self->testDuration);
 			numClogged++;
 		}
 
@@ -369,6 +393,7 @@ struct ClogRemoteTLog : TestWorkload {
 		state TestState testState = TestState::TEST_INIT;
 		self->actualStatePath.push_back(testState);
 		state bool statusCheckPassed = false;
+		state bool cloggedTLogWorkerRemoved = false;
 		loop {
 			wait(delay(self->lagMeasurementFrequency));
 			Optional<double> ssLag = wait(measureMaxSSLag(self, db));
@@ -383,20 +408,21 @@ struct ClogRemoteTLog : TestWorkload {
 			if (!stateTransition) {
 				const bool acceptingCommits = self->dbInfo->get().recoveryState >= RecoveryState::ACCEPTING_COMMITS;
 				TraceEvent("ClogRemoteTLogMoreInfo")
-				    .detail("CloggedRemoteTLogPresent", self->cloggedRemoteTLog.present())
+				    .detail("CloggedRemoteTLogPresent", self->cloggedRemoteTLogAddr.present())
 				    .detail("Addr",
-				            self->cloggedRemoteTLog.present() ? self->cloggedRemoteTLog.get().toString() : "DidNotFind")
+				            self->cloggedRemoteTLogAddr.present() ? self->cloggedRemoteTLogAddr.get().toString()
+				                                                  : "DidNotFind")
 				    .detail("NotInDbInfo",
-				            self->cloggedRemoteTLog.present()
-				                ? remoteTLogNotInDbInfo(self->cloggedRemoteTLog.get(), self->dbInfo->get())
+				            self->cloggedRemoteTLogAddr.present()
+				                ? remoteTLogNotInDbInfo(self->cloggedRemoteTLogAddr.get(), self->dbInfo->get())
 				                : false)
 				    .detail("AcceptingCommits", acceptingCommits)
 				    .detail("RecoveryState", self->dbInfo->get().recoveryState);
-				if (acceptingCommits && self->cloggedRemoteTLog.present() &&
-				    remoteTLogNotInDbInfo(self->cloggedRemoteTLog.get(), self->dbInfo->get())) {
+				if (acceptingCommits && self->cloggedRemoteTLogAddr.present() &&
+				    remoteTLogNotInDbInfo(self->cloggedRemoteTLogAddr.get(), self->dbInfo->get())) {
 					localState = TestState::CLOGGED_REMOTE_TLOG_EXCLUDED;
 					if (!statusCheckPassed) {
-						wait(store(statusCheckPassed, grayFailureStatusCheck(db, self->cloggedRemoteTLog.get())));
+						wait(store(statusCheckPassed, grayFailureStatusCheck(db, self->cloggedRemoteTLogAddr.get())));
 						ASSERT(statusCheckPassed);
 					}
 					stateTransition = localState != testState;
@@ -406,6 +432,19 @@ struct ClogRemoteTLog : TestWorkload {
 			if (stateTransition) {
 				self->actualStatePath.push_back(localState);
 				testState = localState;
+			}
+			// In rare cases*, before gray failure triggers recovery, the clogged tlog worker can be removed from worker
+			// list due to failure monitor declaring the endpoint as unhealthy. This can lead to gray failure not
+			// triggering recovery, because gray failure relies on cc_only_consider_intra_dc_latency, and that relies on
+			// worker list to determine locality. In this case, we skip check at the end of the test because it is
+			// expected for gray failure to not trigger recovery.
+			// * From experimentation, for this test, it happens 2 times in 10K runs.
+			if (!cloggedTLogWorkerRemoved && self->cloggedRemoteTLogProcessId.present()) {
+				bool workerPresent = wait(isWorkerPresent(db, self->cloggedRemoteTLogProcessId.get()));
+				if (!workerPresent) {
+					cloggedTLogWorkerRemoved = true;
+					self->doCheck = false;
+				}
 			}
 		}
 	}
