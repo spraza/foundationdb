@@ -372,6 +372,24 @@ rocksdb::ExportImportFilesMetaData getMetaData(const CheckpointMetaData& checkpo
 	return metaData;
 }
 
+static int ceilToNextThousand(int number, int delta) {
+	int base = (number / 1000) * 1000; // Find the nearest lower multiple of 1000
+	int remainder = number % 1000; // Find the offset from the current base
+
+	if (remainder == 0) {
+		// If the number is already a multiple of 1000, check delta
+		return base + 1000;
+	}
+
+	if (remainder >= 1000 - delta) {
+		// If within delta range, go to the next-to-next thousand
+		return base + 2000;
+	} else {
+		// Otherwise, go to the next thousand
+		return base + 1000;
+	}
+}
+
 void populateMetaData(CheckpointMetaData* checkpoint, const rocksdb::ExportImportFilesMetaData* metaData) {
 	RocksDBColumnFamilyCheckpoint rocksCF;
 	if (metaData != nullptr) {
@@ -409,6 +427,9 @@ void populateMetaData(CheckpointMetaData* checkpoint, const rocksdb::ExportImpor
 	}
 	checkpoint->setFormat(DataMoveRocksCF);
 	checkpoint->serializedCheckpoint = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	int requiredPadding =
+	    ceilToNextThousand(checkpoint->serializedCheckpoint.size(), 250) - checkpoint->serializedCheckpoint.size();
+	checkpoint->padding = std::string(requiredPadding, '\0');
 }
 
 const rocksdb::Slice toSlice(StringRef s) {
