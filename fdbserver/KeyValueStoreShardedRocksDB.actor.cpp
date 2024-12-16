@@ -3970,24 +3970,25 @@ struct ShardedRocksDBKeyValueStore : IKeyValueStore {
 					    start - shard->lastCompactionTime < SERVER_KNOBS->SHARDED_ROCKSDB_COMPACTION_PERIOD) {
 						continue;
 					}
-					// uint64_t liveDataSize = 0;
-					// ASSERT(shard->db->GetIntProperty(
-					//     shard->cf, rocksdb::DB::Properties::kEstimateLiveDataSize, &liveDataSize));
+					uint64_t liveDataSize = 0;
+					ASSERT(shard->db->GetIntProperty(
+					    shard->cf, rocksdb::DB::Properties::kEstimateLiveDataSize, &liveDataSize));
 
-					// rocksdb::ColumnFamilyMetaData cfMetadata;
-					// shard->db->GetColumnFamilyMetaData(shard->cf, &cfMetadata);
-					// if (cfMetadata.file_count <= 5) {
-					// 	continue;
-					// }
-					// if (liveDataSize / cfMetadata.file_count >= SERVER_KNOBS->SHARDED_ROCKSDB_AVERAGE_FILE_SIZE) {
-					// 	continue;
-					// }
+					rocksdb::ColumnFamilyMetaData cfMetadata;
+					shard->db->GetColumnFamilyMetaData(shard->cf, &cfMetadata);
+					if (cfMetadata.file_count <= 5) {
+						continue;
+					}
+					if (liveDataSize / cfMetadata.file_count >= SERVER_KNOBS->SHARDED_ROCKSDB_AVERAGE_FILE_SIZE) {
+						continue;
+					}
 
 					shards.push_back(shard);
 
-					TraceEvent("CompactionScheduled").detail("ShardId", id);
-					// .detail("NumFiles", cfMetadata.file_count);
-					// .detail("ShardSize", liveDataSize);
+					TraceEvent("CompactionScheduled")
+					    .detail("ShardId", id)
+					    .detail("NumFiles", cfMetadata.file_count)
+					    .detail("ShardSize", liveDataSize);
 					++count;
 				}
 
