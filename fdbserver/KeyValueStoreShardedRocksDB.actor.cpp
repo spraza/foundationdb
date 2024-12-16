@@ -3947,6 +3947,9 @@ struct ShardedRocksDBKeyValueStore : IKeyValueStore {
 	                                        Future<Void> openFuture,
 	                                        ShardManager* shardManager,
 	                                        Reference<IThreadPool> thread) {
+		if (g_network->isSimulated()) {
+			noUnseed = true;
+		}
 		try {
 			wait(openFuture);
 			state std::unordered_map<std::string, std::shared_ptr<PhysicalShard>>* physicalShards =
