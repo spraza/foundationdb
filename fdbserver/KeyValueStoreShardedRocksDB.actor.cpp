@@ -3943,13 +3943,28 @@ struct ShardedRocksDBKeyValueStore : IKeyValueStore {
 		return read(a.release(), &semaphore, readThreads.getPtr(), &counters.failedToAcquire);
 	}
 
+	static bool shouldCompactShard(const std::shared_ptr<PhysicalShard> shard,
+	                               const uint64_t liveDataSize,
+	                               const size_t fileCount) {
+		// Rocksdb metadata kEstimateLiveDataSize and cfMetadata.file_count is not deterministic so we don't
+		// use it in simulation. We still want to exercise the overload functionality for test coverage, so we return
+		// shouldCompactShard = true 25% of the time.
+		if (g_network->isSimulated()) {
+			return deterministicRandom()->randomInt(0, 100) < 25;
+		}
+		if (fileCount <= 5) {
+			return false;
+		}
+		if (liveDataSize / fileCount >= SERVER_KNOBS->SHARDED_ROCKSDB_AVERAGE_FILE_SIZE) {
+			return false;
+		}
+		return true;
+	}
+
 	ACTOR static Future<Void> compactShards(std::shared_ptr<ShardedRocksDBState> rState,
 	                                        Future<Void> openFuture,
 	                                        ShardManager* shardManager,
 	                                        Reference<IThreadPool> thread) {
-		if (g_network->isSimulated()) {
-			noUnseed = true;
-		}
 		try {
 			wait(openFuture);
 			state std::unordered_map<std::string, std::shared_ptr<PhysicalShard>>* physicalShards =
@@ -3973,16 +3988,14 @@ struct ShardedRocksDBKeyValueStore : IKeyValueStore {
 					    start - shard->lastCompactionTime < SERVER_KNOBS->SHARDED_ROCKSDB_COMPACTION_PERIOD) {
 						continue;
 					}
+
 					uint64_t liveDataSize = 0;
 					ASSERT(shard->db->GetIntProperty(
 					    shard->cf, rocksdb::DB::Properties::kEstimateLiveDataSize, &liveDataSize));
-
 					rocksdb::ColumnFamilyMetaData cfMetadata;
 					shard->db->GetColumnFamilyMetaData(shard->cf, &cfMetadata);
-					if (cfMetadata.file_count <= 5) {
-						continue;
-					}
-					if (liveDataSize / cfMetadata.file_count >= SERVER_KNOBS->SHARDED_ROCKSDB_AVERAGE_FILE_SIZE) {
+
+					if (!shouldCompactShard(shard, liveDataSize, cfMetadata.file_count)) {
 						continue;
 					}
 
