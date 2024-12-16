@@ -55,6 +55,7 @@ struct Shard {
 };
 
 bool shouldCreateCheckpoint(const UID& dataMoveId) {
+	return false;
 	bool assigned, emptyRange;
 	DataMoveType type;
 	DataMovementReason reason;
