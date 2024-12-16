@@ -64,7 +64,6 @@ struct CheckpointMetaData {
 	Optional<UID> actionId; // Unique ID defined by the application.
 
 	std::string dir;
-	std::string padding;
 
 	CheckpointMetaData() = default;
 	CheckpointMetaData(const std::vector<KeyRange>& ranges,
@@ -143,8 +142,7 @@ struct CheckpointMetaData {
 		           serializedCheckpoint,
 		           actionId,
 		           bytesSampleFile,
-		           dir,
-		           padding);
+		           dir);
 	}
 };
 
