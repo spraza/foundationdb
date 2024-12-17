@@ -55,14 +55,15 @@ struct Shard {
 };
 
 bool shouldCreateCheckpoint(const UID& dataMoveId) {
-	if (g_network->isSimulated() && !noUnseed) {
-		noUnseed = true;
-	}
 	bool assigned, emptyRange;
 	DataMoveType type;
 	DataMovementReason reason;
 	decodeDataMoveId(dataMoveId, assigned, emptyRange, type, reason);
-	return type == DataMoveType::PHYSICAL || type == DataMoveType::PHYSICAL_EXP;
+	const bool ret = (type == DataMoveType::PHYSICAL || type == DataMoveType::PHYSICAL_EXP);
+	if (ret && g_network->isSimulated() && !noUnseed) {
+		noUnseed = true;
+	}
+	return ret;
 }
 
 // Unassigns keyrange `range` from server `ssId`, except ranges in `shards`.
