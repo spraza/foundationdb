@@ -1194,6 +1194,22 @@ UpdateWorkerHealthRequest doPeerHealthCheck(const WorkerInterface& interf,
 		workerLocation = Satellite;
 	}
 
+	TraceEvent(SevDebug, "WorkerPeerHealthMonitor")
+	    .detail("WorkerLocation", workerLocation)
+	    .detail("AddressesInDbAndPrimaryDc",
+	            addressesInDbAndPrimaryDc(interf.addresses(),
+	                                      dbInfo,
+	                                      storageServers.present() ? storageServers.get().primary
+	                                                               : Optional<std::vector<NetworkAddress>>{}))
+	    .detail("AddressesInDbAndRemoteDc",
+	            addressesInDbAndRemoteDc(interf.addresses(),
+	                                     dbInfo,
+	                                     storageServers.present() ? storageServers.get().remote
+	                                                              : Optional<std::vector<NetworkAddress>>{}))
+	    .detail("AddressesInDbAndPrimarySatelliteDc", addressesInDbAndPrimarySatelliteDc(interf.addresses(), dbInfo))
+	    .detail("StorageServersPresent", storageServers.present())
+	    .detail("EnablePrimaryTxnSystemHealthCheck", enablePrimaryTxnSystemHealthCheck->get());
+
 	if (workerLocation == None && !enablePrimaryTxnSystemHealthCheck->get()) {
 		// This worker doesn't need to monitor anything if it is not in transaction system or in remote satellite.
 		return req;
@@ -1211,7 +1227,7 @@ UpdateWorkerHealthRequest doPeerHealthCheck(const WorkerInterface& interf,
 		double lastLoggedTime = peer->lastLoggedTime <= 0.0 ? peer->lastConnectTime : peer->lastLoggedTime;
 
 		TraceEvent(SevDebug, "PeerHealthMonitor")
-		    .suppressFor(5.0)
+		    // .suppressFor(5.0)
 		    .detail("Peer", address)
 		    .detail("PeerAddress", address)
 		    .detail("Force", enablePrimaryTxnSystemHealthCheck->get())
@@ -1226,7 +1242,10 @@ UpdateWorkerHealthRequest doPeerHealthCheck(const WorkerInterface& interf,
 		            peer->pingLatencies.percentile(SERVER_KNOBS->PEER_LATENCY_DEGRADATION_PERCENTILE))
 		    .detail("PingCount", peer->pingLatencies.getPopulationSize())
 		    .detail("PingTimeoutCount", peer->timeoutCount)
-		    .detail("ConnectionFailureCount", peer->connectFailedCount);
+		    .detail("ConnectionFailureCount", peer->connectFailedCount)
+		    .detail("WorkerLocation", workerLocation)
+		    .detail("AddressInDbAndPrimaryDc", addressInDbAndPrimaryDc(address, dbInfo))
+		    .detail("AddressInDbAndRemoteDc", addressInDbAndRemoteDc(address, dbInfo));
 		if ((workerLocation == Primary && addressInDbAndPrimaryDc(address, dbInfo)) ||
 		    (workerLocation == Remote && addressInDbAndRemoteDc(address, dbInfo))) {
 			// Monitors intra DC latencies between servers that in the primary or remote DC's transaction
