@@ -3123,7 +3123,14 @@ public:
 		std::unordered_map<NetworkAddress, std::unordered_set<NetworkAddress>> disconnectedLinkDst2Src;
 		double currentTime = now();
 		for (const auto& [server, health] : workerHealth) {
+			TraceEvent(SevWarnAlways, "GetDegradationInfo1").detail("Complainer", server.toString());
 			for (const auto& [degradedPeer, times] : health.degradedPeers) {
+				TraceEvent(SevWarnAlways, "GetDegradationInfo2")
+				    .detail("DegradedPeer", degradedPeer.toString())
+				    .detail("Skip1", currentTime - times.startTime < SERVER_KNOBS->CC_MIN_DEGRADATION_INTERVAL)
+				    .detail("Skip2",
+				            SERVER_KNOBS->CC_ONLY_CONSIDER_INTRA_DC_LATENCY &&
+				                !processesInSameDC(server, degradedPeer));
 				if (currentTime - times.startTime < SERVER_KNOBS->CC_MIN_DEGRADATION_INTERVAL) {
 					// This degraded link is not long enough to be considered as degraded.
 					continue;
@@ -3153,6 +3160,11 @@ public:
 			count2DegradedPeer.push_back({ complainers.size(), degradedPeer });
 		}
 		std::sort(count2DegradedPeer.begin(), count2DegradedPeer.end(), deterministicDecendingOrder);
+		for (const auto& [complainerCount, badServer] : count2DegradedPeer) {
+			TraceEvent(SevWarnAlways, "GetDegradationInfo3")
+			    .detail("ComplainerCount", complainerCount)
+			    .detail("BadServer", badServer.toString());
+		}
 
 		std::vector<std::pair<int, NetworkAddress>> count2DisconnectedPeer;
 		for (const auto& [disconnectedPeer, complainers] : disconnectedLinkDst2Src) {
@@ -3177,6 +3189,7 @@ public:
 			for (const auto& complainer : degradedLinkDst2Src[badServer]) {
 				if (currentDegradedServers.find(complainer) == currentDegradedServers.end()) {
 					currentDegradedServers.insert(badServer);
+					TraceEvent(SevWarnAlways, "GetDegradationInfo4").detail("Added", badServer.toString());
 					break;
 				}
 			}
@@ -3208,6 +3221,12 @@ public:
 		// For degraded server that are complained by more than SERVER_KNOBS->CC_DEGRADED_PEER_DEGREE_TO_EXCLUDE, we
 		// don't know if it is a hot server, or the network is bad. We remove from the returned degraded server list.
 		for (const auto& badServer : currentDegradedServers) {
+			TraceEvent(SevWarnAlways, "GetDegradationInfo5")
+			    .detail("Added",
+			            degradedLinkDst2Src[badServer].size() >= SERVER_KNOBS->CC_DEGRADED_PEER_DEGREE_TO_EXCLUDE_MIN &&
+			                degradedLinkDst2Src[badServer].size() <= SERVER_KNOBS->CC_DEGRADED_PEER_DEGREE_TO_EXCLUDE)
+			    .detail("BadServer", badServer.toString())
+			    .detail("NumComplainers", degradedLinkDst2Src[badServer].size());
 			if (degradedLinkDst2Src[badServer].size() >= SERVER_KNOBS->CC_DEGRADED_PEER_DEGREE_TO_EXCLUDE_MIN &&
 			    degradedLinkDst2Src[badServer].size() <= SERVER_KNOBS->CC_DEGRADED_PEER_DEGREE_TO_EXCLUDE) {
 				currentDegradationInfo.degradedServers.insert(badServer);
