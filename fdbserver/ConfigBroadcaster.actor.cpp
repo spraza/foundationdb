@@ -761,6 +761,7 @@ void ConfigBroadcaster::compact(Version compactionVersion) {
 }
 
 ACTOR static Future<Void> lockConfigNodesImpl(ServerCoordinators coordinators) {
+	TraceEvent("LockConfigNodesStart");
 	if (coordinators.configServers.empty()) {
 		return Void();
 	}
@@ -781,6 +782,7 @@ ACTOR static Future<Void> lockConfigNodesImpl(ServerCoordinators coordinators) {
 	}
 	int quorum_size = lockRequests.size() / 2 + 1;
 	wait(quorum(lockRequests, quorum_size));
+	TraceEvent("LockConfigNodesEnd");
 	return Void();
 }
 

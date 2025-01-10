@@ -66,6 +66,10 @@ class ConfigIncrementWorkload : public TestWorkload {
 					try {
 						tr = self->getTransaction(cx);
 						state int currentValue = wait(get(tr));
+						TraceEvent("ConfigIncrementGetDebug")
+						    .detail("GetValue", currentValue)
+						    .detail("LastKnownValue", self->lastKnownValue)
+						    .detail("ClientID", self->clientId);
 						ASSERT_GE(currentValue, self->lastKnownValue);
 						set(tr, currentValue + 1);
 						wait(delay(deterministicRandom()->random01() * 2 * self->meanSleepWithinTransactions));
@@ -75,7 +79,8 @@ class ConfigIncrementWorkload : public TestWorkload {
 						self->lastKnownValue = currentValue + 1;
 						TraceEvent("ConfigIncrementSucceeded")
 						    .detail("CommittedVersion", self->lastKnownCommittedVersion)
-						    .detail("CommittedValue", self->lastKnownValue);
+						    .detail("CommittedValue", self->lastKnownValue)
+						    .detail("ClientID", self->clientId);
 						++self->transactions;
 						++trsComplete;
 						wait(delay(deterministicRandom()->random01() * 2 * self->meanSleepBetweenTransactions));
@@ -83,7 +88,8 @@ class ConfigIncrementWorkload : public TestWorkload {
 					} catch (Error& e) {
 						TraceEvent(SevDebug, "ConfigIncrementError")
 						    .errorUnsuppressed(e)
-						    .detail("LastKnownValue", self->lastKnownValue);
+						    .detail("LastKnownValue", self->lastKnownValue)
+						    .detail("ClientID", self->clientId);
 						wait(tr->onError(e));
 						++self->retries;
 					}
