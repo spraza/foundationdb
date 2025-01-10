@@ -271,6 +271,7 @@ class ConfigNodeImpl {
 			generation.liveVersion = std::max(generation.liveVersion, req.lastSeenLiveVersion.get() + 1);
 		}
 		self->kvStore->set(KeyValueRef(currentGenerationKey, BinaryWriter::toValue(generation, IncludeVersion())));
+		TraceEvent("GetNewGeneration").detail("Generation", generation.toString());
 		wait(self->kvStore->commit());
 		req.reply.send(ConfigTransactionGetGenerationReply{ generation });
 		return Void();
@@ -300,6 +301,9 @@ class ConfigNodeImpl {
 		if (serializedValue.present()) {
 			value = ObjectReader::fromStringRef<KnobValue>(serializedValue.get(), IncludeVersion());
 		}
+		TraceEvent("ConfigNodeGet1")
+		    .detail("Key", req.key.knobName.toString())
+		    .detail("Val", value.present() ? value.get().toString() : "<none>");
 		Standalone<VectorRef<VersionedConfigMutationRef>> versionedMutations =
 		    wait(getMutations(self, 0, req.generation.committedVersion));
 		for (const auto& versionedMutation : versionedMutations) {
@@ -312,6 +316,9 @@ class ConfigNodeImpl {
 				}
 			}
 		}
+		TraceEvent("ConfigNodeGet2")
+		    .detail("Key", req.key.knobName.toString())
+		    .detail("Val", value.present() ? value.get().toString() : "<none>");
 		req.reply.send(ConfigTransactionGetReply{ value });
 		return Void();
 	}
@@ -489,6 +496,14 @@ class ConfigNodeImpl {
 		annotations.emplace_back_deep(annotations.arena(), req.generation.liveVersion, req.annotation);
 
 		wait(commitMutations(self, mutations, annotations, req.generation.liveVersion));
+		std::string keyValStr{};
+		for (const auto& m : req.mutations) {
+			keyValStr += m.getKnobName().toString();
+			keyValStr += " = ";
+			keyValStr += m.isSet() ? m.getValue().toString() : "<not_set>";
+			keyValStr += "\n";
+		}
+		TraceEvent("ConfigNodeCommited").detail("KeyValStr", keyValStr);
 		req.reply.send(Void());
 		return Void();
 	}
@@ -790,12 +805,13 @@ class ConfigNodeImpl {
 					++self->lockRequests;
 					CoordinatorsHash coordinatorsHash = wait(getCoordinatorsHash(self));
 					if (coordinatorsHash == 0 || coordinatorsHash == req.coordinatorsHash) {
-						TraceEvent("ConfigNodeLocking", self->id).log();
+						TraceEvent("ConfigNodeLockingStart", self->id).log();
 						self->kvStore->set(KeyValueRef(registeredKey, BinaryWriter::toValue(false, IncludeVersion())));
 						self->kvStore->set(KeyValueRef(
 						    lockedKey,
 						    BinaryWriter::toValue(Optional<CoordinatorsHash>(req.coordinatorsHash), IncludeVersion())));
 						wait(self->kvStore->commit());
+						TraceEvent("ConfigNodeLockingEnd", self->id).log();
 					}
 					req.reply.send(Void());
 				}
