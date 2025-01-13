@@ -163,6 +163,7 @@ struct Peer : public ReferenceCounted<Peer> {
 	int64_t bytesReceived;
 	int64_t bytesSent;
 	double lastDataPacketSentTime;
+	double lastDataPacketReceivedTime;
 	int outstandingReplies;
 	DDSketch<double> pingLatencies;
 	double lastLoggedTime;
