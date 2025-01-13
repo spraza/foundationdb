@@ -992,6 +992,18 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				throw;
 			// Try to recover, even from serious errors, by retrying
 
+			TraceEvent("PeerDestroyDebug")
+			    .errorUnsuppressed(e)
+			    //.suppressFor(0.1)
+			    .detail("PeerAddr", self->destination)
+			    .detail("PeerAddress", self->destination)
+			    .detail("PeerReferences", self->peerReferences)
+			    .detail("ReliableEmpty", self->reliable.empty())
+			    .detail("UnsetEmpty", self->unsent.empty())
+			    .detail("OutstandingReplies", self->outstandingReplies)
+			    .detail("ShouldDestroy",
+			            self->peerReferences <= 0 && self->reliable.empty() && self->unsent.empty() &&
+			                self->outstandingReplies == 0);
 			if (self->peerReferences <= 0 && self->reliable.empty() && self->unsent.empty() &&
 			    self->outstandingReplies == 0) {
 				TraceEvent("PeerDestroy")
@@ -1684,6 +1696,8 @@ Reference<Peer> TransportData::getOrOpenPeer(NetworkAddress const& address, bool
 		if (startConnectionKeeper && !isLocalAddress(address)) {
 			peer->connect = connectionKeeper(peer);
 		}
+		//TraceEvent("PeerOpenDebug").suppressFor(0.1).detail("PeerAddress", address.toString());
+		TraceEvent("PeerOpenDebug").detail("PeerAddress", address.toString());
 		peers[address] = peer;
 		if (address.isPublic()) {
 			orderedAddresses.insert(address);
