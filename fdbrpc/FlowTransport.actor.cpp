@@ -649,6 +649,9 @@ ACTOR Future<Void> connectionMonitor(Reference<Peer> peer) {
 				// First condition is necessary because we may get here if we are server.
 				throw connection_idle();
 			}
+			// else if (now() - peer->lastDataPacketReceivedTime > FLOW_KNOBS->STREAM_TRANSPORT_EXPIRY) {
+			// 	throw connection_unreferenced();
+			// }
 		}
 
 		wait(delayJittered(FLOW_KNOBS->CONNECTION_MONITOR_LOOP_TIME, TaskPriority::ReadSocket));
@@ -992,16 +995,35 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				throw;
 			// Try to recover, even from serious errors, by retrying
 
-			if (self->peerReferences <= 0 && self->reliable.empty() && self->unsent.empty() &&
-			    self->outstandingReplies == 0) {
-				TraceEvent("PeerDestroy")
-				    .errorUnsuppressed(e)
-				    .suppressFor(1.0)
-				    .detail("PeerAddr", self->destination)
-				    .detail("PeerAddress", self->destination);
-				self->connect.cancel();
-				self->transport->peers.erase(self->destination);
-				self->transport->orderedAddresses.erase(self->destination);
+			// const bool deletePeer = (self->peerReferences <= 0) ||
+			//                         (now() - self->lastDataPacketReceivedTime > FLOW_KNOBS->STREAM_TRANSPORT_EXPIRY);
+			// TraceEvent("PeerDestroyDebug")
+			//     .errorUnsuppressed(e)
+			//     //.suppressFor(0.1)
+			//     .detail("PeerAddr", self->destination)
+			//     .detail("PeerAddress", self->destination)
+			//     .detail("PeerReferences", self->peerReferences)
+			//     .detail("ReliableEmpty", self->reliable.empty())
+			//     .detail("UnsetEmpty", self->unsent.empty())
+			//     .detail("OutstandingReplies", self->outstandingReplies)
+			//     .detail("ExpiryLifetime", now() - self->lastDataPacketReceivedTime)
+			//     .detail("ShouldDestroy",
+			//             self->peerReferences <= 0 && self->reliable.empty() && self->unsent.empty() &&
+			//                 self->outstandingReplies == 0);
+			// if (deletePeer && self->reliable.empty() && self->unsent.empty() && self->outstandingReplies == 0) {
+			if (self->reliable.empty() && self->unsent.empty() && self->outstandingReplies == 0) {
+				if (self->peerReferences <= 0) {
+					TraceEvent("PeerDestroy")
+					    .errorUnsuppressed(e)
+					    .suppressFor(1.0)
+					    .detail("PeerAddr", self->destination)
+					    .detail("PeerAddress", self->destination);
+					self->connect.cancel();
+					self->transport->peers.erase(self->destination);
+					self->transport->orderedAddresses.erase(self->destination);
+				} else if (now() - self->lastDataPacketReceivedTime > FLOW_KNOBS->STREAM_TRANSPORT_EXPIRY) {
+					retryConnect = false;
+				}
 				return Void();
 			}
 		}
@@ -1011,9 +1033,9 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 Peer::Peer(TransportData* transport, NetworkAddress const& destination)
   : transport(transport), destination(destination), compatible(true), connected(false), outgoingConnectionIdle(true),
     lastConnectTime(0.0), reconnectionDelay(FLOW_KNOBS->INITIAL_RECONNECTION_TIME), peerReferences(-1),
-    bytesReceived(0), bytesSent(0), lastDataPacketSentTime(now()), outstandingReplies(0),
-    pingLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1), lastLoggedTime(0.0),
-    lastLoggedBytesReceived(0), lastLoggedBytesSent(0), timeoutCount(0),
+    bytesReceived(0), bytesSent(0), lastDataPacketSentTime(now()), lastDataPacketReceivedTime(now()),
+    outstandingReplies(0), pingLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1),
+    lastLoggedTime(0.0), lastLoggedBytesReceived(0), lastLoggedBytesSent(0), timeoutCount(0),
     protocolVersion(Reference<AsyncVar<Optional<ProtocolVersion>>>(new AsyncVar<Optional<ProtocolVersion>>())),
     connectOutgoingCount(0), connectIncomingCount(0), connectFailedCount(0),
     connectLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1) {
@@ -1173,6 +1195,11 @@ ACTOR static void deliver(TransportData* self,
 			StringRef data = reader.arenaReadAll();
 			ASSERT(data.size() > 8);
 			ArenaObjectReader objReader(reader.arena(), reader.arenaReadAll(), AssumeVersion(reader.protocolVersion()));
+			// if (receiver->isStream()) {
+			if (self->peers.contains(destination.getPrimaryAddress())) {
+				self->peers[destination.getPrimaryAddress()]->lastDataPacketReceivedTime = now();
+			}
+			//}
 			receiver->receive(objReader);
 			g_currentDeliveryPeerAddress = NetworkAddressList();
 			g_currentDeliverPeerAddressTrusted = false;
@@ -1684,6 +1711,8 @@ Reference<Peer> TransportData::getOrOpenPeer(NetworkAddress const& address, bool
 		if (startConnectionKeeper && !isLocalAddress(address)) {
 			peer->connect = connectionKeeper(peer);
 		}
+		//TraceEvent("PeerOpenDebug").suppressFor(0.1).detail("PeerAddress", address.toString());
+		//TraceEvent("PeerOpenDebug").detail("PeerAddress", address.toString());
 		peers[address] = peer;
 		if (address.isPublic()) {
 			orderedAddresses.insert(address);
@@ -1837,6 +1866,7 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 	if (peer->peerReferences == -1) {
 		peer->peerReferences = 1;
 	} else {
+		// TraceEvent("PeerRefAddDebug").detail("PeerAddress", peer->destination.toString());
 		peer->peerReferences++;
 	}
 }
@@ -1846,6 +1876,7 @@ void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream)
 		return;
 	Reference<Peer> peer = self->getPeer(endpoint.getPrimaryAddress());
 	if (peer) {
+		// TraceEvent("PeerRefMinusDebug").detail("PeerAddress", peer->destination.toString());
 		peer->peerReferences--;
 		if (peer->peerReferences < 0) {
 			TraceEvent(SevError, "InvalidPeerReferences")
