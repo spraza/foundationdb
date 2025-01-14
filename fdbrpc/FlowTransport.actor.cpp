@@ -992,6 +992,8 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				throw;
 			// Try to recover, even from serious errors, by retrying
 
+			const bool deletePeer = (self->peerReferences <= 0) ||
+			                        (now() - self->lastDataPacketReceivedTime > FLOW_KNOBS->STREAM_TRANSPORT_EXPIRY);
 			TraceEvent("PeerDestroyDebug")
 			    .errorUnsuppressed(e)
 			    //.suppressFor(0.1)
@@ -1001,11 +1003,10 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 			    .detail("ReliableEmpty", self->reliable.empty())
 			    .detail("UnsetEmpty", self->unsent.empty())
 			    .detail("OutstandingReplies", self->outstandingReplies)
+			    .detail("ExpiryLifetime", now() - self->lastDataPacketReceivedTime)
 			    .detail("ShouldDestroy",
-			            self->peerReferences <= 0 && self->reliable.empty() && self->unsent.empty() &&
-			                self->outstandingReplies == 0);
-			if (self->peerReferences <= 0 && self->reliable.empty() && self->unsent.empty() &&
-			    self->outstandingReplies == 0) {
+			            deletePeer && self->reliable.empty() && self->unsent.empty() && self->outstandingReplies == 0);
+			if (deletePeer && self->reliable.empty() && self->unsent.empty() && self->outstandingReplies == 0) {
 				TraceEvent("PeerDestroy")
 				    .errorUnsuppressed(e)
 				    .suppressFor(1.0)
@@ -1023,9 +1024,9 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 Peer::Peer(TransportData* transport, NetworkAddress const& destination)
   : transport(transport), destination(destination), compatible(true), connected(false), outgoingConnectionIdle(true),
     lastConnectTime(0.0), reconnectionDelay(FLOW_KNOBS->INITIAL_RECONNECTION_TIME), peerReferences(-1),
-    bytesReceived(0), bytesSent(0), lastDataPacketSentTime(now()), outstandingReplies(0),
-    pingLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1), lastLoggedTime(0.0),
-    lastLoggedBytesReceived(0), lastLoggedBytesSent(0), timeoutCount(0),
+    bytesReceived(0), bytesSent(0), lastDataPacketSentTime(now()), lastDataPacketReceivedTime(now()),
+    outstandingReplies(0), pingLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1),
+    lastLoggedTime(0.0), lastLoggedBytesReceived(0), lastLoggedBytesSent(0), timeoutCount(0),
     protocolVersion(Reference<AsyncVar<Optional<ProtocolVersion>>>(new AsyncVar<Optional<ProtocolVersion>>())),
     connectOutgoingCount(0), connectIncomingCount(0), connectFailedCount(0),
     connectLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1) {
@@ -1185,6 +1186,11 @@ ACTOR static void deliver(TransportData* self,
 			StringRef data = reader.arenaReadAll();
 			ASSERT(data.size() > 8);
 			ArenaObjectReader objReader(reader.arena(), reader.arenaReadAll(), AssumeVersion(reader.protocolVersion()));
+			if (receiver->isStream()) {
+				if (self->peers.contains(destination.getPrimaryAddress())) {
+					self->peers[destination.getPrimaryAddress()]->lastDataPacketReceivedTime = now();
+				}
+			}
 			receiver->receive(objReader);
 			g_currentDeliveryPeerAddress = NetworkAddressList();
 			g_currentDeliverPeerAddressTrusted = false;
