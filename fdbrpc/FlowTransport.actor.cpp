@@ -1851,6 +1851,7 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 	if (peer->peerReferences == -1) {
 		peer->peerReferences = 1;
 	} else {
+		TraceEvent("PeerRefAddDebug").detail("PeerAddress", peer->destination.toString());
 		peer->peerReferences++;
 	}
 }
@@ -1860,6 +1861,7 @@ void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream)
 		return;
 	Reference<Peer> peer = self->getPeer(endpoint.getPrimaryAddress());
 	if (peer) {
+		TraceEvent("PeerRefMinusDebug").detail("PeerAddress", peer->destination.toString());
 		peer->peerReferences--;
 		if (peer->peerReferences < 0) {
 			TraceEvent(SevError, "InvalidPeerReferences")
