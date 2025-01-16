@@ -1856,6 +1856,14 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 	if (!isStream || !endpoint.getPrimaryAddress().isValid() || !endpoint.getPrimaryAddress().isPublic())
 		return;
 
+	// auto tokenStr = endpoint.token.toString();
+	auto tokenStr = endpoint.token.shortString();
+	// if (tokenStr.find("5953f2cf3897ab9f") != std::string::npos) {
+	if (tokenStr == "5953f2cf3897ab9f") {
+		int x = 1;
+		(void)x;
+	}
+
 	Reference<Peer> peer = self->getOrOpenPeer(endpoint.getPrimaryAddress());
 	if (peer->peerReferences == -1) {
 		peer->peerReferences = 1;
@@ -1868,7 +1876,21 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream) {
 	if (!isStream || !endpoint.getPrimaryAddress().isValid() || !endpoint.getPrimaryAddress().isPublic())
 		return;
+
 	Reference<Peer> peer = self->getPeer(endpoint.getPrimaryAddress());
+
+	// auto tokenStr = endpoint.token.toString();
+	auto tokenStr = endpoint.token.shortString();
+	// if (tokenStr.find("5953f2cf3897ab9f") != std::string::npos) {
+	if (tokenStr == "5953f2cf3897ab9f") {
+		int x = 1;
+		(void)x;
+		if (peer && peer->peerReferences <= 0) {
+			int y = 2;
+			(void)y;
+		}
+	}
+
 	if (peer) {
 		// TraceEvent("PeerRefMinusDebug").detail("PeerAddress", peer->destination.toString());
 		peer->peerReferences--;
