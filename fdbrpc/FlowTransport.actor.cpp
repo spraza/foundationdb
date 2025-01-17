@@ -1011,6 +1011,23 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				self->connect.cancel();
 				self->transport->peers.erase(self->destination);
 				self->transport->orderedAddresses.erase(self->destination);
+				bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
+				              self->destination.toString() == "2.0.1.1:1:tls";
+				if (self->peerReferences > 0) {
+					if (isaddr) {
+						TraceEvent("SpecialErase1")
+						    .detail("Peer", self->destination)
+						    .detail("PeerMemoryAddr", std::to_string(reinterpret_cast<uintptr_t>(self.getPtr())))
+						    .detail("RefCount", self->peerReferences);
+					}
+				} else {
+					if (isaddr) {
+						TraceEvent("NormalErase")
+						    .detail("Peer", self->destination)
+						    .detail("PeerMemoryAddr", std::to_string(reinterpret_cast<uintptr_t>(self.getPtr())))
+						    .detail("RefCount", self->peerReferences);
+					}
+				}
 				return Void();
 			}
 		}
@@ -1850,10 +1867,26 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 		return;
 
 	Reference<Peer> peer = self->getOrOpenPeer(endpoint.getPrimaryAddress());
+
+	bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
+	              endpoint.getPrimaryAddress().toString() == "2.0.1.1:1:tls";
+
 	if (peer->peerReferences == -1) {
 		peer->peerReferences = 1;
+		if (isaddr) {
+			TraceEvent("AddPeerRefCount1")
+			    .detail("Peer", endpoint.getPrimaryAddress())
+			    .detail("PeerMemoryAddr", std::to_string(reinterpret_cast<uintptr_t>(peer.getPtr())))
+			    .detail("RefCount", peer->peerReferences);
+		}
 	} else {
 		peer->peerReferences++;
+		if (isaddr) {
+			TraceEvent("AddPeerRefCount2")
+			    .detail("Peer", endpoint.getPrimaryAddress())
+			    .detail("PeerMemoryAddr", std::to_string(reinterpret_cast<uintptr_t>(peer.getPtr())))
+			    .detail("RefCountFinal", peer->peerReferences);
+		}
 	}
 }
 
@@ -1863,6 +1896,14 @@ void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream)
 	Reference<Peer> peer = self->getPeer(endpoint.getPrimaryAddress());
 	if (peer) {
 		peer->peerReferences--;
+		bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
+		              endpoint.getPrimaryAddress().toString() == "2.0.1.1:1:tls";
+		if (isaddr) {
+			TraceEvent("SubtractPeerRefCount")
+			    .detail("Peer", endpoint.getPrimaryAddress())
+			    .detail("PeerMemoryAddr", std::to_string(reinterpret_cast<uintptr_t>(peer.getPtr())))
+			    .detail("RefCount", peer->peerReferences);
+		}
 		if (peer->peerReferences < 0) {
 			TraceEvent(SevError, "InvalidPeerReferences")
 			    .detail("References", peer->peerReferences)
