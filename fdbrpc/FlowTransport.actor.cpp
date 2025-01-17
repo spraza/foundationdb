@@ -334,6 +334,8 @@ public:
 
 	EndpointMap endpoints;
 	EndpointNotFoundReceiver endpointNotFoundReceiver{ endpoints };
+	std::unordered_map<NetworkAddress, double> lastStreamReceiveTime;
+	std::unordered_map<NetworkAddress, int> erasedPeerStreamCount;
 	PingReceiver pingReceiver{ endpoints };
 	UnauthorizedEndpointReceiver unauthorizedEndpointReceiver{ endpoints };
 
@@ -753,6 +755,7 @@ ACTOR Future<Void> delayedHealthUpdate(NetworkAddress address, bool* tooManyConn
 }
 
 ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
+                                    bool getPeerTag,
                                     Reference<IConnection> conn = Reference<IConnection>(),
                                     Future<Void> reader = Void()) {
 	TraceEvent(SevDebug, "ConnectionKeeper", conn ? conn->getDebugID() : UID())
@@ -992,8 +995,14 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				throw;
 			// Try to recover, even from serious errors, by retrying
 
-			if (self->peerReferences <= 0 && self->reliable.empty() && self->unsent.empty() &&
-			    self->outstandingReplies == 0) {
+			bool streamTimedOut = getPeerTag && self->transport->lastStreamReceiveTime.contains(self->destination) &&
+			                      (now() - self->transport->lastStreamReceiveTime[self->destination] >
+			                       FLOW_KNOBS->STREAM_TRANSPORT_EXPIRY);
+			bool part = self->reliable.empty() && self->unsent.empty() && self->outstandingReplies == 0;
+			if (part && (self->peerReferences <= 0 || streamTimedOut)) {
+				if (streamTimedOut && self->peerReferences > 0) {
+					self->transport->erasedPeerStreamCount[self->destination] = self->peerReferences;
+				}
 				TraceEvent("PeerDestroy")
 				    .errorUnsuppressed(e)
 				    .suppressFor(1.0)
@@ -1011,9 +1020,9 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 Peer::Peer(TransportData* transport, NetworkAddress const& destination)
   : transport(transport), destination(destination), compatible(true), connected(false), outgoingConnectionIdle(true),
     lastConnectTime(0.0), reconnectionDelay(FLOW_KNOBS->INITIAL_RECONNECTION_TIME), peerReferences(-1),
-    bytesReceived(0), bytesSent(0), lastDataPacketSentTime(now()), outstandingReplies(0),
-    pingLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1), lastLoggedTime(0.0),
-    lastLoggedBytesReceived(0), lastLoggedBytesSent(0), timeoutCount(0),
+    bytesReceived(0), bytesSent(0), lastDataPacketSentTime(now()), lastDataPacketReceivedTime(now()),
+    outstandingReplies(0), pingLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1),
+    lastLoggedTime(0.0), lastLoggedBytesReceived(0), lastLoggedBytesSent(0), timeoutCount(0),
     protocolVersion(Reference<AsyncVar<Optional<ProtocolVersion>>>(new AsyncVar<Optional<ProtocolVersion>>())),
     connectOutgoingCount(0), connectIncomingCount(0), connectFailedCount(0),
     connectLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1) {
@@ -1101,7 +1110,7 @@ void Peer::onIncomingConnection(Reference<Peer> self, Reference<IConnection> con
 
 		connect.cancel();
 		prependConnectPacket();
-		connect = connectionKeeper(self, conn, reader);
+		connect = connectionKeeper(self, true, conn, reader);
 	} else {
 		TraceEvent("RedundantConnection", conn->getDebugID())
 		    .suppressFor(1.0)
@@ -1173,6 +1182,9 @@ ACTOR static void deliver(TransportData* self,
 			StringRef data = reader.arenaReadAll();
 			ASSERT(data.size() > 8);
 			ArenaObjectReader objReader(reader.arena(), reader.arenaReadAll(), AssumeVersion(reader.protocolVersion()));
+			if (receiver->isStream()) {
+				self->lastStreamReceiveTime[destination.getPrimaryAddress()] = now();
+			}
 			receiver->receive(objReader);
 			g_currentDeliveryPeerAddress = NetworkAddressList();
 			g_currentDeliverPeerAddressTrusted = false;
@@ -1681,8 +1693,12 @@ Reference<Peer> TransportData::getOrOpenPeer(NetworkAddress const& address, bool
 	auto peer = getPeer(address);
 	if (!peer) {
 		peer = makeReference<Peer>(this, address);
+		if (this->erasedPeerStreamCount.contains(address)) {
+			peer->peerReferences = this->erasedPeerStreamCount[address];
+			this->erasedPeerStreamCount.erase(address);
+		}
 		if (startConnectionKeeper && !isLocalAddress(address)) {
-			peer->connect = connectionKeeper(peer);
+			peer->connect = connectionKeeper(peer, true);
 		}
 		peers[address] = peer;
 		if (address.isPublic()) {

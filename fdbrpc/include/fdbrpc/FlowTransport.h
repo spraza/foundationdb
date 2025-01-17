@@ -163,12 +163,14 @@ struct Peer : public ReferenceCounted<Peer> {
 	int64_t bytesReceived;
 	int64_t bytesSent;
 	double lastDataPacketSentTime;
+	double lastDataPacketReceivedTime;
 	int outstandingReplies;
 	DDSketch<double> pingLatencies;
 	double lastLoggedTime;
 	int64_t lastLoggedBytesReceived;
 	int64_t lastLoggedBytesSent;
 	int timeoutCount;
+	// UID id{ deterministicRandom()->randomUniqueID() }; // unique id for this peer object/instance
 
 	Reference<AsyncVar<Optional<ProtocolVersion>>> protocolVersion;
 
