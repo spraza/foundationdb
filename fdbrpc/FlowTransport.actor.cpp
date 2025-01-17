@@ -1016,10 +1016,27 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				self->connect.cancel();
 				self->transport->peers.erase(self->destination);
 				self->transport->orderedAddresses.erase(self->destination);
+				bool isaddr = self->destination.toString() == "2.0.1.1:1";
 				if (self->peerReferences > 0) {
+					if (isaddr) {
+						TraceEvent("SpecialErase1")
+						    .detail("Peer", self->destination)
+						    .detail("RefCount", self->peerReferences);
+					}
 					self->transport->peerStreamCount[self->destination] = self->peerReferences;
-				} else if (self->transport->peerStreamCount.contains(self->destination)) {
+				} else if (self->peerReferences == 0 && self->transport->peerStreamCount.contains(self->destination)) {
+					if (isaddr) {
+						TraceEvent("SpecialErase2")
+						    .detail("Peer", self->destination)
+						    .detail("RefCount", self->peerReferences);
+					}
 					self->transport->peerStreamCount.erase(self->destination);
+				} else {
+					if (isaddr) {
+						TraceEvent("NormalErase")
+						    .detail("Peer", self->destination)
+						    .detail("RefCount", self->peerReferences);
+					}
 				}
 				return Void();
 			}
@@ -1860,14 +1877,29 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 		return;
 
 	Reference<Peer> peer = self->getOrOpenPeer(endpoint.getPrimaryAddress());
+
+	bool isaddr = endpoint.getPrimaryAddress().toString() == "2.0.1.1:1";
+
 	if (peer->peerReferences == -1) {
 		const int existingStreamCount = self->peerStreamCount.contains(endpoint.getPrimaryAddress())
 		                                    ? self->peerStreamCount[endpoint.getPrimaryAddress()]
 		                                    : 0;
 		peer->peerReferences = 1 + existingStreamCount;
+		self->peerStreamCount.erase(endpoint.getPrimaryAddress());
+		if (isaddr) {
+			TraceEvent("AddPeerRefCount1")
+			    .detail("Peer", endpoint.getPrimaryAddress())
+			    .detail("RefCountPrev", existingStreamCount)
+			    .detail("RefCountFinal", peer->peerReferences);
+		}
 	} else {
 		// TraceEvent("PeerRefAddDebug").detail("PeerAddress", peer->destination.toString());
 		peer->peerReferences++;
+		if (isaddr) {
+			TraceEvent("AddPeerRefCount2")
+			    .detail("Peer", endpoint.getPrimaryAddress())
+			    .detail("RefCountFinal", peer->peerReferences);
+		}
 	}
 }
 
@@ -1878,6 +1910,12 @@ void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream)
 	if (peer) {
 		// TraceEvent("PeerRefMinusDebug").detail("PeerAddress", peer->destination.toString());
 		peer->peerReferences--;
+		bool isaddr = endpoint.getPrimaryAddress().toString() == "2.0.1.1:1";
+		if (isaddr) {
+			TraceEvent("SubtractPeerRefCount")
+			    .detail("Peer", endpoint.getPrimaryAddress())
+			    .detail("RefCount", peer->peerReferences);
+		}
 		if (peer->peerReferences < 0) {
 			TraceEvent(SevError, "InvalidPeerReferences")
 			    .detail("References", peer->peerReferences)
