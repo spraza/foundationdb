@@ -1012,7 +1012,7 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				self->transport->peers.erase(self->destination);
 				self->transport->orderedAddresses.erase(self->destination);
 				bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
-				              self->destination.toString() == "2.0.1.1:1:tls";
+				              self->destination.toString() == "2.0.1.2:1";
 				if (self->peerReferences > 0) {
 					if (isaddr) {
 						TraceEvent("SpecialErase1")
@@ -1046,7 +1046,6 @@ Peer::Peer(TransportData* transport, NetworkAddress const& destination)
 	IFailureMonitor::failureMonitor().setStatus(destination, FailureStatus(false));
 	if (transport->erasedPeerStreamCount.contains(destination)) {
 		peerReferences = transport->erasedPeerStreamCount[destination];
-		transport->erasedPeerStreamCount.erase(destination);
 	}
 }
 
@@ -1714,6 +1713,9 @@ Reference<Peer> TransportData::getOrOpenPeer(NetworkAddress const& address, bool
 	auto peer = getPeer(address);
 	if (!peer) {
 		peer = makeReference<Peer>(this, address);
+		if (this->erasedPeerStreamCount.contains(address)) {
+			this->erasedPeerStreamCount.erase(address);
+		}
 		if (startConnectionKeeper && !isLocalAddress(address)) {
 			peer->connect = connectionKeeper(peer, true);
 		}
@@ -1869,7 +1871,7 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 	Reference<Peer> peer = self->getOrOpenPeer(endpoint.getPrimaryAddress());
 
 	bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
-	              endpoint.getPrimaryAddress().toString() == "2.0.1.1:1:tls";
+	              endpoint.getPrimaryAddress().toString() == "2.0.1.2:1";
 
 	if (peer->peerReferences == -1) {
 		peer->peerReferences = 1;
@@ -1897,7 +1899,7 @@ void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream)
 	if (peer) {
 		peer->peerReferences--;
 		bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
-		              endpoint.getPrimaryAddress().toString() == "2.0.1.1:1:tls";
+		              endpoint.getPrimaryAddress().toString() == "2.0.1.2:1";
 		if (isaddr) {
 			TraceEvent("SubtractPeerRefCount")
 			    .detail("Peer", endpoint.getPrimaryAddress())
