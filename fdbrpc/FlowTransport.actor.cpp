@@ -1011,8 +1011,8 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				self->connect.cancel();
 				self->transport->peers.erase(self->destination);
 				self->transport->orderedAddresses.erase(self->destination);
-				bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
-				              self->destination.toString() == "2.0.1.2:1";
+				bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.2.1.3:1" &&
+				              self->destination.toString() == "2.2.1.4:1";
 				if (self->peerReferences > 0) {
 					if (isaddr) {
 						TraceEvent("SpecialErase1")
@@ -1021,6 +1021,9 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 						    .detail("RefCount", self->peerReferences);
 					}
 				} else {
+					if (self->transport->erasedPeerStreamCount.contains(self->destination)) {
+						self->transport->erasedPeerStreamCount.erase(self->destination);
+					}
 					if (isaddr) {
 						TraceEvent("NormalErase")
 						    .detail("Peer", self->destination)
@@ -1044,9 +1047,6 @@ Peer::Peer(TransportData* transport, NetworkAddress const& destination)
     connectOutgoingCount(0), connectIncomingCount(0), connectFailedCount(0),
     connectLatencies(destination.isPublic() ? FLOW_KNOBS->PING_SKETCH_ACCURACY : 0.1) {
 	IFailureMonitor::failureMonitor().setStatus(destination, FailureStatus(false));
-	if (transport->erasedPeerStreamCount.contains(destination)) {
-		peerReferences = transport->erasedPeerStreamCount[destination];
-	}
 }
 
 void Peer::send(PacketBuffer* pb, ReliablePacket* rp, bool firstUnsent) {
@@ -1714,7 +1714,7 @@ Reference<Peer> TransportData::getOrOpenPeer(NetworkAddress const& address, bool
 	if (!peer) {
 		peer = makeReference<Peer>(this, address);
 		if (this->erasedPeerStreamCount.contains(address)) {
-			this->erasedPeerStreamCount.erase(address);
+			peer->peerReferences = this->erasedPeerStreamCount[address];
 		}
 		if (startConnectionKeeper && !isLocalAddress(address)) {
 			peer->connect = connectionKeeper(peer, true);
@@ -1870,8 +1870,8 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 
 	Reference<Peer> peer = self->getOrOpenPeer(endpoint.getPrimaryAddress());
 
-	bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
-	              endpoint.getPrimaryAddress().toString() == "2.0.1.2:1";
+	bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.2.1.3:1" &&
+	              endpoint.getPrimaryAddress().toString() == "2.2.1.4:1";
 
 	if (peer->peerReferences == -1) {
 		peer->peerReferences = 1;
@@ -1883,6 +1883,7 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 		}
 	} else {
 		peer->peerReferences++;
+		peer->transport->erasedPeerStreamCount[endpoint.getPrimaryAddress()] = peer->peerReferences;
 		if (isaddr) {
 			TraceEvent("AddPeerRefCount2")
 			    .detail("Peer", endpoint.getPrimaryAddress())
@@ -1898,8 +1899,9 @@ void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream)
 	Reference<Peer> peer = self->getPeer(endpoint.getPrimaryAddress());
 	if (peer) {
 		peer->peerReferences--;
-		bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.0.1.3:1" &&
-		              endpoint.getPrimaryAddress().toString() == "2.0.1.2:1";
+		peer->transport->erasedPeerStreamCount[endpoint.getPrimaryAddress()] = peer->peerReferences;
+		bool isaddr = FlowTransport::transport().getLocalAddress().toString() == "2.2.1.3:1" &&
+		              endpoint.getPrimaryAddress().toString() == "2.2.1.4:1";
 		if (isaddr) {
 			TraceEvent("SubtractPeerRefCount")
 			    .detail("Peer", endpoint.getPrimaryAddress())
