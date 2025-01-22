@@ -2984,8 +2984,23 @@ ACTOR Future<Void> dbInfoUpdater(ClusterControllerData* self) {
 		req.serializedDbInfo =
 		    BinaryWriter::toValue(self->db.serverInfo->get(), AssumeVersion(g_network->protocolVersion()));
 
+		{
+			std::string dstEndpoints;
+			for (const auto& e : req.broadcastInfo) {
+				dstEndpoints += (e.getPrimaryAddress().toString() + ", ");
+			}
+			std::string tlogIfs;
+			for (const auto& i : self->db.serverInfo->get().logSystemConfig.allLocalLogs()) {
+				tlogIfs += (i.address().toString() + ", ");
+			}
+			TraceEvent(SevWarnAlways, "CCBroadcastDBInfoReq")
+			    .detail("DstWorkers", dstEndpoints)
+			    .detail("TLogIfs", tlogIfs);
+		}
+
 		TraceEvent("DBInfoStartBroadcast", self->id)
 		    .detail("MasterLifetime", self->db.serverInfo->get().masterLifetime.toString());
+
 		choose {
 			when(std::vector<Endpoint> notUpdated =
 			         wait(broadcastDBInfoRequest(req, SERVER_KNOBS->DBINFO_SEND_AMOUNT, Optional<Endpoint>(), false))) {

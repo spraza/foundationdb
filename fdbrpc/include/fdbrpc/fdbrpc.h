@@ -513,7 +513,9 @@ public:
 		rhs.errors = nullptr;
 	}
 	explicit ReplyPromiseStream(const Endpoint& endpoint)
-	  : queue(new NetNotifiedQueueWithAcknowledgements<T>(0, 1, endpoint)), errors(nullptr) {}
+	  : queue(new NetNotifiedQueueWithAcknowledgements<T>(0, 1, endpoint)), errors(nullptr) {
+		TraceEvent(SevWarnAlways, "ReplyPromiseStreamOpen").detail("EndpointAddr", endpoint.getPrimaryAddress().toString()).detail("EndpointToken", endpoint.token.shortString());
+	  }
 
 	// Used by endStreamOnDisconnect to detect when all references to the ReplyPromiseStream have been dropped
 	Future<Void> getErrorFutureAndDelPromiseRef() {
@@ -542,8 +544,12 @@ public:
 	void notifyFailed() { queue->notifyFailed(); }
 
 	~ReplyPromiseStream() {
-		if (queue)
+		if (queue) {
+			if (queue->isRemoteEndpoint()) {
+				TraceEvent(SevWarnAlways, "ReplyPromiseStreamClose").detail("EndpointAddr", queue->getEndpoint(TaskPriority::DefaultEndpoint).getPrimaryAddress().toString()).detail("EndpointToken", queue->getEndpoint(TaskPriority::DefaultEndpoint).token.shortString());	
+			}
 			queue->delPromiseRef();
+		}
 		if (errors)
 			errors->delPromiseRef();
 	}
@@ -894,7 +900,10 @@ public:
 		return getReplyUnlessFailedFor(ReplyPromise<X>(), sustainedFailureDuration, sustainedFailureSlope);
 	}
 
-	explicit RequestStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T, IsPublic>(0, 1, endpoint)) {}
+	explicit RequestStream(const Endpoint& endpoint, const std::string tag = "") : queue(new NetNotifiedQueue<T, IsPublic>(0, 1, endpoint)) {
+		this->tag = tag;
+		TraceEvent(SevWarnAlways, "RequestStreamOpen").detail("EndpointAddr", endpoint.getPrimaryAddress().toString()).detail("EndpointToken", endpoint.token.shortString()).detail("Tag", tag);
+	}
 
 	SWIFT_CXX_IMPORT_UNSAFE FutureStream<T> getFuture() const {
 		queue->addFutureRef();
@@ -921,8 +930,12 @@ public:
 		}
 	}
 	~RequestStream() {
-		if (queue)
+		if (queue) {
+			if (queue->isRemoteEndpoint()) {
+				TraceEvent(SevWarnAlways, "RequestStreamClose").detail("EndpointAddr", queue->getEndpoint(TaskPriority::DefaultEndpoint).getPrimaryAddress().toString()).detail("EndpointToken", queue->getEndpoint(TaskPriority::DefaultEndpoint).token.shortString()).detail("Tag", tag);	
+			}
 			queue->delPromiseRef();
+		}
 		// queue = (NetNotifiedQueue<T>*)0xdeadbeef;
 	}
 
@@ -945,6 +958,7 @@ public:
 
 private:
 	NetNotifiedQueue<T, IsPublic>* queue;
+	std::string tag{"not_set"};
 };
 
 template <class T>

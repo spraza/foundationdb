@@ -147,7 +147,7 @@ ACTOR Future<std::vector<Endpoint>> broadcastDBInfoRequest(UpdateServerDBInfoReq
 	std::vector<Endpoint> broadcastEndpoints = req.broadcastInfo;
 	for (int i = 0; i < sendAmount && currentStream < broadcastEndpoints.size(); i++) {
 		std::vector<Endpoint> endpoints;
-		RequestStream<UpdateServerDBInfoRequest> cur(broadcastEndpoints[currentStream++]);
+		RequestStream<UpdateServerDBInfoRequest> cur(broadcastEndpoints[currentStream++], "UpdateServerDBInfoRequest");
 		while (currentStream < broadcastEndpoints.size() * (i + 1) / sendAmount) {
 			endpoints.push_back(broadcastEndpoints[currentStream++]);
 		}

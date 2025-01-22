@@ -80,8 +80,8 @@ struct GenerationRegVal {
 };
 
 GenerationRegInterface::GenerationRegInterface(NetworkAddress const& remote)
-  : read(Endpoint::wellKnown({ remote }, WLTOKEN_GENERATIONREG_READ)),
-    write(Endpoint::wellKnown({ remote }, WLTOKEN_GENERATIONREG_WRITE)) {}
+  : read(Endpoint::wellKnown({ remote }, WLTOKEN_GENERATIONREG_READ), "read"),
+    write(Endpoint::wellKnown({ remote }, WLTOKEN_GENERATIONREG_WRITE), "write") {}
 
 GenerationRegInterface::GenerationRegInterface(INetwork* local) {
 	read.makeWellKnownEndpoint(WLTOKEN_GENERATIONREG_READ, TaskPriority::Coordination);
@@ -89,10 +89,11 @@ GenerationRegInterface::GenerationRegInterface(INetwork* local) {
 }
 
 LeaderElectionRegInterface::LeaderElectionRegInterface(NetworkAddress const& remote)
-  : ClientLeaderRegInterface(remote), candidacy(Endpoint::wellKnown({ remote }, WLTOKEN_LEADERELECTIONREG_CANDIDACY)),
-    electionResult(Endpoint::wellKnown({ remote }, WLTOKEN_LEADERELECTIONREG_ELECTIONRESULT)),
-    leaderHeartbeat(Endpoint::wellKnown({ remote }, WLTOKEN_LEADERELECTIONREG_LEADERHEARTBEAT)),
-    forward(Endpoint::wellKnown({ remote }, WLTOKEN_LEADERELECTIONREG_FORWARD)) {}
+  : ClientLeaderRegInterface(remote),
+    candidacy(Endpoint::wellKnown({ remote }, WLTOKEN_LEADERELECTIONREG_CANDIDACY), "candidacy"),
+    electionResult(Endpoint::wellKnown({ remote }, WLTOKEN_LEADERELECTIONREG_ELECTIONRESULT), "electionResult"),
+    leaderHeartbeat(Endpoint::wellKnown({ remote }, WLTOKEN_LEADERELECTIONREG_LEADERHEARTBEAT), "leaderHeartbeat"),
+    forward(Endpoint::wellKnown({ remote }, WLTOKEN_LEADERELECTIONREG_FORWARD), "forward") {}
 
 LeaderElectionRegInterface::LeaderElectionRegInterface(INetwork* local) : ClientLeaderRegInterface(local) {
 	candidacy.makeWellKnownEndpoint(WLTOKEN_LEADERELECTIONREG_CANDIDACY, TaskPriority::Coordination);
