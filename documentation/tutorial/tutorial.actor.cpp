@@ -26,6 +26,7 @@
 #include "fdbclient/NativeAPI.actor.h"
 #include "fdbclient/ReadYourWrites.h"
 #include "flow/TLSConfig.actor.h"
+#include "fdbclient/FDBTypes.h"
 #include <functional>
 #include <unordered_map>
 #include <memory>
@@ -40,20 +41,28 @@ enum TutorialWellKnownEndpoints {
 	WLTOKEN_COUNT_IN_TUTORIAL
 };
 
-ACTOR Future<Void> simpleTimer() {
-	// we need to remember the time when we first
-	// started.
-	// This needs to be a state-variable because
-	// we will use it in different parts of the
-	// actor. If you don't understand how state
-	// variables work, it is a good idea to remove
-	// the state keyword here and look at the
-	// generated C++ code from the actor compiler.
-	state double start_time = g_network->now();
-	loop {
-		wait(delay(1.0));
-		std::cout << format("Time: %.2f\n", g_network->now() - start_time);
-	}
+KeyRangeRef helper() {
+	KeyRef begin = std::string{ "abc_begin" };
+	KeyRef end = std::string{ "abc_end" };
+	return KeyRangeRef(begin, end);
+}
+
+void baz(const KeyRangeRef& range) {
+	std::cout << "range.begin = " << range.begin.toString() << std::endl;
+	std::cout << "range.end = " << range.end.toString() << std::endl;
+}
+
+ACTOR Future<Void> bar() {
+	baz(helper());
+	wait(delay(1));
+	return Void();
+}
+
+ACTOR Future<Void> foo() {
+	std::cout << "foo\n";
+	wait(delay(1));
+	std::cout << "bar\n";
+	return Void();
 }
 
 int main(int argc, char* argv[]) {
@@ -61,7 +70,7 @@ int main(int argc, char* argv[]) {
 	platformInit();
 	g_network = newNet2(TLSConfig(), false, true);
 	FlowTransport::createInstance(!isServer, 0, WLTOKEN_COUNT_IN_TUTORIAL);
-	auto f = stopAfter(simpleTimer());
+	auto f = stopAfter(foo());
 	g_network->run();
 	return 0;
 }
