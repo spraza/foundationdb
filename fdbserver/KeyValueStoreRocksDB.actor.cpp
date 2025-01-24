@@ -2348,8 +2348,6 @@ struct RocksDBKeyValueStore : IKeyValueStore {
 	                              int rowLimit,
 	                              int byteLimit,
 	                              Optional<ReadOptions> options) override {
-		auto start = std::chrono::high_resolution_clock::now();
-
 		ReadType type = ReadType::NORMAL;
 
 		if (options.present()) {
