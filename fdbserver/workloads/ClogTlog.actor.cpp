@@ -48,6 +48,8 @@ struct ClogTlogWorkload : TestWorkload {
 	double testDuration;
 	bool clogged = false;
 	bool useDisconnection = false;
+	bool forceGrayFailure = false;
+	bool neverUnclog = false;
 	Optional<NetworkAddress> tlog; // the tlog to be clogged with all other processes except the CC
 	std::vector<std::pair<IPAddress, IPAddress>> cloggedPairs;
 
@@ -75,9 +77,9 @@ struct ClogTlogWorkload : TestWorkload {
 		std::vector<IPAddress> ips; // all FDB process IPs
 		for (const auto& process : g_simulator->getAllProcesses()) {
 			const auto& ip = process->address.ip;
-			if (process->startingClass != ProcessClass::TesterClass) {
-				ips.push_back(ip);
-			}
+			// if (process->startingClass != ProcessClass::TesterClass) {
+			ips.push_back(ip);
+			//}
 		}
 		ASSERT(ips.size() > 0);
 
@@ -101,8 +103,9 @@ struct ClogTlogWorkload : TestWorkload {
 
 		// clog pairs
 		for (const auto& ip : ips) {
-			if (ip != tlog.get().ip && ip != cc) {
+			if (ip != tlog.get().ip) {
 				if (useDisconnection) {
+					TraceEvent("DisconnectPairBi").detail("A", ip.toString()).detail("B", tlog.get().toString());
 					g_simulator->disconnectPair(ip, tlog.get().ip, seconds);
 					g_simulator->disconnectPair(tlog.get().ip, ip, seconds);
 				} else {
@@ -117,6 +120,9 @@ struct ClogTlogWorkload : TestWorkload {
 	}
 
 	void unclogAll() {
+		if (neverUnclog) {
+			return;
+		}
 		// unclog previously clogged connections
 		for (const auto& pair : cloggedPairs) {
 			if (useDisconnection) {
@@ -150,8 +156,8 @@ struct ClogTlogWorkload : TestWorkload {
 	}
 
 	ACTOR Future<Void> clogClient(ClogTlogWorkload* self, Database cx) {
-		if (deterministicRandom()->coinflip()) {
-			self->useDisconnection = true;
+		if (!self->useDisconnection) {
+			self->useDisconnection = deterministicRandom()->coinflip();
 		}
 
 		// Let cycle workload issue some transactions.
@@ -174,6 +180,9 @@ struct ClogTlogWorkload : TestWorkload {
 		state bool useGrayFailureToRecover = false;
 		if (deterministicRandom()->coinflip() && self->useDisconnection) {
 			// Use gray failure instead of exclusion to recover the cluster.
+			TraceEvent("ClogTlogUseGrayFailreToRecover").log();
+			useGrayFailureToRecover = true;
+		} else if (self->forceGrayFailure) {
 			TraceEvent("ClogTlogUseGrayFailreToRecover").log();
 			useGrayFailureToRecover = true;
 		}
