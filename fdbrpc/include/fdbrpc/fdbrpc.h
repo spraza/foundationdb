@@ -701,9 +701,24 @@ struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<Ne
 
 	NetNotifiedQueue(int futures, int promises) : NotifiedQueue<T>(futures, promises) {}
 	NetNotifiedQueue(int futures, int promises, const Endpoint& remoteEndpoint)
-	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, true) {}
+	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, true) {
+                TraceEvent(SevWarnAlways, "NetNotifiedQueueCtor")
+                    .detail("EndpointAddr",
+                            remoteEndpoint.getPrimaryAddress().toString())
+                    .detail("EndpointToken",
+                            remoteEndpoint.token.shortString());
+        }
 
-	void destroy() override { delete this; }
+	void destroy() override { 
+		if (!this->getEndpoint(TaskPriority::DefaultEndpoint).isLocal()) {
+			TraceEvent(SevWarnAlways, "NetNotifiedQueueDestroy")
+				.detail("EndpointAddr", 
+						this->getEndpoint(TaskPriority::DefaultEndpoint).getPrimaryAddress().toString())
+				.detail("EndpointToken",
+						this->getEndpoint(TaskPriority::DefaultEndpoint).token.shortString());
+		}
+		delete this; 
+	}
 	void receive(ArenaObjectReader& reader) override {
 		this->addPromiseRef();
 		T message;
@@ -901,8 +916,7 @@ public:
 	}
 
 	explicit RequestStream(const Endpoint& endpoint, const std::string tag = "") : queue(new NetNotifiedQueue<T, IsPublic>(0, 1, endpoint)) {
-		this->tag = tag;
-		TraceEvent(SevWarnAlways, "RequestStreamOpen").detail("EndpointAddr", endpoint.getPrimaryAddress().toString()).detail("EndpointToken", endpoint.token.shortString()).detail("Tag", tag);
+		this->tag = tag;		
 	}
 
 	SWIFT_CXX_IMPORT_UNSAFE FutureStream<T> getFuture() const {
@@ -931,9 +945,6 @@ public:
 	}
 	~RequestStream() {
 		if (queue) {
-			if (queue->isRemoteEndpoint()) {
-				TraceEvent(SevWarnAlways, "RequestStreamClose").detail("EndpointAddr", queue->getEndpoint(TaskPriority::DefaultEndpoint).getPrimaryAddress().toString()).detail("EndpointToken", queue->getEndpoint(TaskPriority::DefaultEndpoint).token.shortString()).detail("Tag", tag);	
-			}
 			queue->delPromiseRef();
 		}
 		// queue = (NetNotifiedQueue<T>*)0xdeadbeef;
