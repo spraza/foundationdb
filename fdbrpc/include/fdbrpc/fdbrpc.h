@@ -699,9 +699,12 @@ struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<Ne
 	using FastAllocated<NetNotifiedQueue<T, IsPublic>>::operator delete;
 	static_assert(!IsPublic || HasVerify<T>, "Public request stream objects need to implement bool T::verify()");
 
+	const Endpoint* endpoint_{nullptr};
+
 	NetNotifiedQueue(int futures, int promises) : NotifiedQueue<T>(futures, promises) {}
 	NetNotifiedQueue(int futures, int promises, const Endpoint& remoteEndpoint)
 	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, true) {
+				endpoint_ = &remoteEndpoint;
                 TraceEvent(SevWarnAlways, "NetNotifiedQueueCtor")
                     .detail("EndpointAddr",
                             remoteEndpoint.getPrimaryAddress().toString())
@@ -709,14 +712,19 @@ struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<Ne
                             remoteEndpoint.token.shortString());
         }
 
-	void destroy() override { 
-		if (!this->getEndpoint(TaskPriority::DefaultEndpoint).isLocal()) {
+	~NetNotifiedQueue() {
+		if (endpoint_) {
 			TraceEvent(SevWarnAlways, "NetNotifiedQueueDestroy")
 				.detail("EndpointAddr", 
-						this->getEndpoint(TaskPriority::DefaultEndpoint).getPrimaryAddress().toString())
+						endpoint_->getPrimaryAddress().toString())
 				.detail("EndpointToken",
-						this->getEndpoint(TaskPriority::DefaultEndpoint).token.shortString());
+						endpoint_->token.shortString())
+				.detail("Remote", !endpoint_->isLocal())
+				.detail("ThisEndpoint", this->getEndpoint(TaskPriority::DefaultEndpoint).getPrimaryAddress().toString());
 		}
+	}
+
+	void destroy() override { 
 		delete this; 
 	}
 	void receive(ArenaObjectReader& reader) override {
