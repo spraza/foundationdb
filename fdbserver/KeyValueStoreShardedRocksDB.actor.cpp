@@ -196,23 +196,23 @@ public:
 	    lastResetTime(now()) {}
 
 	void OnStallConditionsChanged(const rocksdb::WriteStallInfo& info) override {
-		auto curState = getWriteStallState(info.condition.cur);
-		auto prevState = getWriteStallState(info.condition.prev);
-		if (curState == 1) {
-			TraceEvent(SevWarn, "WriteStallInfo", logId)
-			    .detail("CF", info.cf_name)
-			    .detail("CurrentState", curState)
-			    .detail("PrevState", prevState);
-		}
+		// auto curState = getWriteStallState(info.condition.cur);
+		// auto prevState = getWriteStallState(info.condition.prev);
+		// if (curState == 1) {
+		// TraceEvent(SevWarn, "WriteStallInfo", logId)
+		//     .detail("CF", info.cf_name)
+		//     .detail("CurrentState", curState)
+		//     .detail("PrevState", prevState);
+		// }
 	}
 
 	void OnFlushBegin(rocksdb::DB* db, const rocksdb::FlushJobInfo& info) override {
 		flushTotal++;
 		auto index = (int)info.flush_reason;
 		if (index >= ROCKSDB_NUM_FLUSH_REASONS) {
-			TraceEvent(SevWarn, "UnknownRocksDBFlushReason", logId)
-			    .suppressFor(5.0)
-			    .detail("Reason", static_cast<int>(info.flush_reason));
+			// TraceEvent(SevWarn, "UnknownRocksDBFlushReason", logId)
+			//     .suppressFor(5.0)
+			//     .detail("Reason", static_cast<int>(info.flush_reason));
 			return;
 		}
 
@@ -223,9 +223,9 @@ public:
 		compactionTotal++;
 		auto index = (int)info.compaction_reason;
 		if (index >= (int)CompactionReason::kNumOfReasons) {
-			TraceEvent(SevWarn, "UnknownRocksDBCompactionReason", logId)
-			    .suppressFor(5.0)
-			    .detail("Reason", static_cast<int>(info.compaction_reason));
+			// TraceEvent(SevWarn, "UnknownRocksDBCompactionReason", logId)
+			//     .suppressFor(5.0)
+			//     .detail("Reason", static_cast<int>(info.compaction_reason));
 			return;
 		}
 		compactionReasons[index]++;
@@ -241,26 +241,26 @@ public:
 		int flushCount = flushTotal.load(std::memory_order_relaxed);
 		int compactionCount = compactionTotal.load(std::memory_order_relaxed);
 		if (flushCount > 0) {
-			TraceEvent e(SevInfo, "RocksDBFlushStats", logId);
-			e.setMaxEventLength(20000);
-			e.detail("LogReason", logReason);
-			e.detail("StorageServerID", ssId);
-			e.detail("DurationSeconds", now() - lastResetTime);
-			e.detail("FlushCountTotal", flushCount);
-			for (int i = 0; i < ROCKSDB_NUM_FLUSH_REASONS; ++i) {
-				e.detail(getFlushReasonString((rocksdb::FlushReason)i), flushReasons[i]);
-			}
+			// TraceEvent e(SevInfo, "RocksDBFlushStats", logId);
+			// e.setMaxEventLength(20000);
+			// e.detail("LogReason", logReason);
+			// e.detail("StorageServerID", ssId);
+			// e.detail("DurationSeconds", now() - lastResetTime);
+			// e.detail("FlushCountTotal", flushCount);
+			// for (int i = 0; i < ROCKSDB_NUM_FLUSH_REASONS; ++i) {
+			// 	e.detail(getFlushReasonString((rocksdb::FlushReason)i), flushReasons[i]);
+			// }
 		}
 		if (compactionCount > 0) {
-			TraceEvent e(SevInfo, "RocksDBCompactionStats", logId);
-			e.setMaxEventLength(20000);
-			e.detail("LogReason", logReason);
-			e.detail("StorageServerID", ssId);
-			e.detail("DurationSeconds", now() - lastResetTime);
-			e.detail("CompactionTotal", compactionCount);
-			for (int i = 0; i < (int)CompactionReason::kNumOfReasons; ++i) {
-				e.detail(rocksdb::GetCompactionReasonString((rocksdb::CompactionReason)i), compactionReasons[i]);
-			}
+			// TraceEvent e(SevInfo, "RocksDBCompactionStats", logId);
+			// e.setMaxEventLength(20000);
+			// e.detail("LogReason", logReason);
+			// e.detail("StorageServerID", ssId);
+			// e.detail("DurationSeconds", now() - lastResetTime);
+			// e.detail("CompactionTotal", compactionCount);
+			// for (int i = 0; i < (int)CompactionReason::kNumOfReasons; ++i) {
+			// 	e.detail(rocksdb::GetCompactionReasonString((rocksdb::CompactionReason)i), compactionReasons[i]);
+			// }
 		}
 		return;
 	}
@@ -306,11 +306,6 @@ public:
 	void OnBackgroundError(rocksdb::BackgroundErrorReason reason, rocksdb::Status* bg_error) override {
 		if (!bg_error)
 			return;
-		TraceEvent(SevError, "ShardedRocksDBBGError")
-		    .detail("Reason", getErrorReason(reason))
-		    .detail("ShardedRocksDBSeverity", bg_error->severity())
-		    .detail("Status", bg_error->ToString());
-
 		std::unique_lock<std::mutex> lock(mutex);
 		if (!errorPromise.isValid())
 			return;
