@@ -1331,6 +1331,14 @@ ACTOR Future<Void> registerWorker(RegisterWorkerRequest req,
 			self->masterProcessId = w.locality.processId();
 		}
 		if (configBroadcaster != nullptr && req.lastSeenKnobVersion.present() && req.knobConfigClassSet.present()) {
+			loop {
+				// q: can registerworker happen before old coordinator lock start? if so, this sol does not work
+				// todo: push vs pull/poll (current)
+				if (self->db.recoveryData->coordinatorLockRequestsInProgress <= 0) {
+					break;
+				}
+				wait(delay(0.1));
+			}
 			self->addActor.send(configBroadcaster->registerNode(req.configBroadcastInterface,
 			                                                    req.lastSeenKnobVersion.get(),
 			                                                    req.knobConfigClassSet.get(),
