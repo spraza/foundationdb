@@ -573,7 +573,9 @@ ACTOR Future<Void> changeCoordinators(Reference<ClusterRecoveryData> self) {
 
 		try {
 			ClusterConnectionString conn(changeCoordinatorsRequest.newConnectionString.toString());
+			self->coordinatorLockRequestsInProgress++;
 			wait(self->cstate.move(conn));
+			self->coordinatorLockRequestsInProgress--;
 		} catch (Error& e) {
 			if (e.code() != error_code_actor_cancelled)
 				changeCoordinatorsRequest.reply.sendError(e);

@@ -238,6 +238,7 @@ struct ClusterRecoveryData : NonCopyable, ReferenceCounted<ClusterRecoveryData> 
 	Promise<Void> cstateUpdated;
 	Reference<AsyncVar<ServerDBInfo> const> dbInfo;
 	int64_t registrationCount; // Number of different MasterRegistrationRequests sent to clusterController
+	int64_t coordinatorLockRequestsInProgress{ 0 };
 
 	RecoveryState recoveryState;
 
