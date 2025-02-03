@@ -369,7 +369,8 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 						    wait(storageServers[i].getKeyValueStoreType.getReplyUnlessFailedFor(typeReply, 2, 0));
 						if (keyValueStoreType.present() && keyValueStoreType.get() != conf.storageServerStoreType) {
 							TraceEvent(SevWarn, "ConfigureDatabase_WrongStoreType")
-							    .suppressFor(5.0)
+							    //.suppressFor(5.0)
+							    .detail("Idx", i)
 							    .detail("ServerID", storageServers[i].id())
 							    .detail("ProcessID", storageServers[i].locality.processId())
 							    .detail("ServerStoreType",
@@ -377,6 +378,16 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 							    .detail("ConfigStoreType", conf.storageServerStoreType.toString());
 							pass = false;
 							break;
+						} else if (keyValueStoreType.present() &&
+						           keyValueStoreType.get() == conf.storageServerStoreType) {
+							TraceEvent(SevWarn, "ConfigureDatabase_CorrectStoreType")
+							    //.suppressFor(5.0)
+							    .detail("Idx", i)
+							    .detail("ServerID", storageServers[i].id())
+							    .detail("ProcessID", storageServers[i].locality.processId())
+							    .detail("ServerStoreType",
+							            keyValueStoreType.present() ? keyValueStoreType.get().toString() : "?")
+							    .detail("ConfigStoreType", conf.storageServerStoreType.toString());
 						}
 					}
 				}
