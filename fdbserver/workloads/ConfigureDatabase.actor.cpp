@@ -269,7 +269,10 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 		return StringRef(format("DestroyDB%d", dbIndex));
 	}
 
-	static Future<ConfigurationResult> IssueConfigurationChange(Database cx, const std::string& config, bool force) {
+	static Future<ConfigurationResult> IssueConfigurationChange(ConfigureDatabaseWorkload* self,
+	                                                            Database cx,
+	                                                            const std::string& config,
+	                                                            bool force) {
 		printf("Issuing configuration change: %s\n", config.c_str());
 		return ManagementAPI::changeConfig(cx.getReference(), config, force);
 	}
@@ -297,6 +300,40 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 		if (self->clientId == 0) {
 			self->clients.push_back(timeout(self->singleDB(self, cx), self->testDuration, Void()));
 			wait(waitForAll(self->clients));
+		}
+		return Void();
+	}
+
+	ACTOR Future<Void> dbg(Database cx) {
+		state DatabaseConfiguration conf = wait(getDatabaseConfiguration(cx));
+		std::cout << "db configure ss type: " << conf.storageServerStoreType.toString() << std::endl;
+		state std::vector<StorageServerInterface> storageServers = wait(getStorageServers(cx));
+		state std::string wiggleLocalityKeyValue = conf.perpetualStorageWiggleLocality;
+		state std::vector<std::pair<Optional<Value>, Optional<Value>>> wiggleLocalityKeyValues =
+		    ParsePerpetualStorageWiggleLocality(wiggleLocalityKeyValue);
+		state int i = 0;
+		for (i = 0; i < storageServers.size(); i++) {
+			// Check that each storage server has the correct key value store type
+			if (!storageServers[i].isTss() &&
+			    (wiggleLocalityKeyValue == "0" ||
+			     localityMatchInList(wiggleLocalityKeyValues, storageServers[i].locality))) {
+				ReplyPromise<KeyValueStoreType> typeReply;
+				ErrorOr<KeyValueStoreType> keyValueStoreType =
+				    wait(storageServers[i].getKeyValueStoreType.getReplyUnlessFailedFor(typeReply, 2, 0));
+				std::cout << "ss " << i << ": "
+				          << (keyValueStoreType.present() ? keyValueStoreType.get().toString() : "not_present")
+				          << std::endl;
+				if (keyValueStoreType.present() && keyValueStoreType.get() != conf.storageServerStoreType) {
+					TraceEvent(SevWarn, "ConfigureDatabase_WrongStoreType")
+					    .suppressFor(5.0)
+					    .detail("ServerID", storageServers[i].id())
+					    .detail("ProcessID", storageServers[i].locality.processId())
+					    .detail("ServerStoreType",
+					            keyValueStoreType.present() ? keyValueStoreType.get().toString() : "?")
+					    .detail("ConfigStoreType", conf.storageServerStoreType.toString());
+					break;
+				}
+			}
 		}
 		return Void();
 	}
@@ -412,7 +449,8 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 				if (deterministicRandom()->random01() < 0.5)
 					config += " resolvers=" + format("%d", randomRoleNumber());
 
-				wait(success(IssueConfigurationChange(cx, config, false)));
+				wait(success(IssueConfigurationChange(self, cx, config, false)));
+				wait(self->dbg(cx));
 
 				//TraceEvent("ConfigureTestConfigureEnd").detail("NewConfig", newConfig);
 			} else if (randomChoice == 4) {
@@ -463,7 +501,8 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 				default:
 					ASSERT(false);
 				}
-				wait(success(IssueConfigurationChange(cx, storeTypeStr, true)));
+				wait(success(IssueConfigurationChange(self, cx, storeTypeStr, true)));
+				wait(self->dbg(cx));
 			} else if (randomChoice == 6) {
 				// Some configurations will be invalid, and that's fine.
 				int length = sizeof(logTypes) / sizeof(logTypes[0]);
@@ -473,12 +512,15 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 				}
 
 				wait(success(
-				    IssueConfigurationChange(cx, logTypes[deterministicRandom()->randomInt(0, length)], false)));
+				    IssueConfigurationChange(self, cx, logTypes[deterministicRandom()->randomInt(0, length)], false)));
+				wait(self->dbg(cx));
 			} else if (randomChoice == 7) {
 				wait(success(IssueConfigurationChange(
+				    self,
 				    cx,
 				    backupTypes[deterministicRandom()->randomInt(0, sizeof(backupTypes) / sizeof(backupTypes[0]))],
 				    false)));
+				wait(self->dbg(cx));
 			} else if (randomChoice == 8) {
 				if (self->allowTestStorageMigration) {
 					CODE_PROBE(true, "storage migration type change");
@@ -516,11 +558,13 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 					}
 
 					wait(success(IssueConfigurationChange(
+					    self,
 					    cx,
 					    storageMigrationTypes[deterministicRandom()->randomInt(
 					        0, sizeof(storageMigrationTypes) / sizeof(storageMigrationTypes[0]))] +
 					        randomPerpetualWiggleLocality,
 					    false)));
+					wait(self->dbg(cx));
 				}
 			} else {
 				ASSERT(false);
