@@ -2331,6 +2331,7 @@ public:
 				    .detail("ImbalanceFactor",
 				            SERVER_KNOBS->PW_MAX_SS_LESSTHAN_MIN_BYTES_BALANCE_RATIO ? numSSToBeLoadBytesBalanced
 				                                                                     : ratio)
+				    .detail("Imbalance", imbalance)
 				    .detail("ServerSize", self->server_info.size())
 				    .detail("MachineSize", self->machine_info.size())
 				    .detail("StorageTeamSize", self->configuration.storageTeamSize)
