@@ -35,7 +35,7 @@
 
 static const char* storageMigrationTypes[] = { "perpetual_storage_wiggle=0 storage_migration_type=aggressive",
 	                                           "perpetual_storage_wiggle=1",
-	                                           "perpetual_storage_wiggle=1 storage_migration_type=gradual",
+	                                           "perpetual_storage_wiggle=1 storage_migration_type=aggressive",
 	                                           "storage_migration_type=aggressive" };
 static const char* logTypes[] = { "log_engine:=1",
 	                              "log_engine:=2",
