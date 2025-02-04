@@ -313,6 +313,7 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 				// configuration needs to be re-read in case it changed since the last loop, since it could
 				// read a stale storage engine type from the configuration initially.
 				state DatabaseConfiguration conf = wait(getDatabaseConfiguration(cx));
+				state int ssReplicationFactor = conf.storageTeamSize;
 
 				state std::string wiggleLocalityKeyValue = conf.perpetualStorageWiggleLocality;
 				state std::vector<std::pair<Optional<Value>, Optional<Value>>> wiggleLocalityKeyValues =
@@ -322,7 +323,25 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 				state bool pass = true;
 				state std::vector<StorageServerInterface> storageServers = wait(getStorageServers(cx));
 
+				state std::unordered_map<std::string /* dc id */, int /* number of ss in that dc id */> dcIdToSSCount;
+				for (const auto& ss : storageServers) {
+					if (ss.locality.dcId().present()) {
+						const auto& dcId = ss.locality.dcId().get().toString();
+						if (!dcIdToSSCount.contains(dcId)) {
+							dcIdToSSCount[dcId] = 0;
+						}
+						dcIdToSSCount[dcId] += 1;
+					}
+				}
+
 				for (i = 0; i < storageServers.size(); i++) {
+					if (!storageServers[i].locality.dcId().present()) {
+						continue;
+					}
+					if (dcIdToSSCount[storageServers[i].locality.dcId().get().toString()] <= ssReplicationFactor) {
+						continue;
+					}
+
 					// Check that each storage server has the correct key value store type
 					if (!storageServers[i].isTss() &&
 					    (wiggleLocalityKeyValue == "0" ||
