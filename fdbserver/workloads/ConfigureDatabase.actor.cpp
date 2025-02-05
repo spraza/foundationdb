@@ -318,15 +318,18 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 						dcIdToSSCount[dcId] = 0;
 					}
 					dcIdToSSCount[dcId] += 1;
+					TraceEvent("PrazaBar").detail("DcID", dcIdToSSCount[dcId]);
 				}
 			}
 
 			state int idx;
 			for (idx = 0; idx < allStorageServers.size(); idx++) {
-				// if (!storageServers[i].locality.dcId().present()) {
-				// 		continue;
-				// }
+				if (!allStorageServers[idx].locality.dcId().present()) {
+					TraceEvent("PrazaFoo");
+					// continue;
+				}
 				if (dcIdToSSCount[allStorageServers[idx].locality.dcId().get().toString()] <= dbConf.storageTeamSize) {
+					TraceEvent("PrazaBaz");
 					wait(success(IssueConfigurationChange(cx, "storage_migration_type=aggressive", false)));
 					break;
 				}
@@ -356,13 +359,21 @@ struct ConfigureDatabaseWorkload : TestWorkload {
 						ErrorOr<KeyValueStoreType> keyValueStoreType =
 						    wait(storageServers[i].getKeyValueStoreType.getReplyUnlessFailedFor(typeReply, 2, 0));
 						if (keyValueStoreType.present() && keyValueStoreType.get() != conf.storageServerStoreType) {
-							TraceEvent(SevWarn, "ConfigureDatabase_WrongStoreType")
-							    .suppressFor(5.0)
-							    .detail("ServerID", storageServers[i].id())
-							    .detail("ProcessID", storageServers[i].locality.processId())
-							    .detail("ServerStoreType",
-							            keyValueStoreType.present() ? keyValueStoreType.get().toString() : "?")
-							    .detail("ConfigStoreType", conf.storageServerStoreType.toString());
+							if (self->clientId == 0) {
+								TraceEvent(SevWarn, "ConfigureDatabase_WrongStoreType")
+								    .suppressFor(5.0)
+								    .detail("ServerID", storageServers[i].id())
+								    .detail("ProcessID", storageServers[i].locality.processId())
+								    .detail("ServerStoreType",
+								            keyValueStoreType.present() ? keyValueStoreType.get().toString() : "?")
+								    .detail("ConfigStoreType", conf.storageServerStoreType.toString())
+								    .detail("Idx", i)
+								    .detail("ProcessDcId",
+								            storageServers[i].locality.dcId().present()
+								                ? storageServers[i].locality.dcId().get().toString()
+								                : "NA")
+								    .detail("TotalSS", storageServers.size());
+							}
 							pass = false;
 							break;
 						}
