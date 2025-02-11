@@ -2104,6 +2104,7 @@ ACTOR Future<std::map<NetworkAddress, std::pair<WorkerInterface, std::string>>> 
 			ClusterConnectionString ccs(coordinators.get().toString());
 			std::vector<NetworkAddress> coordinatorsAddr = wait(ccs.tryResolveHostnames());
 			std::set<NetworkAddress> coordinatorsAddrSet(coordinatorsAddr.begin(), coordinatorsAddr.end());
+			TraceEvent("GetStatefulWorkers1").detail("CoordinatorSetSize", coordinatorsAddrSet.size());
 			for (const auto& worker : workers) {
 				// Note : only considers second address for coordinators,
 				// as we use primary addresses from storage and tlog interfaces above
@@ -2111,6 +2112,7 @@ ACTOR Future<std::map<NetworkAddress, std::pair<WorkerInterface, std::string>>> 
 				Optional<NetworkAddress> secondary = worker.interf.tLog.getEndpoint().addresses.secondaryAddress;
 				if (coordinatorsAddrSet.find(primary) != coordinatorsAddrSet.end() ||
 				    (secondary.present() && (coordinatorsAddrSet.find(secondary.get()) != coordinatorsAddrSet.end()))) {
+					TraceEvent("GetStatefulWorkers2");
 					if (result.contains(primary)) {
 						ASSERT(workersMap[primary].id() == result[primary].first.id());
 						result[primary].second.append(",coord");
@@ -2235,20 +2237,27 @@ ACTOR Future<Void> ddSnapCreateCore(DistributorSnapRequest snapReq, Reference<As
 		std::vector<Future<ErrorOr<Void>>> coordSnapReqs;
 		for (const auto& [addr, entry] : statefulWorkers) {
 			auto& [interf, role] = entry;
-			if (role.find("coord") != std::string::npos)
+			if (role.find("coord") != std::string::npos) {
+				TraceEvent("SnapDataDistributor_SendingSnapCoords")
+				    .detail("SnapPayload", snapReq.snapPayload)
+				    .detail("SnapUID", snapReq.snapUID)
+				    .detail("Role", "coord"_sr);
 				coordSnapReqs.push_back(trySendSnapReq(
 				    interf.workerSnapReq, WorkerSnapRequest(snapReq.snapPayload, snapReq.snapUID, "coord"_sr)));
+			}
 		}
 		// At present, the fault injection workload doesn't respect the KNOB
 		// MAX_COORDINATOR_SNAPSHOT_FAULT_TOLERANCE Consequently, we ignore it in simulation tests
 		auto const coordFaultTolerance = std::min<int>(
 		    std::max<int>(0, (coordSnapReqs.size() - 1) / 2),
 		    g_network->isSimulated() ? coordSnapReqs.size() : SERVER_KNOBS->MAX_COORDINATOR_SNAPSHOT_FAULT_TOLERANCE);
+		state int coordFaultTolerance_ = coordFaultTolerance;
 		wait(waitForMost(coordSnapReqs, coordFaultTolerance, snap_coord_failed()));
 
 		TraceEvent("SnapDataDistributor_AfterSnapCoords")
 		    .detail("SnapPayload", snapReq.snapPayload)
-		    .detail("SnapUID", snapReq.snapUID);
+		    .detail("SnapUID", snapReq.snapUID)
+		    .detail("CoordFaultTolerance", coordFaultTolerance_);
 		tr.reset();
 		loop {
 			try {
