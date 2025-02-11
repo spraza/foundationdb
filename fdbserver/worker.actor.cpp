@@ -1805,6 +1805,11 @@ ACTOR Future<Void> workerSnapCreate(
 	state ExecCmdValueString snapArg(snapReq.snapPayload);
 	state std::string snapReqKey = snapReq.snapUID.toString() + snapReq.role.toString();
 	try {
+		TraceEvent("ExecTraceWorkerBefore")
+		    .detail("Uid", snapReq.snapUID.toString())
+		    .detail("Role", snapReq.role)
+		    .detail("Value", snapFolder)
+		    .detail("ExecPayload", snapReq.snapPayload);
 		int err = wait(execHelper(&snapArg, snapReq.snapUID, snapFolder, snapReq.role.toString()));
 		std::string uidStr = snapReq.snapUID.toString();
 		TraceEvent("ExecTraceWorker")
@@ -3321,6 +3326,9 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 						    .detail("GapTime", now() - lastSnapTime);
 					}
 					auto* snapReqResultMapPtr = &snapReqResultMap;
+					TraceEvent("WorkerSnapProcess")
+					    .detail("CurrSnapUID", snapReq.snapUID)
+					    .detail("CurrRole", snapReq.role);
 					errorForwarders.add(fmap(
 					    [snapReqResultMapPtr, snapReqKey](Void _) {
 						    snapReqResultMapPtr->erase(snapReqKey);
