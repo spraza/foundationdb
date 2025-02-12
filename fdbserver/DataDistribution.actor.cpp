@@ -2039,6 +2039,9 @@ ACTOR Future<std::map<NetworkAddress, std::pair<WorkerInterface, std::string>>> 
 			// get workers
 			state std::vector<WorkerDetails> workers = wait(getWorkers(dbInfo));
 			for (const auto& worker : workers) {
+				TraceEvent("DDGetWorkers")
+				    .detail("PrimaryAddr", worker.interf.address().toString())
+				    .detail("SecondaryAddr", worker.interf.tLog.getEndpoint().addresses.secondaryAddress);
 				workersMap[worker.interf.address()] = worker.interf;
 			}
 
@@ -2104,7 +2107,13 @@ ACTOR Future<std::map<NetworkAddress, std::pair<WorkerInterface, std::string>>> 
 			ClusterConnectionString ccs(coordinators.get().toString());
 			std::vector<NetworkAddress> coordinatorsAddr = wait(ccs.tryResolveHostnames());
 			std::set<NetworkAddress> coordinatorsAddrSet(coordinatorsAddr.begin(), coordinatorsAddr.end());
-			TraceEvent("GetStatefulWorkers1").detail("CoordinatorSetSize", coordinatorsAddrSet.size());
+			std::string temp;
+			for (const auto& e : coordinatorsAddrSet) {
+				temp += e.toString() + ", ";
+			}
+			TraceEvent("GetStatefulWorkers1")
+			    .detail("CoordinatorSetSize", coordinatorsAddrSet.size())
+			    .detail("CoordinatorAddrs", temp);
 			for (const auto& worker : workers) {
 				// Note : only considers second address for coordinators,
 				// as we use primary addresses from storage and tlog interfaces above
