@@ -1267,6 +1267,7 @@ ACTOR Future<Void> registerWorker(RegisterWorkerRequest req,
 	}
 
 	if (info == self->id_worker.end()) {
+		TraceEvent("CCRegisterWorker").detail("Address", w.address().toString());
 		self->id_worker[w.locality.processId()] = WorkerInfo(workerAvailabilityWatch(w, newProcessClass, self),
 		                                                     req.reply,
 		                                                     req.generation,
@@ -3184,17 +3185,23 @@ ACTOR Future<Void> clusterControllerCore(ClusterControllerFullInterface interf,
 			std::vector<WorkerDetails> workers;
 
 			for (auto const& [id, worker] : self.id_worker) {
+				TraceEvent("CCGetWorkerRequest").detail("Address", worker.details.interf.address().toString());
 				if ((req.flags & GetWorkersRequest::NON_EXCLUDED_PROCESSES_ONLY) &&
 				    self.db.config.isExcludedServer(worker.details.interf.addresses(),
 				                                    worker.details.interf.locality)) {
+					TraceEvent("CCGetWorkerRequestSkipped1")
+					    .detail("Address", worker.details.interf.address().toString());
 					continue;
 				}
 
 				if ((req.flags & GetWorkersRequest::TESTER_CLASS_ONLY) &&
 				    worker.details.processClass.classType() != ProcessClass::TesterClass) {
+					TraceEvent("CCGetWorkerRequestSkipped2")
+					    .detail("Address", worker.details.interf.address().toString());
 					continue;
 				}
 
+				TraceEvent("CCGetWorkerRequestPushed").detail("Address", worker.details.interf.address().toString());
 				workers.push_back(worker.details);
 			}
 
