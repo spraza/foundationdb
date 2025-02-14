@@ -110,9 +110,9 @@ void FlowKnobs::initialize(Randomize randomize, IsSimulated isSimulated) {
 	init( CONNECTION_ID_TIMEOUT,                             600.0 ); if( randomize && BUGGIFY ) CONNECTION_ID_TIMEOUT = 60.0;
 	init( CONNECTION_CLEANUP_DELAY,                          100.0 );
 	init( INITIAL_RECONNECTION_TIME,                          0.05 );
-	init( MAX_RECONNECTION_TIME,                               500 );
+	init( MAX_RECONNECTION_TIME,                               800 );
 	init( RECONNECTION_TIME_GROWTH_RATE,                       1.2 );
-	init( RECONNECTION_RESET_TIME,                           300.0 );
+	init( RECONNECTION_RESET_TIME,                           600.0 );
 	init( ALWAYS_ACCEPT_DELAY,                                15.0 );
 	init( ACCEPT_BATCH_SIZE,                                    10 );
 	init( TOO_MANY_CONNECTIONS_CLOSED_RESET_DELAY,             5.0 );
