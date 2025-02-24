@@ -110,7 +110,7 @@ during recovery, `txnStateStore` is recovered by reading all data from this vers
 
 * Resolvers copy metadata mutations to resolution reply message: https://github.com/apple/foundationdb/blob/6281e647784e74dccb3a6cb88efb9d8b9cccd376/fdbserver/Resolver.actor.cpp#L244-L249
 
-* Commit proxies apply all metadata mutations (including those from other proxies) in the commit order: https://github.com/apple/foundationdb/blob/6281e647784e74dccb3a6cb88efb9d8b9cccd376/fdbserver/CommitProxyServer.actor.cpp#L800-L770
+* Commit proxies apply all metadata mutations (including those from other proxies) in the commit order: https://github.com/apple/foundationdb/blob/6281e647784e74dccb3a6cb88efb9d8b9cccd376/fdbserver/CommitProxyServer.actor.cpp#L740-L770
 
 * Commit proxies only write metadata mutations in its own transaction batch to TLogs: https://github.com/apple/foundationdb/blob/6281e647784e74dccb3a6cb88efb9d8b9cccd376/fdbserver/CommitProxyServer.actor.cpp#L772-L774 adds mutations to `storeCommits`. Later in `postResolution()`, https://github.com/apple/foundationdb/blob/6281e647784e74dccb3a6cb88efb9d8b9cccd376/fdbserver/CommitProxyServer.actor.cpp#L1162-L1176, only the last one in `storeCommits` are send to TLogs.
 
