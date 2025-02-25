@@ -1223,12 +1223,15 @@ public:
 
 			while (hist->size() && v > hist->back().first) {
 				logSystem->pop(v, hist->back().second);
+				TraceEvent("DbgSS1").detail("Upto", v).detail("Tag", hist->back().second);
 				hist->pop_back();
 			}
 			if (hist->size()) {
 				logSystem->pop(v, hist->back().second);
+				TraceEvent("DbgSS2").detail("Upto", v).detail("Tag", hist->back().second);
 			} else {
 				logSystem->pop(v, tag);
+				TraceEvent("DbgSS3").detail("Upto", v).detail("Tag", tag);
 			}
 		}
 	}
@@ -11785,6 +11788,7 @@ ACTOR Future<Void> update(StorageServer* data, bool* pReceivedUpdate) {
 			cloneCursor1->setProtocolVersion(data->logProtocol);
 
 			for (; cloneCursor1->hasMessage(); cloneCursor1->nextMessage()) {
+				TraceEvent("DbgSS4").detail("GetMsgVersion", cloneCursor1->version().toString());
 				ArenaReader& cloneReader = *cloneCursor1->reader();
 
 				if (LogProtocolMessage::isNextIn(cloneReader)) {
@@ -11928,6 +11932,7 @@ ACTOR Future<Void> update(StorageServer* data, bool* pReceivedUpdate) {
 		state double beforeTLogMsgsUpdates = now();
 		state std::set<Key> updatedChangeFeeds;
 		for (; cloneCursor2->hasMessage(); cloneCursor2->nextMessage()) {
+			TraceEvent("DbgSS5").detail("GetMsgVersion", cloneCursor2->version().toString());
 			if (mutationBytes > SERVER_KNOBS->DESIRED_UPDATE_BYTES) {
 				mutationBytes = 0;
 				// Instead of just yielding, leave time for the storage server to respond to reads
@@ -12903,6 +12908,7 @@ ACTOR Future<Void> updateStorage(StorageServer* data) {
 		// loaded.
 		state double beforeSSDurableVersionUpdate = now();
 		wait(data->durableVersionLock.take());
+		TraceEvent("SSDbg11");
 		data->popVersion(data->storageMinRecoverVersion + 1);
 
 		while (!changeDurableVersion(data, newOldestVersion)) {
@@ -14317,6 +14323,7 @@ ACTOR Future<Void> storageServerCore(StorageServer* self, StorageServerInterface
 						}
 						self->logCursor = self->logSystem->peekSingle(
 						    self->thisServerID, self->version.get() + 1, self->tag, self->history);
+						TraceEvent("SSDbg10");
 						self->popVersion(self->storageMinRecoverVersion + 1, true);
 					}
 					// If update() is waiting for results from the tlog, it might never get them, so needs to be

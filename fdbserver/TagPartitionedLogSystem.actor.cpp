@@ -1486,6 +1486,7 @@ void TagPartitionedLogSystem::popTxs(Version upTo, int8_t popLocality) {
 }
 
 void TagPartitionedLogSystem::pop(Version upTo, Tag tag, Version durableKnownCommittedVersion, int8_t popLocality) {
+	TraceEvent("DbgLogServer").detail("UptoVersion", upTo).detail("Tag", tag);
 	if (upTo <= 0)
 		return;
 	if (tag.locality == tagLocalityRemoteLog) {
