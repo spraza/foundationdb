@@ -1131,8 +1131,6 @@ Reference<ILogSystem::IPeekCursor> TagPartitionedLogSystem::peekLocal(UID dbgid,
 					// detail("LogId",
 					// oldLogData[i].tLogs[bestOldSet]->logServers[tLogs[bestOldSet]->bestLocationFor( tag
 					// )]->get().id());
-					std::vector<int> pushLocations;
-					oldLogData[i].tLogs[bestOldSet]->getPushLocations(VectorRef<Tag>(&tag, 1), pushLocations, 0);
 					cursors.push_back(makeReference<ILogSystem::MergedPeekCursor>(
 					    oldLogData[i].tLogs[bestOldSet]->logServers,
 					    oldLogData[i].tLogs[bestOldSet]->bestLocationFor(tag),
@@ -1144,8 +1142,7 @@ Reference<ILogSystem::IPeekCursor> TagPartitionedLogSystem::peekLocal(UID dbgid,
 					    useMergePeekCursors,
 					    oldLogData[i].tLogs[bestOldSet]->tLogLocalities,
 					    oldLogData[i].tLogs[bestOldSet]->tLogPolicy,
-					    oldLogData[i].tLogs[bestOldSet]->tLogReplicationFactor,
-					    pushLocations));
+					    oldLogData[i].tLogs[bestOldSet]->tLogReplicationFactor));
 					epochEnds.emplace_back(std::min(lastBegin, end));
 				}
 				lastBegin = thisBegin;

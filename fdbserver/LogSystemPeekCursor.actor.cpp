@@ -581,8 +581,7 @@ ILogSystem::MergedPeekCursor::MergedPeekCursor(
     bool parallelGetMore,
     std::vector<LocalityData> const& tLogLocalities,
     Reference<IReplicationPolicy> const tLogPolicy,
-    int tLogReplicationFactor,
-    const std::vector<int>& pushLocations)
+    int tLogReplicationFactor)
   : tag(tag), bestServer(bestServer), currentCursor(0), readQuorum(readQuorum), messageVersion(begin),
     hasNextMessage(false), randomID(deterministicRandom()->randomUniqueID()),
     tLogReplicationFactor(tLogReplicationFactor) {
@@ -594,24 +593,12 @@ ILogSystem::MergedPeekCursor::MergedPeekCursor(
 		logSet->updateLocalitySet(logSet->tLogLocalities);
 	}
 
-	if (pushLocations.empty()) {
-		for (int i = 0; i < logServers.size(); i++) {
-			auto cursor = makeReference<ILogSystem::ServerPeekCursor>(
-			    logServers[i], tag, begin, end, bestServer >= 0, parallelGetMore);
-			TraceEvent("DbgFoo1").detail("Idx", i);
-			//TraceEvent("MPC_Starting", randomID).detail("Cursor", cursor->randomID).detail("End", end);
-			serverCursors.push_back(cursor);
-		}
-	} else {
-		for (const int pushLocation : pushLocations) {
-			auto cursor = makeReference<ILogSystem::ServerPeekCursor>(
-			    logServers[pushLocation], tag, begin, end, bestServer >= 0, parallelGetMore);
-			TraceEvent("DbgFoo1").detail("Idx", pushLocation);
-			//TraceEvent("MPC_Starting", randomID).detail("Cursor", cursor->randomID).detail("End", end);
-			serverCursors.push_back(cursor);
-		}
+	for (int i = 0; i < logServers.size(); i++) {
+		auto cursor = makeReference<ILogSystem::ServerPeekCursor>(
+		    logServers[i], tag, begin, end, bestServer >= 0, parallelGetMore);
+		//TraceEvent("MPC_Starting", randomID).detail("Cursor", cursor->randomID).detail("End", end);
+		serverCursors.push_back(cursor);
 	}
-
 	sortedVersions.resize(serverCursors.size());
 }
 
