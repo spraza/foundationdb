@@ -563,14 +563,6 @@ Version ILogSystem::ServerPeekCursor::popped() const {
 	return poppedVersion;
 }
 
-ILogSystem::MergedPeekCursor::MergedPeekCursor(std::vector<Reference<ILogSystem::IPeekCursor>> const& serverCursors,
-                                               Version begin)
-  : serverCursors(serverCursors), tag(invalidTag), bestServer(-1), currentCursor(0), readQuorum(serverCursors.size()),
-    messageVersion(begin), hasNextMessage(false), randomID(deterministicRandom()->randomUniqueID()),
-    tLogReplicationFactor(0) {
-	sortedVersions.resize(serverCursors.size());
-}
-
 ILogSystem::MergedPeekCursor::MergedPeekCursor(
     std::vector<Reference<AsyncVar<OptionalInterface<TLogInterface>>>> const& logServers,
     int bestServer,

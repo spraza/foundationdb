@@ -283,7 +283,6 @@ struct ILogSystem {
 		Future<Void> more;
 		std::vector<int> pushLocations;
 
-		MergedPeekCursor(std::vector<Reference<ILogSystem::IPeekCursor>> const& serverCursors, Version begin);
 		MergedPeekCursor(std::vector<Reference<AsyncVar<OptionalInterface<TLogInterface>>>> const& logServers,
 		                 int bestServer,
 		                 int readQuorum,
