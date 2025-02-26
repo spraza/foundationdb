@@ -565,6 +565,7 @@ Version ILogSystem::ServerPeekCursor::popped() const {
 
 ILogSystem::MergedPeekCursor::MergedPeekCursor(
     std::vector<Reference<AsyncVar<OptionalInterface<TLogInterface>>>> const& logServers,
+    std::vector<int>&& pushLocations,
     int bestServer,
     int readQuorum,
     Tag tag,
@@ -573,8 +574,7 @@ ILogSystem::MergedPeekCursor::MergedPeekCursor(
     bool parallelGetMore,
     std::vector<LocalityData> const& tLogLocalities,
     Reference<IReplicationPolicy> const tLogPolicy,
-    int tLogReplicationFactor,
-    const std::vector<int>& pushLocations)
+    int tLogReplicationFactor)
   : tag(tag), bestServer(bestServer), currentCursor(0), readQuorum(readQuorum), messageVersion(begin),
     hasNextMessage(false), randomID(deterministicRandom()->randomUniqueID()),
     tLogReplicationFactor(tLogReplicationFactor), pushLocations(pushLocations) {
