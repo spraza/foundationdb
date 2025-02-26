@@ -581,10 +581,11 @@ ILogSystem::MergedPeekCursor::MergedPeekCursor(
     bool parallelGetMore,
     std::vector<LocalityData> const& tLogLocalities,
     Reference<IReplicationPolicy> const tLogPolicy,
-    int tLogReplicationFactor)
+    int tLogReplicationFactor,
+    const std::vector<int>& pushLocations)
   : tag(tag), bestServer(bestServer), currentCursor(0), readQuorum(readQuorum), messageVersion(begin),
     hasNextMessage(false), randomID(deterministicRandom()->randomUniqueID()),
-    tLogReplicationFactor(tLogReplicationFactor) {
+    tLogReplicationFactor(tLogReplicationFactor), pushLocations(pushLocations) {
 	if (tLogPolicy) {
 		logSet = makeReference<LogSet>();
 		logSet->tLogPolicy = tLogPolicy;
@@ -599,6 +600,7 @@ ILogSystem::MergedPeekCursor::MergedPeekCursor(
 		//TraceEvent("MPC_Starting", randomID).detail("Cursor", cursor->randomID).detail("End", end);
 		serverCursors.push_back(cursor);
 	}
+
 	sortedVersions.resize(serverCursors.size());
 }
 
@@ -842,8 +844,15 @@ Optional<UID> ILogSystem::MergedPeekCursor::getCurrentPeekLocation() const {
 
 Version ILogSystem::MergedPeekCursor::popped() const {
 	Version poppedVersion = 0;
-	for (auto& c : serverCursors)
-		poppedVersion = std::max(poppedVersion, c->popped());
+	if (pushLocations.empty()) {
+		for (auto& c : serverCursors) {
+			poppedVersion = std::max(poppedVersion, c->popped());
+		}
+	} else {
+		for (const int pushLocation : pushLocations) {
+			poppedVersion = std::max(poppedVersion, serverCursors[pushLocation]->popped());
+		}
+	}
 	return poppedVersion;
 }
 
