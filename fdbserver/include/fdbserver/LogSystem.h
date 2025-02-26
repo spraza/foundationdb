@@ -292,7 +292,8 @@ struct ILogSystem {
 		                 bool parallelGetMore,
 		                 std::vector<LocalityData> const& tLogLocalities,
 		                 Reference<IReplicationPolicy> const tLogPolicy,
-		                 int tLogReplicationFactor);
+		                 int tLogReplicationFactor,
+		                 const std::vector<int>& pushLocations = {});
 		MergedPeekCursor(std::vector<Reference<IPeekCursor>> const& serverCursors,
 		                 LogMessageVersion const& messageVersion,
 		                 int bestServer,
