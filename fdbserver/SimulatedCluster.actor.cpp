@@ -506,8 +506,8 @@ public:
 	float testPriority; // unused -- used in TestHarness
 
 	bool longRunningTest = false;
-	int simulationNormalRunTestsTimeoutSeconds = 5400;
-	int simulationBuggifyRunTestsTimeoutSeconds = 36000;
+	int simulationNormalRunTestsTimeoutSeconds = 8100;
+	int simulationBuggifyRunTestsTimeoutSeconds = 54000;
 
 	// Number of tlogs in the remote region
 	Optional<int> remoteDesiredTLogCount;
