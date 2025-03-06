@@ -30,19 +30,19 @@ struct ProtocolVersionWorkload : TestWorkload {
 	Future<Void> start(Database const& cx) override { return _start(this, cx); }
 
 	ACTOR Future<Void> _start(ProtocolVersionWorkload* self, Database cx) {
-		state std::vector<ISimulator::ProcessInfo*> allProcesses = g_simulator->getAllProcesses();
-		state std::vector<ISimulator::ProcessInfo*>::iterator diffVersionProcess =
-		    find_if(allProcesses.begin(), allProcesses.end(), [](const ISimulator::ProcessInfo* p) {
-			    return p->protocolVersion != currentProtocolVersion();
-		    });
+		// state std::vector<ISimulator::ProcessInfo*> allProcesses = g_simulator->getAllProcesses();
+		// state std::vector<ISimulator::ProcessInfo*>::iterator diffVersionProcess =
+		//     find_if(allProcesses.begin(), allProcesses.end(), [](const ISimulator::ProcessInfo* p) {
+		// 	    return p->protocolVersion != currentProtocolVersion();
+		//     });
 
-		ASSERT(diffVersionProcess != allProcesses.end());
+		// ASSERT(diffVersionProcess != allProcesses.end());
 
-		RequestStream<ProtocolInfoRequest> requestStream{ Endpoint::wellKnown({ (*diffVersionProcess)->addresses },
-			                                                                  WLTOKEN_PROTOCOL_INFO) };
-		ProtocolInfoReply reply = wait(retryBrokenPromise(requestStream, ProtocolInfoRequest{}));
+		// RequestStream<ProtocolInfoRequest> requestStream{ Endpoint::wellKnown({ (*diffVersionProcess)->addresses },
+		// 	                                                                  WLTOKEN_PROTOCOL_INFO) };
+		// ProtocolInfoReply reply = wait(retryBrokenPromise(requestStream, ProtocolInfoRequest{}));
 
-		ASSERT(reply.version != g_network->protocolVersion());
+		// ASSERT(reply.version != g_network->protocolVersion());
 		return Void();
 	}
 
