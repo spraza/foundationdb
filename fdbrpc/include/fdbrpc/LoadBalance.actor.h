@@ -22,6 +22,7 @@
 
 // When actually compiled (NO_INTELLISENSE), include the generated version of this file.  In intellisense use the source
 // version.
+#include "flow/Error.h"
 #if defined(NO_INTELLISENSE) && !defined(FLOW_LOADBALANCE_ACTOR_G_H)
 #define FLOW_LOADBALANCE_ACTOR_G_H
 #include "fdbrpc/LoadBalance.actor.g.h"
@@ -89,7 +90,7 @@ Future<Void> tssComparison(Req req,
                            TSSEndpointData tssData,
                            uint64_t srcEndpointId,
                            Reference<MultiInterface<Multi>> ssTeam,
-                           RequestStream<Req, P> Interface::*channel) {
+                           RequestStream<Req, P> Interface::* channel) {
 	state double startTime = now();
 	state Future<Optional<ErrorOr<Resp>>> fTssWithTimeout = timeout(fTss, FLOW_KNOBS->LOAD_BALANCE_TSS_TIMEOUT);
 	state int finished = 0;
@@ -285,7 +286,7 @@ Future<Void> replicaComparison(Req req,
                                Future<ErrorOr<Resp>> fSource,
                                uint64_t srcEndpointId,
                                Reference<MultiInterface<Multi>> ssTeam,
-                               RequestStream<Req, P> Interface::*channel,
+                               RequestStream<Req, P> Interface::* channel,
                                int requiredReplicas) {
 	state ErrorOr<Resp> src;
 
@@ -401,8 +402,7 @@ Future<Void> replicaComparison(Req req,
 				    .detail("SuccessfulReplies", successfulReplies)
 				    .detail("SSError", replicaErrorCode);
 
-				throw Error((requiredReplicas == ALL_REPLICAS) ? replicaErrorCode
-				                                               : error_code_unreachable_storage_replica);
+				throw Error(replicaErrorCode);
 			}
 		}
 	}
@@ -439,7 +439,7 @@ struct RequestData : NonCopyable {
 	                                     QueueModel* model,
 	                                     Future<Reply> ssResponse,
 	                                     Reference<MultiInterface<Multi>> alternatives,
-	                                     RequestStream<Request, P> Interface::*channel) {
+	                                     RequestStream<Request, P> Interface::* channel) {
 		if (model) {
 			// Send parallel request to TSS pair, if it exists
 			Optional<TSSEndpointData> tssData = model->getTssData(stream->getEndpoint().token.first());
@@ -464,7 +464,7 @@ struct RequestData : NonCopyable {
 	Future<Void> maybeDoReplicaComparison(Request& request,
 	                                      QueueModel* model,
 	                                      Reference<MultiInterface<Multi>> alternatives,
-	                                      RequestStream<Request, P> Interface::*channel,
+	                                      RequestStream<Request, P> Interface::* channel,
 	                                      int requiredReplicas) {
 		if (model && (compareReplicas || FLOW_KNOBS->ENABLE_REPLICA_CONSISTENCY_CHECK_ON_READS)) {
 			ASSERT(requestStream != nullptr);
@@ -489,7 +489,7 @@ struct RequestData : NonCopyable {
 	    Request& request,
 	    QueueModel* model,
 	    Reference<MultiInterface<Multi>> alternatives, // alternatives and channel passed through for TSS check
-	    RequestStream<Request, P> Interface::*channel) {
+	    RequestStream<Request, P> Interface::* channel) {
 		modelHolder = Reference<ModelHolder>();
 		requestStream = stream;
 		requestStarted = false;
@@ -639,7 +639,7 @@ struct RequestData : NonCopyable {
 ACTOR template <class Interface, class Request, class Multi, bool P>
 Future<REPLY_TYPE(Request)> loadBalance(
     Reference<MultiInterface<Multi>> alternatives,
-    RequestStream<Request, P> Interface::*channel,
+    RequestStream<Request, P> Interface::* channel,
     Request request = Request(),
     TaskPriority taskID = TaskPriority::DefaultPromiseEndpoint,
     AtMostOnce atMostOnce =
@@ -984,7 +984,7 @@ Optional<BasicLoadBalancedReply> getBasicLoadBalancedReply(const void*);
 // returned future.
 ACTOR template <class Interface, class Request, class Multi, bool P>
 Future<REPLY_TYPE(Request)> basicLoadBalance(Reference<ModelInterface<Multi>> alternatives,
-                                             RequestStream<Request, P> Interface::*channel,
+                                             RequestStream<Request, P> Interface::* channel,
                                              Request request = Request(),
                                              TaskPriority taskID = TaskPriority::DefaultPromiseEndpoint,
                                              AtMostOnce atMostOnce = AtMostOnce::False,
