@@ -2470,6 +2470,15 @@ std::vector<StorageServerShard> StorageServer::getStorageServerShards(KeyRangeRe
 	return res;
 }
 
+static Error dataMoveConflictError(const bool isTss) {
+	if (isTss && g_network->isSimulated()) {
+		// Tss data move conflicts are expected in simulation, and can be safely ignored
+		// by restarting the server.
+		return please_reboot();
+	}
+	return data_move_conflict();
+}
+
 std::shared_ptr<MoveInShard> StorageServer::getMoveInShard(const UID& dataMoveId,
                                                            const Version version,
                                                            const ConductBulkLoad conductBulkLoad) {
@@ -10860,7 +10869,7 @@ void changeServerKeysWithPhysicalShards(StorageServer* data,
 				    .detail("DataMoveId", dataMoveId)
 				    .detail("Version", version)
 				    .detail("InitialVersion", currentShard->version);
-				throw data_move_conflict();
+				throw dataMoveConflictError(data->isTss());
 			}
 		} else if (currentShard->notAssigned()) {
 			if (!nowAssigned) {
@@ -10873,7 +10882,7 @@ void changeServerKeysWithPhysicalShards(StorageServer* data,
 				    .detail("ConflictingShard", currentShard->shardId)
 				    .detail("DesiredShardId", currentShard->desiredShardId)
 				    .detail("InitialVersion", currentShard->version);
-				throw data_move_conflict();
+				throw dataMoveConflictError(data->isTss());
 			}
 			StorageServerShard newShard = currentShard->toStorageServerShard();
 			newShard.range = currentRange;
@@ -10903,7 +10912,7 @@ void changeServerKeysWithPhysicalShards(StorageServer* data,
 				    .detail("ConflictingShard", currentShard->shardId)
 				    .detail("DesiredShardId", currentShard->desiredShardId)
 				    .detail("InitialVersion", currentShard->version);
-				throw data_move_conflict();
+				throw dataMoveConflictError(data->isTss());
 			}
 			StorageServerShard newShard = currentShard->toStorageServerShard();
 			newShard.range = currentRange;
@@ -10924,7 +10933,7 @@ void changeServerKeysWithPhysicalShards(StorageServer* data,
 				    .detail("ConflictingShard", currentShard->shardId)
 				    .detail("DesiredShardId", currentShard->desiredShardId)
 				    .detail("InitialVersion", currentShard->version);
-				throw data_move_conflict();
+				throw dataMoveConflictError(data->isTss());
 			}
 			currentShard->moveInShard->cancel();
 			updatedMoveInShards.emplace(currentShard->moveInShard->id(), currentShard->moveInShard);
@@ -11039,13 +11048,7 @@ void changeServerKeysWithPhysicalShards(StorageServer* data,
 						    .detailf("CurrentShard", "%016llx", shard->desiredShardId)
 						    .detail("IsTSS", data->isTss())
 						    .detail("Version", cVer);
-						if (data->isTss() && g_network->isSimulated()) {
-							// Tss data move conflicts are expected in simulation, and can be safely ignored
-							// by restarting the server.
-							throw please_reboot();
-						} else {
-							throw data_move_conflict();
-						}
+						throw dataMoveConflictError(data->isTss());
 					} else {
 						TraceEvent(SevInfo, "CSKMoveInToSameShard", data->thisServerID)
 						    .detail("DataMoveID", dataMoveId)
