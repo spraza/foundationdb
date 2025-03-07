@@ -1143,8 +1143,8 @@ void ServerKnobs::initialize(Randomize randomize, ClientKnobs* clientKnobs, IsSi
 	// Test harness
 	init( WORKER_POLL_DELAY,                                     1.0 );
 	init( PROBABILITY_FACTOR_SHARDED_ROCKSDB_ENGINE_SELECTED_SIM, 1 ); // default is 1
-	init( PROBABILITY_FACTOR_ROCKSDB_ENGINE_SELECTED_SIM,         1 ); // default is 1
-	init( PROBABILITY_FACTOR_SQLITE_ENGINE_SELECTED_SIM,          10000 ); // default is 1
+	init( PROBABILITY_FACTOR_ROCKSDB_ENGINE_SELECTED_SIM,         10000 ); // default is 1
+	init( PROBABILITY_FACTOR_SQLITE_ENGINE_SELECTED_SIM,          1 ); // default is 1
 	init( PROBABILITY_FACTOR_MEMORY_SELECTED_SIM,                 1 ); // default is 1
 
 	// Coordination
