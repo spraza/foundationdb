@@ -1032,7 +1032,8 @@ Reference<ILogSystem::IPeekCursor> TagPartitionedLogSystem::peekLocal(UID dbgid,
 			    .detail("End", end)
 			    .detail("BestSet", bestSet)
 			    .detail("BestSetStart", tLogs[bestSet]->startVersion)
-			    .detail("LogId", tLogs[bestSet]->logServers[tLogs[bestSet]->bestLocationFor(tag)]->get().id());
+			    .detail("LogId", tLogs[bestSet]->logServers[tLogs[bestSet]->bestLocationFor(tag)]->get().id())
+			    .detail("UseMergePeekCursors", useMergePeekCursors);
 			if (useMergePeekCursors) {
 				cursors.push_back(makeReference<ILogSystem::MergedPeekCursor>(tLogs[bestSet]->logServers,
 				                                                              tLogs[bestSet]->bestLocationFor(tag),
