@@ -1924,8 +1924,15 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 		    .detail("LogId", logData->logId)
 		    .detail("Tag", reqTag.toString())
 		    .detail("ReqBegin", reqBegin)
-		    .detail("PoppedVer", poppedVer);
+		    .detail("PoppedVer", poppedVer)
+		    .detail("Diff", poppedVer - reqBegin);
 		if (poppedVer > reqBegin) {
+			DebugLogTraceEvent("TLogPeekMessages2a", self->dbgid)
+			    .detail("LogId", logData->logId)
+			    .detail("Tag", reqTag.toString())
+			    .detail("ReqBegin", reqBegin)
+			    .detail("PoppedVer", poppedVer)
+			    .detail("Diff", poppedVer - reqBegin);
 			TLogPeekReply rep;
 			rep.maxKnownVersion = logData->version.get();
 			rep.minKnownCommittedVersion = logData->minKnownCommittedVersion;
@@ -1967,6 +1974,7 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 
 		// grab messages from disk
 		DebugLogTraceEvent("TLogPeekMessages3", self->dbgid)
+		    .detail("LogId", logData->logId)
 		    .detail("ReqBegin", reqBegin)
 		    .detail("Tag", reqTag.toString());
 		if (reqBegin <= logData->persistentDataDurableVersion) {
@@ -2139,6 +2147,7 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 	    .detail("Tag", reqTag.toString())
 	    .detail("ReqBegin", reqBegin)
 	    .detail("EndVer", reply.end)
+	    .detail("Msgs", messagesValue)
 	    .detail("MsgBytes", reply.messages.expectedSize());
 
 	if (reqSequence.present()) {
