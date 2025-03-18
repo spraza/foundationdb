@@ -2792,7 +2792,12 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/RocksDBReopen") {
 TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreColumnFamily") {
 	state std::string cwd = platform::getWorkingDirectory() + "/";
 	state std::string rocksDBTestDir = "rocksdb-kvstore-br-test-db";
+	state std::string rocksDBRestoreDir = "rocksdb-kvstore-br-restore-db";
+	state std::string rocksDBCheckpointDir = "checkpoint";
+
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
+	platform::eraseDirectoryRecursive(rocksDBRestoreDir);
+	platform::eraseDirectoryRecursive(rocksDBCheckpointDir);
 
 	state IKeyValueStore* kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
 	wait(kvStore->init());
@@ -2803,15 +2808,11 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreColumnFamily") 
 	Optional<Value> val = wait(kvStore->readValue("foo"_sr));
 	ASSERT(Optional<Value>("bar"_sr) == val);
 
-	state std::string rocksDBRestoreDir = "rocksdb-kvstore-br-restore-db";
-	platform::eraseDirectoryRecursive(rocksDBRestoreDir);
-
 	state IKeyValueStore* kvStoreCopy =
 	    new RocksDBKeyValueStore(rocksDBRestoreDir, deterministicRandom()->randomUniqueID());
 	wait(kvStoreCopy->init());
 
-	platform::eraseDirectoryRecursive("checkpoint");
-	state std::string checkpointDir = cwd + "checkpoint";
+	state std::string checkpointDir = cwd + rocksDBCheckpointDir;
 
 	CheckpointRequest request(
 	    latestVersion, { allKeys }, DataMoveRocksCF, deterministicRandom()->randomUniqueID(), checkpointDir);
@@ -2835,6 +2836,7 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreColumnFamily") 
 
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
 	platform::eraseDirectoryRecursive(rocksDBRestoreDir);
+	platform::eraseDirectoryRecursive(rocksDBCheckpointDir);
 
 	return Void();
 }
@@ -2842,7 +2844,11 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreColumnFamily") 
 TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreKeyValues") {
 	state std::string cwd = platform::getWorkingDirectory() + "/";
 	state std::string rocksDBTestDir = "rocksdb-kvstore-brsst-test-db";
+	state std::string rocksDBCheckpointDir = "checkpoint";
+
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
+	platform::eraseDirectoryRecursive(rocksDBCheckpointDir);
+
 	state IKeyValueStore* kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
 	wait(kvStore->init());
 
@@ -2851,8 +2857,7 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreKeyValues") {
 	Optional<Value> val = wait(kvStore->readValue("foo"_sr));
 	ASSERT(Optional<Value>("bar"_sr) == val);
 
-	platform::eraseDirectoryRecursive("checkpoint");
-	std::string checkpointDir = cwd + "checkpoint";
+	std::string checkpointDir = cwd + rocksDBCheckpointDir;
 
 	CheckpointRequest request(
 	    latestVersion, { allKeys }, DataMoveRocksCF, deterministicRandom()->randomUniqueID(), checkpointDir);
@@ -2894,6 +2899,7 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreKeyValues") {
 	wait(waitForAll(closes));
 
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
+	platform::eraseDirectoryRecursive(rocksDBCheckpointDir);
 
 	return Void();
 }
