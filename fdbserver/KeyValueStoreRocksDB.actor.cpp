@@ -2752,7 +2752,7 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB1a/RocksDBBasic") {
 	return Void();
 }
 
-TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB1b/RocksDBReopen") {
+TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB4/RocksDBReopen") {
 	state const std::string rocksDBTestDir = "rocksdb-kvstore-reopen-test-db";
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
 
