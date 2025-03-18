@@ -94,6 +94,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 		 *  - we get a watch that has the same value as a key in the watch map
 		 * */
 		state ReadYourWritesTransaction tr(cx);
+		TraceEvent("Case1Start");
 		loop {
 			try {
 				state std::vector<Future<Void>> watchFutures;
@@ -109,6 +110,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				for (i = 0; i < watchFutures.size(); i++) {
 					wait(watchFutures[i]);
 				}
+				TraceEvent("Case1End");
 				return Void();
 			} catch (Error& e) {
 				wait(tr.onError(e));
@@ -122,6 +124,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 		 * 	- we get a watch that has a different value than the key in the map but the version is larger
 		 * */
 		state ReadYourWritesTransaction tr(cx);
+		TraceEvent("Case2Start");
 		loop {
 			try {
 				state std::vector<Future<Void>> watchFutures;
@@ -138,6 +141,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				for (i = 0; i < watchFutures.size(); i++) {
 					wait(watchFutures[i]);
 				}
+				TraceEvent("Case2End");
 				return Void();
 			} catch (Error& e) {
 				wait(tr.onError(e));
@@ -153,6 +157,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 		state ReadYourWritesTransaction tr(cx);
 		state ReadYourWritesTransaction tr2(cx);
 		state Value val;
+		TraceEvent("Case3Start");
 		loop {
 			try {
 				val = deterministicRandom()->randomUniqueID().toString();
@@ -167,6 +172,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 
 				watch1.cancel();
 				watch2.cancel();
+				TraceEvent("Case3End");
 				return Void();
 			} catch (Error& e) {
 				wait(tr.onError(e) && tr2.onError(e));
@@ -181,6 +187,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 		 * */
 		state ReadYourWritesTransaction tr(cx);
 		state ReadYourWritesTransaction tr2(cx);
+		TraceEvent("Case4Start");
 		loop {
 			try {
 				// watch1 and watch2 are set on the same k/v pair
@@ -199,6 +206,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				    Optional<Value>())); // since ABA has occurred we need to trigger the watches with a new value
 				wait(watch1);
 				wait(watch2);
+				TraceEvent("Case4End");
 				return Void();
 			} catch (Error& e) {
 				wait(tr.onError(e) && tr2.onError(e));
@@ -213,6 +221,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 		 * */
 		state ReadYourWritesTransaction tr1(cx);
 		state ReadYourWritesTransaction tr2(cx);
+		TraceEvent("Case5Start");
 		loop {
 			try {
 				tr1.setOption(FDBTransactionOptions::NEXT_WRITE_NO_WRITE_CONFLICT_RANGE);
@@ -228,7 +237,7 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				wait(watch1 || watch2); // since we enter case 5 at least one of the watches should be fired
 				wait(setKeyRandomValue(cx, key, Optional<Value>())); // fire the watch that possibly wasn't triggered
 				wait(watch1 && watch2);
-
+				TraceEvent("Case5End");
 				return Void();
 			} catch (Error& e) {
 				wait(tr1.onError(e) && tr2.onError(e));
