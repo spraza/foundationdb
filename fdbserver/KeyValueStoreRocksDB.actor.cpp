@@ -2696,7 +2696,7 @@ IKeyValueStore* keyValueStoreRocksDB(std::string const& path,
 
 namespace {
 
-TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB1/RocksDBBasic") {
+TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB1a/RocksDBBasic") {
 	state const std::string rocksDBTestDir = "rocksdb-kvstore-basic-test-db";
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
 
@@ -2752,7 +2752,7 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB1/RocksDBBasic") {
 	return Void();
 }
 
-TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB2/RocksDBReopen") {
+TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB1b/RocksDBReopen") {
 	state const std::string rocksDBTestDir = "rocksdb-kvstore-reopen-test-db";
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
 
@@ -2789,7 +2789,7 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB2/RocksDBReopen") {
 	return Void();
 }
 
-TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB3/CheckpointRestoreColumnFamily") {
+TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB1c/CheckpointRestoreColumnFamily") {
 	state std::string cwd = platform::getWorkingDirectory() + "/";
 	state std::string rocksDBTestDir = "rocksdb-kvstore-br-test-db";
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
@@ -2839,7 +2839,7 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB3/CheckpointRestoreColumnFamily")
 	return Void();
 }
 
-TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB4/CheckpointRestoreKeyValues") {
+TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB2/CheckpointRestoreKeyValues") {
 	state std::string cwd = platform::getWorkingDirectory() + "/";
 	state std::string rocksDBTestDir = "rocksdb-kvstore-brsst-test-db";
 	platform::eraseDirectoryRecursive(rocksDBTestDir);
