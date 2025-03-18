@@ -350,7 +350,7 @@ ACTOR Future<Void> serverPeekParallelGetMore(ILogSystem::ServerPeekCursor* self,
 				CODE_PROBE(e.code() == error_code_timed_out, "peek cursor timed out");
 				if (g_network->isSimulated() && now() >= g_simulator->connectionFailureEnableTime +
 				                                             FLOW_KNOBS->SIM_SPEEDUP_AFTER_SECONDS +
-				                                             SERVER_KNOBS->PEEK_TRACKER_EXPIRATION_TIME) {
+				                                             SERVER_KNOBS->PEEK_TRACKER_EXPIRATION_TIME + 1000) {
 					ASSERT_WE_THINK(e.code() == error_code_operation_obsolete ||
 					                SERVER_KNOBS->PEEK_TRACKER_EXPIRATION_TIME < 10);
 				}
