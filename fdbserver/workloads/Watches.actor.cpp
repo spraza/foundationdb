@@ -170,6 +170,7 @@ struct WatchesWorkload : TestWorkload {
 	}
 
 	Future<Void> watchesWorker(Database cx, WatchesWorkload* self) {
+		TraceEvent("WatchesWorker1");
 		Key startKey = self->keyForIndex(self->nodeOrder[0]);
 		Key endKey = self->keyForIndex(self->nodeOrder[self->nodes]);
 		Optional<Value> expectedValue;
@@ -181,8 +182,11 @@ struct WatchesWorkload : TestWorkload {
 			Value assignedValue = Value(deterministicRandom()->randomUniqueID().toString());
 			bool firstAttempt = true;
 			co_await cx.run([&](Transaction* tr) -> Future<Void> {
+				TraceEvent("WatchesWorker2");
 				co_await tr->getReadVersion();
+				TraceEvent("WatchesWorker3");
 				Optional<Value> _startValue = co_await tr->get(startKey);
+				TraceEvent("WatchesWorker4");
 				if (firstAttempt) {
 					startValue = _startValue;
 					firstAttempt = false;
@@ -200,6 +204,7 @@ struct WatchesWorkload : TestWorkload {
 					tr->clear(startKey);
 
 				co_await tr->commit();
+				TraceEvent("WatchesWorker5");
 				CODE_PROBE(expectedValue.present(), "watches workload set a key");
 				CODE_PROBE(!expectedValue.present(), "watches workload clear a key");
 				co_return;
@@ -210,7 +215,13 @@ struct WatchesWorkload : TestWorkload {
 			bool finished = false;
 			while (!finished) {
 				co_await cx.run([&](Transaction* tr2) -> Future<Void> {
+					TraceEvent("WatchesWorker6").detail("EndKey", endKey).detail("ExpectedValue", expectedValue);
 					Optional<Value> endValue = co_await tr2->get(endKey);
+					TraceEvent("WatchesWorker7")
+					    .detail("EndKey", endKey)
+					    .detail("EndValue", endValue)
+					    .detail("ExpectedValue", expectedValue)
+					    .detail("StartValue", startValue);
 					if (endValue == expectedValue) {
 						finished = true;
 						co_return;
@@ -224,8 +235,11 @@ struct WatchesWorkload : TestWorkload {
 						    .detail("EndVersion", tr2->getReadVersion().get());
 					}
 					Future<Void> watchFuture = tr2->watch(makeReference<Watch>(endKey, startValue));
+					TraceEvent("WatchesWorker8");
 					co_await tr2->commit();
+					TraceEvent("WatchesWorker9");
 					co_await watchFuture;
+					TraceEvent("WatchesWorker10");
 					CODE_PROBE(true, "watcher workload watch fired");
 					firstAttempt = false;
 				});
