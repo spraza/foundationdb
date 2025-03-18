@@ -89,7 +89,6 @@ struct WatchesSameKeyWorkload : TestWorkload {
 	}
 
 	ACTOR static Future<Void> case1(Database cx, Key key, WatchesSameKeyWorkload* self) {
-		TraceEvent("Foo_Case1_START");
 		/**
 		 * Tests case 2 in the design doc:
 		 *  - we get a watch that has the same value as a key in the watch map
@@ -104,27 +103,20 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				for (i = 0; i < self->numWatches; i++) { // set watches for a given k/v pair set above
 					watchFutures.push_back(tr.watch(key));
 				}
-				TraceEvent("Foo_Case1_TR_COMMIT_START");
 				wait(tr.commit());
-				TraceEvent("Foo_Case1_TR_COMMIT_END");
 
 				wait(setKeyRandomValue(cx, key, Optional<Value>())); // trigger all watches created above
 				for (i = 0; i < watchFutures.size(); i++) {
-					TraceEvent("Foo_Case1_WAIT_FUT_START").detail("Idx", i);
 					wait(watchFutures[i]);
-					TraceEvent("Foo_Case1_WAIT_FUT_END").detail("Idx", i);
 				}
-				TraceEvent("Foo_Case1_END");
 				return Void();
 			} catch (Error& e) {
-				TraceEvent("Foo_Case1_ERROR");
 				wait(tr.onError(e));
 			}
 		}
 	}
 
 	ACTOR static Future<Void> case2(Database cx, Key key, WatchesSameKeyWorkload* self) {
-		TraceEvent("Foo_Case2_START");
 		/**
 		 * Tests case 3 in the design doc:
 		 * 	- we get a watch that has a different value than the key in the map but the version is larger
@@ -140,29 +132,20 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				for (i = 0; i < self->numWatches; i++) { // set watches for a given k/v pair set above
 					watchFutures.push_back(tr.watch(key));
 				}
-				TraceEvent("Foo_Case2_TR_COMMIT_START");
 				wait(tr.commit());
-				TraceEvent("Foo_Case2_TR_COMMIT_END");
 				wait(watch1);
-				TraceEvent("Foo_Case2_TR_COMMIT_WATCH_END");
 				wait(setKeyRandomValue(cx, key, Optional<Value>())); // trigger remaining watches
-				TraceEvent("Foo_Case2_TR_COMMIT_SET_KEY_END");
 				for (i = 0; i < watchFutures.size(); i++) {
-					TraceEvent("Foo_Case2_WAIT_FUT_START").detail("Idx", i);
 					wait(watchFutures[i]);
-					TraceEvent("Foo_Case2_WAIT_FUT_END").detail("Idx", i);
 				}
-				TraceEvent("Foo_Case2_END");
 				return Void();
 			} catch (Error& e) {
-				TraceEvent("Foo_Case2_ERROR");
 				wait(tr.onError(e));
 			}
 		}
 	}
 
 	ACTOR static Future<Void> case3(Database cx, Key key, WatchesSameKeyWorkload* self) {
-		TraceEvent("Foo_Case3_START");
 		/**
 		 * Tests case 2 for the storage server response:
 		 * 	- i.e ABA but when the storage server responds the future count == 1 so we do nothing (no refire)
@@ -175,30 +158,23 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				val = deterministicRandom()->randomUniqueID().toString();
 				tr2.set(key, val);
 				state Future<Void> watch1 = tr2.watch(key);
-				TraceEvent("Foo_Case3_TR_COMMIT_START");
 				wait(tr2.commit());
-				TraceEvent("Foo_Case3_TR_COMMIT_END");
 				wait(setKeyRandomValue(cx, key, Optional<Value>()));
-				TraceEvent("Foo_Case3_TR_COMMIT_END_END");
 
 				tr.set(key, val);
 				state Future<Void> watch2 = tr.watch(key);
 				wait(tr.commit());
-				TraceEvent("Foo_Case3_TR_COMMIT_END_END_END");
 
 				watch1.cancel();
 				watch2.cancel();
-				TraceEvent("Foo_Case3_END");
 				return Void();
 			} catch (Error& e) {
-				TraceEvent("Foo_Case3_ERROR");
 				wait(tr.onError(e) && tr2.onError(e));
 			}
 		}
 	}
 
 	ACTOR static Future<Void> case4(Database cx, Key key, WatchesSameKeyWorkload* self) {
-		TraceEvent("Foo_Case4_START");
 		/**
 		 * Tests case 3 for the storage server response:
 		 * 	- i.e ABA but when the storage server responds the future count > 1 so we refire request to SS
@@ -211,35 +187,26 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				state Value val(deterministicRandom()->randomUniqueID().toString());
 				tr2.set(key, val);
 				state Future<Void> watch1 = tr2.watch(key);
-				TraceEvent("Foo_Case4_TR_COMMIT_START");
 				wait(tr2.commit());
-				TraceEvent("Foo_Case4_TR_COMMIT_END");
 				wait(setKeyRandomValue(cx, key, Optional<Value>()));
-				TraceEvent("Foo_Case4_TR_COMMIT_END_END");
 				tr.set(key, val); // trigger ABA (line above changes value and this line changes it back)
 				state Future<Void> watch2 = tr.watch(key);
 				wait(tr.commit());
-				TraceEvent("Foo_Case4_TR_COMMIT_END_END_END");
 
 				wait(setKeyRandomValue(
 				    cx,
 				    key,
 				    Optional<Value>())); // since ABA has occurred we need to trigger the watches with a new value
-				TraceEvent("Foo_Case4_TR_COMMIT_END_END_END_END");
 				wait(watch1);
-				TraceEvent("Foo_Case4_TR_COMMIT_END_END_END_END_END");
 				wait(watch2);
-				TraceEvent("Foo_Case4_END");
 				return Void();
 			} catch (Error& e) {
-				TraceEvent("Foo_Case4_ERROR");
 				wait(tr.onError(e) && tr2.onError(e));
 			}
 		}
 	}
 
 	ACTOR static Future<Void> case5(Database cx, Key key, WatchesSameKeyWorkload* self) {
-		TraceEvent("Foo_Case5_START");
 		/**
 		 * Tests case 5 in the design doc:
 		 * 	- i.e values of watches are different but versions are the same
@@ -256,20 +223,14 @@ struct WatchesSameKeyWorkload : TestWorkload {
 				state Future<Void> watch2 = tr2.watch(key);
 				// each watch commits with a different value but (hopefully) the same version since there is no write
 				// conflict range
-				TraceEvent("Foo_Case5_TR_COMMIT_START");
 				wait(tr1.commit() && tr2.commit());
-				TraceEvent("Foo_Case5_TR_COMMIT_END");
 
 				wait(watch1 || watch2); // since we enter case 5 at least one of the watches should be fired
-				TraceEvent("Foo_Case5_TR_COMMIT_END_END");
 				wait(setKeyRandomValue(cx, key, Optional<Value>())); // fire the watch that possibly wasn't triggered
-				TraceEvent("Foo_Case5_TR_COMMIT_END_END_END");
 				wait(watch1 && watch2);
 
-				TraceEvent("Foo_Case5_END");
 				return Void();
 			} catch (Error& e) {
-				TraceEvent("Foo_Case5_ERROR");
 				wait(tr1.onError(e) && tr2.onError(e));
 			}
 		}
