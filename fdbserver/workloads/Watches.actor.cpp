@@ -215,9 +215,13 @@ struct WatchesWorkload : TestWorkload {
 			bool finished = false;
 			while (!finished) {
 				co_await cx.run([&](Transaction* tr2) -> Future<Void> {
-					TraceEvent("WatchesWorker6");
+					TraceEvent("WatchesWorker6").detail("EndKey", endKey).detail("ExpectedValue", expectedValue);
 					Optional<Value> endValue = co_await tr2->get(endKey);
-					TraceEvent("WatchesWorker7");
+					TraceEvent("WatchesWorker7")
+					    .detail("EndKey", endKey)
+					    .detail("EndValue", endValue)
+					    .detail("ExpectedValue", expectedValue)
+					    .detail("StartValue", startValue);
 					if (endValue == expectedValue) {
 						finished = true;
 						co_return;
