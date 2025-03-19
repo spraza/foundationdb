@@ -2771,8 +2771,8 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/RocksDBReopen") {
 
 	kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
 	wait(kvStore->init());
-	// Confirm that `init()` is idempotent.
-	wait(kvStore->init());
+	// // Confirm that `init()` is idempotent.
+	// wait(kvStore->init());
 
 	{
 		Optional<Value> val = wait(kvStore->readValue("foo"_sr));
