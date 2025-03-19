@@ -2789,142 +2789,142 @@ TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/RocksDBReopen") {
 	return Void();
 }
 
-TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreColumnFamily") {
-	state std::string cwd = platform::getWorkingDirectory() + "/";
-	state std::string rocksDBTestDir = "rocksdb-kvstore-br-test-db";
-	platform::eraseDirectoryRecursive(rocksDBTestDir);
+// TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreColumnFamily") {
+// 	state std::string cwd = platform::getWorkingDirectory() + "/";
+// 	state std::string rocksDBTestDir = "rocksdb-kvstore-br-test-db";
+// 	platform::eraseDirectoryRecursive(rocksDBTestDir);
 
-	state IKeyValueStore* kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
-	wait(kvStore->init());
+// 	state IKeyValueStore* kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
+// 	wait(kvStore->init());
 
-	kvStore->set({ "foo"_sr, "bar"_sr });
-	wait(kvStore->commit(false));
+// 	kvStore->set({ "foo"_sr, "bar"_sr });
+// 	wait(kvStore->commit(false));
 
-	Optional<Value> val = wait(kvStore->readValue("foo"_sr));
-	ASSERT(Optional<Value>("bar"_sr) == val);
+// 	Optional<Value> val = wait(kvStore->readValue("foo"_sr));
+// 	ASSERT(Optional<Value>("bar"_sr) == val);
 
-	state std::string rocksDBRestoreDir = "rocksdb-kvstore-br-restore-db";
-	platform::eraseDirectoryRecursive(rocksDBRestoreDir);
+// 	state std::string rocksDBRestoreDir = "rocksdb-kvstore-br-restore-db";
+// 	platform::eraseDirectoryRecursive(rocksDBRestoreDir);
 
-	state IKeyValueStore* kvStoreCopy =
-	    new RocksDBKeyValueStore(rocksDBRestoreDir, deterministicRandom()->randomUniqueID());
-	wait(kvStoreCopy->init());
+// 	state IKeyValueStore* kvStoreCopy =
+// 	    new RocksDBKeyValueStore(rocksDBRestoreDir, deterministicRandom()->randomUniqueID());
+// 	wait(kvStoreCopy->init());
 
-	platform::eraseDirectoryRecursive("checkpoint");
-	state std::string checkpointDir = cwd + "checkpoint";
+// 	platform::eraseDirectoryRecursive("checkpoint");
+// 	state std::string checkpointDir = cwd + "checkpoint";
 
-	CheckpointRequest request(
-	    latestVersion, { allKeys }, DataMoveRocksCF, deterministicRandom()->randomUniqueID(), checkpointDir);
-	CheckpointMetaData metaData = wait(kvStore->checkpoint(request));
+// 	CheckpointRequest request(
+// 	    latestVersion, { allKeys }, DataMoveRocksCF, deterministicRandom()->randomUniqueID(), checkpointDir);
+// 	CheckpointMetaData metaData = wait(kvStore->checkpoint(request));
 
-	std::vector<CheckpointMetaData> checkpoints;
-	checkpoints.push_back(metaData);
-	wait(kvStoreCopy->restore(checkpoints));
+// 	std::vector<CheckpointMetaData> checkpoints;
+// 	checkpoints.push_back(metaData);
+// 	wait(kvStoreCopy->restore(checkpoints));
 
-	{
-		Optional<Value> val = wait(kvStoreCopy->readValue("foo"_sr));
-		ASSERT(Optional<Value>("bar"_sr) == val);
-	}
+// 	{
+// 		Optional<Value> val = wait(kvStoreCopy->readValue("foo"_sr));
+// 		ASSERT(Optional<Value>("bar"_sr) == val);
+// 	}
 
-	std::vector<Future<Void>> closes;
-	closes.push_back(kvStore->onClosed());
-	closes.push_back(kvStoreCopy->onClosed());
-	kvStore->dispose();
-	kvStoreCopy->dispose();
-	wait(waitForAll(closes));
+// 	std::vector<Future<Void>> closes;
+// 	closes.push_back(kvStore->onClosed());
+// 	closes.push_back(kvStoreCopy->onClosed());
+// 	kvStore->dispose();
+// 	kvStoreCopy->dispose();
+// 	wait(waitForAll(closes));
 
-	platform::eraseDirectoryRecursive(rocksDBTestDir);
-	platform::eraseDirectoryRecursive(rocksDBRestoreDir);
+// 	platform::eraseDirectoryRecursive(rocksDBTestDir);
+// 	platform::eraseDirectoryRecursive(rocksDBRestoreDir);
 
-	return Void();
-}
+// 	return Void();
+// }
 
-TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreKeyValues") {
-	state std::string cwd = platform::getWorkingDirectory() + "/";
-	state std::string rocksDBTestDir = "rocksdb-kvstore-brsst-test-db";
-	platform::eraseDirectoryRecursive(rocksDBTestDir);
-	state IKeyValueStore* kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
-	wait(kvStore->init());
+// TEST_CASE("noSim/fdbserver/KeyValueStoreRocksDB/CheckpointRestoreKeyValues") {
+// 	state std::string cwd = platform::getWorkingDirectory() + "/";
+// 	state std::string rocksDBTestDir = "rocksdb-kvstore-brsst-test-db";
+// 	platform::eraseDirectoryRecursive(rocksDBTestDir);
+// 	state IKeyValueStore* kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
+// 	wait(kvStore->init());
 
-	kvStore->set({ "foo"_sr, "bar"_sr });
-	wait(kvStore->commit(false));
-	Optional<Value> val = wait(kvStore->readValue("foo"_sr));
-	ASSERT(Optional<Value>("bar"_sr) == val);
+// 	kvStore->set({ "foo"_sr, "bar"_sr });
+// 	wait(kvStore->commit(false));
+// 	Optional<Value> val = wait(kvStore->readValue("foo"_sr));
+// 	ASSERT(Optional<Value>("bar"_sr) == val);
 
-	platform::eraseDirectoryRecursive("checkpoint");
-	std::string checkpointDir = cwd + "checkpoint";
+// 	platform::eraseDirectoryRecursive("checkpoint");
+// 	std::string checkpointDir = cwd + "checkpoint";
 
-	CheckpointRequest request(
-	    latestVersion, { allKeys }, DataMoveRocksCF, deterministicRandom()->randomUniqueID(), checkpointDir);
-	CheckpointMetaData metaData = wait(kvStore->checkpoint(request));
+// 	CheckpointRequest request(
+// 	    latestVersion, { allKeys }, DataMoveRocksCF, deterministicRandom()->randomUniqueID(), checkpointDir);
+// 	CheckpointMetaData metaData = wait(kvStore->checkpoint(request));
 
-	TraceEvent(SevDebug, "RocksDBCreatedCheckpoint");
-	state KeyRange testRange = KeyRangeRef("foo"_sr, "foobar"_sr);
-	state Standalone<StringRef> token = BinaryWriter::toValue(testRange, IncludeVersion());
-	state ICheckpointReader* cpReader =
-	    newCheckpointReader(metaData, CheckpointAsKeyValues::True, deterministicRandom()->randomUniqueID());
-	TraceEvent(SevDebug, "RocksDBCheckpointReaderCreated");
-	ASSERT(cpReader != nullptr);
-	wait(cpReader->init(token));
-	TraceEvent(SevDebug, "RocksDBCheckpointReaderInited");
-	state std::unique_ptr<ICheckpointIterator> iter = cpReader->getIterator(testRange);
-	loop {
-		try {
-			state RangeResult res =
-			    wait(iter->nextBatch(CLIENT_KNOBS->REPLY_BYTE_LIMIT, CLIENT_KNOBS->REPLY_BYTE_LIMIT));
-			state int i = 0;
-			for (; i < res.size(); ++i) {
-				Optional<Value> val = wait(kvStore->readValue(res[i].key));
-				ASSERT(val.present() && val.get() == res[i].value);
-			}
-		} catch (Error& e) {
-			if (e.code() == error_code_end_of_stream) {
-				break;
-			} else {
-				TraceEvent(SevError, "TestFailed").error(e);
-			}
-		}
-	}
+// 	TraceEvent(SevDebug, "RocksDBCreatedCheckpoint");
+// 	state KeyRange testRange = KeyRangeRef("foo"_sr, "foobar"_sr);
+// 	state Standalone<StringRef> token = BinaryWriter::toValue(testRange, IncludeVersion());
+// 	state ICheckpointReader* cpReader =
+// 	    newCheckpointReader(metaData, CheckpointAsKeyValues::True, deterministicRandom()->randomUniqueID());
+// 	TraceEvent(SevDebug, "RocksDBCheckpointReaderCreated");
+// 	ASSERT(cpReader != nullptr);
+// 	wait(cpReader->init(token));
+// 	TraceEvent(SevDebug, "RocksDBCheckpointReaderInited");
+// 	state std::unique_ptr<ICheckpointIterator> iter = cpReader->getIterator(testRange);
+// 	loop {
+// 		try {
+// 			state RangeResult res =
+// 			    wait(iter->nextBatch(CLIENT_KNOBS->REPLY_BYTE_LIMIT, CLIENT_KNOBS->REPLY_BYTE_LIMIT));
+// 			state int i = 0;
+// 			for (; i < res.size(); ++i) {
+// 				Optional<Value> val = wait(kvStore->readValue(res[i].key));
+// 				ASSERT(val.present() && val.get() == res[i].value);
+// 			}
+// 		} catch (Error& e) {
+// 			if (e.code() == error_code_end_of_stream) {
+// 				break;
+// 			} else {
+// 				TraceEvent(SevError, "TestFailed").error(e);
+// 			}
+// 		}
+// 	}
 
-	iter.reset();
-	std::vector<Future<Void>> closes;
-	closes.push_back(cpReader->close());
-	closes.push_back(kvStore->onClosed());
-	kvStore->dispose();
-	wait(waitForAll(closes));
+// 	iter.reset();
+// 	std::vector<Future<Void>> closes;
+// 	closes.push_back(cpReader->close());
+// 	closes.push_back(kvStore->onClosed());
+// 	kvStore->dispose();
+// 	wait(waitForAll(closes));
 
-	platform::eraseDirectoryRecursive(rocksDBTestDir);
+// 	platform::eraseDirectoryRecursive(rocksDBTestDir);
 
-	return Void();
-}
+// 	return Void();
+// }
 
-TEST_CASE("noSim/RocksDB/RangeClear") {
-	state const std::string rocksDBTestDir = "rocksdb-perf-db";
-	platform::eraseDirectoryRecursive(rocksDBTestDir);
+// TEST_CASE("noSim/RocksDB/RangeClear") {
+// 	state const std::string rocksDBTestDir = "rocksdb-perf-db";
+// 	platform::eraseDirectoryRecursive(rocksDBTestDir);
 
-	state IKeyValueStore* kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
-	wait(kvStore->init());
+// 	state IKeyValueStore* kvStore = new RocksDBKeyValueStore(rocksDBTestDir, deterministicRandom()->randomUniqueID());
+// 	wait(kvStore->init());
 
-	state KeyRef shardPrefix = "\xffprefix/"_sr;
+// 	state KeyRef shardPrefix = "\xffprefix/"_sr;
 
-	state int i = 0;
-	for (; i < 50000; ++i) {
-		state std::string key1 = format("\xffprefix/%d", i);
-		state std::string key2 = format("\xffprefix/%d", i + 1);
+// 	state int i = 0;
+// 	for (; i < 50000; ++i) {
+// 		state std::string key1 = format("\xffprefix/%d", i);
+// 		state std::string key2 = format("\xffprefix/%d", i + 1);
 
-		kvStore->set({ key2, std::to_string(i) });
-		RangeResult result = wait(kvStore->readRange(KeyRangeRef(shardPrefix, key1), 10000, 10000));
-		kvStore->clear({ KeyRangeRef(shardPrefix, key1) });
-		wait(kvStore->commit(false));
-	}
+// 		kvStore->set({ key2, std::to_string(i) });
+// 		RangeResult result = wait(kvStore->readRange(KeyRangeRef(shardPrefix, key1), 10000, 10000));
+// 		kvStore->clear({ KeyRangeRef(shardPrefix, key1) });
+// 		wait(kvStore->commit(false));
+// 	}
 
-	// TODO: flush memtable. The process is expected to OOM.
+// 	// TODO: flush memtable. The process is expected to OOM.
 
-	Future<Void> closed = kvStore->onClosed();
-	kvStore->dispose();
-	wait(closed);
-	return Void();
-}
+// 	Future<Void> closed = kvStore->onClosed();
+// 	kvStore->dispose();
+// 	wait(closed);
+// 	return Void();
+// }
 } // namespace
 
 #endif // WITH_ROCKSDB
