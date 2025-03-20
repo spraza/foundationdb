@@ -89,6 +89,16 @@ struct WatchesWorkload : TestWorkload {
 		}
 	}
 
+	void disableFailureInjectionWorkloads(std::set<std::string>& out) const override {
+		// The Watches workload creates a chain of nodes (key-value pairs). It's the job of watcher
+		// actor to then propagate value from node i to node i+1. Eventually the value should propagate
+		// all the way to the end of the chain. The watchesWorker actor has a watch on the end node's key.
+		// RandomRangeLocks workload can lock ranges that are in this node chain keyspace. As a result, sometimes
+		// value propagation is blocked, and therefore, the watch on the end node's key never fires, causing
+		// the test to fail. To fix this issue, we disable RandomRangeLock workload injection.
+		out.insert("RandomRangeLock");
+	}
+
 	Key keyForIndex(uint64_t index) {
 		Key result = makeString(keyBytes);
 		uint8_t* data = mutateString(result);
@@ -163,7 +173,6 @@ struct WatchesWorkload : TestWorkload {
 						    .detail("WatchValue", printable(watchValue))
 						    .detail("SetKey", printable(setKey))
 						    .detail("SetValue", printable(setValue));
-						;
 						state Future<Void> watchFuture = tr->watch(makeReference<Watch>(watchKey, watchValue));
 						wait(tr->commit());
 						TraceEvent("WatcherWatchCommit")
@@ -186,6 +195,7 @@ struct WatchesWorkload : TestWorkload {
 					}
 					break;
 				} catch (Error& e) {
+					TraceEvent("WatcherError2").errorUnsuppressed(e);
 					if (tr != nullptr) {
 						wait(tr->onError(e));
 					}
