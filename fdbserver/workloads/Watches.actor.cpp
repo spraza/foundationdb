@@ -126,7 +126,7 @@ struct WatchesWorkload : TestWorkload {
 				try {
 					state Future<Optional<Value>> setValueFuture = tr->get(setKey);
 					state Optional<Value> watchValue = wait(tr->get(watchKey));
-					Optional<Value> setValue = wait(setValueFuture);
+					state Optional<Value> setValue = wait(setValueFuture);
 
 					if (lastValue.present() && lastValue.get() == watchValue) {
 						TraceEvent(SevError, "WatcherTriggeredWithoutChanging")
