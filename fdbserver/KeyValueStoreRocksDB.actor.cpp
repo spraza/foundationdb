@@ -339,10 +339,10 @@ class RocksDBErrorListener : public rocksdb::EventListener {
 public:
 	RocksDBErrorListener(UID id) : id(id){};
 	void OnBackgroundError(rocksdb::BackgroundErrorReason reason, rocksdb::Status* bg_error) override {
-		TraceEvent(SevError, "RocksDBBGError", id)
-		    .detail("Reason", getErrorReason(reason))
-		    .detail("RocksDBSeverity", bg_error->severity())
-		    .detail("Status", bg_error->ToString());
+		// TraceEvent(SevError, "RocksDBBGError", id)
+		//     .detail("Reason", getErrorReason(reason))
+		//     .detail("RocksDBSeverity", bg_error->severity())
+		//     .detail("Status", bg_error->ToString());
 		std::unique_lock<std::mutex> lock(mutex);
 		if (!errorPromise.isValid())
 			return;
