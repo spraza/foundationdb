@@ -75,89 +75,54 @@ Reliability
 
 Fixes
 -----
-* fdbmonitor: track parent process death for FreeBSD. `(PR #11361) <https://github.com/apple/foundationdb/pull/11361>`_
-* Fixed issues where backup workers may miss mutations and assertion failures. `(PR #11908) <https://github.com/apple/foundationdb/pull/11908>`_, `(PR #12026) <https://github.com/apple/foundationdb/pull/12026>`_, and `(PR #12046) <https://github.com/apple/foundationdb/pull/12046>`_.
-
-Fixed AuditStorage empty range read error.
-PR: https://github.com/apple/foundationdb/pull/12043
-
-#11945 Build a sidecar container that refreshes s3 credentials
-
-#11054 Prevent failover when storage servers are behind
-#9814 FdbServer not able to join cluster
-
-#11978: Fix wrong implementation of isOnMainThread in Simulation and Testing.
-#11718: Call IThreadReceiver::init() in DummyThreadPool for proper initialization.
-#11704: Adds LOG_CONNECTION_ATTEMPTS_ENABLED and CONNECTION_LOG_DIRECTORY to log all incoming connections to external file.
-
-#11559 [fdbmonitor] Bug fixes spraza:fdbmonitor-bug-fixes about 7 months ago
-#11734 Urgent consistency checker fixes spraza:urgent-consistency-checker about 4 months ago
-#11819 Fix race condition in rocksdb checkpoint readers spraza:rocksdb-checkpoint-race-condition about 3 months ago
-#11957 Fix rocksdb crash caused because of passing uninitialized metadata to ExportColumnFamily spraza:fix-rocksdb-checkpoint-crash about 1 month ago
-#12006 Never absorb wrong_shard_server in LoadBalance replicaComparison spraza:r142568840-fix3 about 17 days ago
-
-    * https://github.com/apple/foundationdb/pull/10522 (Fix check in getExactRange that determines whether we can return early)
-
-https://github.com/apple/foundationdb/pull/10363 (Let coordination server crash on file_not_found error)
-
-    * https://github.com/apple/foundationdb/pull/10488 (Fix computeRestoreEndVersion bug when outLogs is null)
-    * https://github.com/apple/foundationdb/pull/10857 (Initialize apply mutations map for restore to version)
-
-    * https://github.com/apple/foundationdb/pull/11112 (Stuck watch bug fix)
-    * https://github.com/apple/foundationdb/pull/10495 (Reset connection idle time when restarting connection monitor)
-
-https://github.com/apple/foundationdb/pull/10711 (Fix tss kill logic: only disable Tss check when zeroHealthyTeams=false)
+* fdbmonitor: tracked parent process death for FreeBSD. `(PR #11361) <https://github.com/apple/foundationdb/pull/11361>`_
+* Fixed issues where backup workers missed mutations and caused assertion failures. `(PR #11908) <https://github.com/apple/foundationdb/pull/11908>`_, `(PR #12026) <https://github.com/apple/foundationdb/pull/12026>`_, and `(PR #12046) <https://github.com/apple/foundationdb/pull/12046>`_.
+* Fixed AuditStorage empty range read error. `(PR #12043) <https://github.com/apple/foundationdb/pull/12043>`_
+* Built a sidecar container that refreshed S3 credentials. `(PR #11945) <https://github.com/apple/foundationdb/pull/11945>`_
+* Prevented failover when storage servers were behind. `(PR #11054) <https://github.com/apple/foundationdb/pull/11054>`_
+* Fixed FdbServer not being able to join the cluster. `(PR #9814) <https://github.com/apple/foundationdb/pull/9814>`_
+* Fixed wrong implementation of isOnMainThread in Simulation and Testing. `(PR #11978) <https://github.com/apple/foundationdb/pull/11978>`_
+* Called IThreadReceiver::init() in DummyThreadPool for proper initialization. `(PR #11718) <https://github.com/apple/foundationdb/pull/11718>`_
+* Added LOG_CONNECTION_ATTEMPTS_ENABLED and CONNECTION_LOG_DIRECTORY to log all incoming connections to an external file. `(PR #11704) <https://github.com/apple/foundationdb/pull/11704>`_
+* Fixed check in getExactRange that determines whether we can return early. `(PR #10522) <https://github.com/apple/foundationdb/pull/10522>`_
+* Let coordination server crash on file_not_found error. `(PR #10363) <https://github.com/apple/foundationdb/pull/10363>`_
+* Fixed computeRestoreEndVersion bug when outLogs is null. `(PR #10488) <https://github.com/apple/foundationdb/pull/10488>`_
+* Initialized apply mutations map for restore to version. `(PR #10857) <https://github.com/apple/foundationdb/pull/10857>`_
+* Fixed stuck watch bug. `(PR #11112) <https://github.com/apple/foundationdb/pull/11112>`_
+* Reset connection idle time when restarting connection monitor. `(PR #10495) <https://github.com/apple/foundationdb/pull/10495>`_
+* Fixed tss kill logic: only disabled Tss check when zeroHealthyTeams=false. `(PR #10711) <https://github.com/apple/foundationdb/pull/10711>`_
 
 Status
 ------
-
-Add RocksDB version to status json. https://github.com/apple/foundationdb/pull/11868
-
-#10927 Add support to fetch a specific group of status json fields
-
-https://github.com/apple/foundationdb/pull/10791/files (Prevent Status actor from bubbling up timeout error)
+* Added RocksDB version to status JSON. `(PR #11868) <https://github.com/apple/foundationdb/pull/11868>`_
+* Added support to fetch a specific group of status JSON fields. `(PR #10927) <https://github.com/apple/foundationdb/pull/10927>`_
+* Prevented Status actor from bubbling up timeout error. `(PR #10791) <https://github.com/apple/foundationdb/pull/10791>`_
 
 Bindings
 --------
-
-* Go: simplify network start check logic to address the SIGSEGV happening when network routine is started multiple times concurrently. `(PR #11104) <https://github.com/apple/foundationdb/pull/11104>`_
-
-https://github.com/apple/foundationdb/pull/11288 (C workload bindings)
-
-    * https://github.com/apple/foundationdb/pull/11394 (Go binding: do not automatically close database objects)
-        * FYI, breaking change in go bindings: https://github.com/apple/foundationdb/pull/11394#pullrequestreview-2081137168
-    * https://github.com/apple/foundationdb/pull/11611 (Go binding: fix bug with R/O transaction destroyed before futures, add GC references for db/tx)
-    * https://github.com/apple/foundationdb/pull/11614 (Go binding: allow cancelling snapshots and R/O transactions)
-    * https://github.com/apple/foundationdb/pull/11627/files (Go binding: add GetClientStatus method to Database)
-    * https://github.com/apple/foundationdb/pull/11810 (Go binding: do not override wrapped transaction error)
-    * https://github.com/apple/foundationdb/pull/10702 (Fix panic when connecting to database from multiple threads in Go bindings)
-
-
+* Simplified network start check logic to address SIGSEGV happening when network routine was started multiple times concurrently in Go bindings. `(PR #11104) <https://github.com/apple/foundationdb/pull/11104>`_
+* Fixed Go binding: Do not automatically close database objects. `(PR #11394) <https://github.com/apple/foundationdb/pull/11394>`_
+* Fixed bug with R/O transaction destroyed before futures in Go binding. `(PR #11611) <https://github.com/apple/foundationdb/pull/11611>`_
+* Allowed cancelling snapshots and R/O transactions in Go binding. `(PR #11614) <https://github.com/apple/foundationdb/pull/11614>`_
+* Added GetClientStatus method to Database in Go binding. `(PR #11627) <https://github.com/apple/foundationdb/pull/11627>`_
+* Do not override wrapped transaction error in Go binding. `(PR #11810) <https://github.com/apple/foundationdb/pull/11810>`_
+* Fixed panic when connecting to database from multiple threads in Go bindings. `(PR #10702) <https://github.com/apple/foundationdb/pull/10702>`_
 
 Other Changes
 -------------
-
-* Removed upgrade support from 6.2 and earlier TLogs and make xxhash checksum the default for TLog. `(PR #11667) <https://github.com/apple/foundationdb/pull/11667>`_
-
-add rate keeper logs for zones with lowest tps
-11067 2023-11-17T21:07:49Z Log ignored zones and reasons in RkUpdate
-
-#11825 Documentation says backup blob URL can optionally contain key/secret/token
-
-#11569 [fdbcli] Add exclude in progress signal spraza:fdbcli-exclude-inprogress-signal about 7 months ago 
-
-https://github.com/apple/foundationdb/pull/10876 (Make sure that storage and tlog are always set to a valid type)
-
-https://github.com/apple/foundationdb/pull/10076 (Enable MovingData to show overall moved bytes rather than just one copy)
+* Removed upgrade support from 6.2 and earlier TLogs and made xxhash checksum the default for TLog. `(PR #11667) <https://github.com/apple/foundationdb/pull/11667>`_
+* Added rate keeper logs for zones with lowest tps. `(PR #11067) <https://github.com/apple/foundationdb/pull/11067>`_
+* Documentation says backup blob URL can optionally contain key/secret/token. `(PR #11825) <https://github.com/apple/foundationdb/pull/11825>`_
+* Added exclude in progress signal to fdbcli. `(PR #11569) <https://github.com/apple/foundationdb/pull/11569>`_
+* Ensured storage and tlog are always set to a valid type. `(PR #10876) <https://github.com/apple/foundationdb/pull/10876>`_
+* Enabled MovingData to show overall moved bytes rather than just one copy. `(PR #10076) <https://github.com/apple/foundationdb/pull/10076>`_
 
 Dependencies
 ------------
-
 * Upgraded boost to version 1.86. `(PR #11788) <https://github.com/apple/foundationdb/pull/11788>`_
 * Upgraded awssdk to version 1.11.473. `(PR #11853) <https://github.com/apple/foundationdb/pull/11853>`_
-* GCC 13 and Clang 19 are supported compilers.
-
-Upgrade RocksDB to 9.7.3. https://github.com/apple/foundationdb/pull/11735
+* Supported GCC 13 and Clang 19 compilers.
+* Upgraded RocksDB to 9.7.3. `(PR #11735) <https://github.com/apple/foundationdb/pull/11735>`_
 
 
 Earlier release notes
