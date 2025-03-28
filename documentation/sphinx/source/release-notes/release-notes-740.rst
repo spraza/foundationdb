@@ -21,19 +21,13 @@ Features (Experimental)
 * Added support to compute mutation and accumulative checksums to conduct real-time detection of mutation corruptions on write path. `(PR #11255) <https://github.com/apple/foundationdb/pull/11255>`_
 * Added support to detect hot shards and throttle commits to them. `(PR #10970) <https://github.com/apple/foundationdb/pull/10970>`_
 * Added support to synthesize test data on a cluster. `(PR #11107) <https://github.com/apple/foundationdb/pull/11107>`_
-* Added Version Vector feature which sends commmits only to tlogs buddied with storage server that will receive mutations. Q: Do we need to mention this? Is there a doc we can link?
 * Added support to compare storage replicas on reads. `(PR #11235) <https://github.com/apple/foundationdb/pull/11235>`_
 * Added gRPC integration with Flow. `(PR #11782) <https://github.com/apple/foundationdb/pull/11782>`_, `(PR #11892) <https://github.com/apple/foundationdb/pull/11892>`_, `(PR #12023) <https://github.com/apple/foundationdb/pull/12023>`_
 
 Performance
 -----------
-* Improved set and clear throughput by removing two ptree searches when processing a clear. `(PR #11435) <https://github.com/apple/foundationdb/pull/11435>`_
+* Improved storage performance with ptree optimizations. `(PR #11435) <https://github.com/apple/foundationdb/pull/11435>`_
 * Added yields to backup agents to avoid slow tasks. `(PR #10878) <https://github.com/apple/foundationdb/pull/10878>`_
-* Improved performance of TransactionTagCounter. TODO: user impact `(PR #10354) <https://github.com/apple/foundationdb/pull/10354>`_
-
-Reliability
------------
-* Improved transaction tag throttling. TODO: user impact, all PRs relevant? `(PR #10662) <https://github.com/apple/foundationdb/pull/10662>`_, `(PR #10725) <https://github.com/apple/foundationdb/pull/10725>`_, `(PR #10810) <https://github.com/apple/foundationdb/pull/10810>`_
 
 Fixes
 -----
@@ -73,7 +67,6 @@ Other Changes
 * Added rate keeper logs for zones with lowest tps. TODO: remove? `(PR #11067) <https://github.com/apple/foundationdb/pull/11067>`_
 * Added LOG_CONNECTION_ATTEMPTS_ENABLED and CONNECTION_LOG_DIRECTORY to log all incoming connections to an external file. `(PR #11704) <https://github.com/apple/foundationdb/pull/11704>`_
 * Added exclude in progress signal to fdbcli. `(PR #11569) <https://github.com/apple/foundationdb/pull/11569>`_
-* Documentation says backup blob URL can optionally contain key/secret/token. TODO: remove? `(PR #11825) <https://github.com/apple/foundationdb/pull/11825>`_
 * Fixed an issue where storage and tlog store types were not valid as part of configure command. `(PR #10876) <https://github.com/apple/foundationdb/pull/10876>`_
 * Improved BytesWritten in MovingData trace event to account for non-overlapped server lists. `(PR #10076) <https://github.com/apple/foundationdb/pull/10076>`_
 
