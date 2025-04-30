@@ -4716,6 +4716,11 @@ ACTOR Future<Void> getKeyValuesQ(StorageServer* data, GetKeyValuesRequest req)
 	if (req.begin.getKey().startsWith(systemKeys.begin)) {
 		++data->counters.systemKeyQueries;
 		++data->counters.getRangeSystemKeyQueries;
+		// Q: sample?
+		TraceEvent("DbgGetKeyValueQ_SystemKeyRange")
+		    .detail("Begin", req.begin)
+		    .detail("End", req.end)
+		    .detail("CallerAddress", req.reply.getEndpoint().getPrimaryAddress());
 	}
 	data->maxQueryQueue = std::max<int>(
 	    data->maxQueryQueue, data->counters.allQueries.getValue() - data->counters.finishedQueries.getValue());
