@@ -3337,6 +3337,7 @@ ACTOR Future<Void> cacheServerWatcher(Database* db) {
 	loop {
 		tr.setOption(FDBTransactionOptions::ACCESS_SYSTEM_KEYS);
 		try {
+			TraceEvent("Foo1").detail("LocalAddress", FlowTransport::transport().getLocalAddress().toString());
 			RangeResult range = wait(tr.getRange(storageCacheServerKeys, CLIENT_KNOBS->TOO_MANY));
 			ASSERT(!range.more);
 			std::set<UID> caches;
