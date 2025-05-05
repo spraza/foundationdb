@@ -948,6 +948,34 @@ struct TenantSSInfo {
 	}
 };
 
+// if (req.begin.getKey().startsWith(systemKeys.begin)) {
+// 		++data->counters.systemKeyQueries;
+// 		++data->counters.getRangeSystemKeyQueries;
+// 		// Q: sample?
+// 		TraceEvent("DbgFooGetKeyValueQ_SystemKeyRange")
+// 		    .detail("Begin", req.begin)
+// 		    .detail("End", req.end)
+// 		    .detail("CallerAddress", req.reply.getEndpoint().getPrimaryAddress());
+// }
+static void dbgPrint(const std::string& id, KeySelectorRef begin, KeySelectorRef end) {
+	if (!begin.getKey().startsWith(systemKeys.begin)) {
+		return;
+	}
+	if (!end.getKey().startsWith(systemKeys.begin)) {
+		return;
+	}
+	TraceEvent(id.c_str()).detail("Begin", begin).detail("End", end);
+}
+static void dbgPrint(const std::string& id, KeyRef begin, KeyRef end) {
+	if (!begin.startsWith(systemKeys.begin)) {
+		return;
+	}
+	if (!end.startsWith(systemKeys.begin)) {
+		return;
+	}
+	TraceEvent(id.c_str()).detail("Begin", begin).detail("End", end);
+}
+
 struct StorageServer : public IStorageMetricsService {
 	typedef VersionedMap<KeyRef, ValueOrClearToRef> VersionedData;
 
@@ -4541,7 +4569,7 @@ ACTOR Future<Void> getKeyValuesQ(StorageServer* data, GetKeyValuesRequest req)
 		++data->counters.systemKeyQueries;
 		++data->counters.getRangeSystemKeyQueries;
 		// Q: sample?
-		TraceEvent("DbgGetKeyValueQ_SystemKeyRange")
+		TraceEvent("DbgFooGetKeyValueQ_SystemKeyRange")
 		    .detail("Begin", req.begin)
 		    .detail("End", req.end)
 		    .detail("CallerAddress", req.reply.getEndpoint().getPrimaryAddress());
@@ -4773,6 +4801,7 @@ ACTOR Future<GetRangeReqAndResultRef> quickGetKeyValues(
 		// Note that it does not use readGuard to avoid server being overloaded here. Throttling is enforced at the
 		// original request level, rather than individual underlying lookups. The reason is that throttle any individual
 		// underlying lookup will fail the original request, which is not productive.
+		dbgPrint("DbgFooQuickGetKeyValues_1", req.begin, req.end);
 		data->actors.add(getKeyValuesQ(data, req));
 		GetKeyValuesReply reply = wait(req.reply.getFuture());
 		if (!reply.error.present()) {
@@ -4805,6 +4834,7 @@ ACTOR Future<GetRangeReqAndResultRef> quickGetKeyValues(
 		}
 		// TODO: is DefaultPromiseEndpoint the best priority for this?
 		tr.trState->taskID = TaskPriority::DefaultPromiseEndpoint;
+		dbgPrint("DbgFooQuickGetKeyValues_2", prefixRange(prefix).begin, prefixRange(prefix).end);
 		Future<RangeResult> rangeResultFuture =
 		    tr.getRange(prefixRange(prefix), GetRangeLimits::ROW_LIMIT_UNLIMITED, Snapshot::True);
 		// TODO: async in case it needs to read from other servers.
@@ -5499,6 +5529,8 @@ ACTOR Future<Void> auditStorageShardReplicaQ(StorageServer* data, AuditStorageRe
 					req.limitBytes = limitBytes;
 					req.version = version;
 					req.tags = TagSet();
+					// TODO
+					dbgPrint("DbgFooAuditStorageShardReplica_1", req.begin, req.end);
 					fs.push_back(remoteServer.getKeyValues.getReplyUnlessFailedFor(req, 2, 0));
 				}
 
@@ -5510,6 +5542,7 @@ ACTOR Future<Void> auditStorageShardReplicaQ(StorageServer* data, AuditStorageRe
 				localReq.limitBytes = limitBytes;
 				localReq.version = version;
 				localReq.tags = TagSet();
+				dbgPrint("DbgFooAuditStorageShardReplica_2", localReq.begin, localReq.end);
 				data->actors.add(getKeyValuesQ(data, localReq));
 				fs.push_back(errorOr(localReq.reply.getFuture()));
 				std::vector<ErrorOr<GetKeyValuesReply>> reps = wait(getAll(fs));
@@ -7397,6 +7430,7 @@ ACTOR Future<Void> tryGetRange(PromiseStream<RangeResult> results, Transaction* 
 		loop {
 			GetRangeLimits limits(GetRangeLimits::ROW_LIMIT_UNLIMITED, SERVER_KNOBS->FETCH_BLOCK_BYTES);
 			limits.minRows = 0;
+			dbgPrint("DbgFooTryGetRange_1", begin, end);
 			state RangeResult rep = wait(tr->getRange(begin, end, limits, Snapshot::True));
 			results.send(rep);
 
@@ -8426,10 +8460,12 @@ ACTOR Future<Void> fetchKeys(StorageServer* data, AddingShard* shard) {
 					hold = tryGetRangeFromBlob(results, &tr, rangeStatus.first, version, data->blobConn);
 					rangeEnd = rangeStatus.first.end;
 				} else {
+					dbgPrint("DbgFooFetchKeys_1", keys.begin, keys.end);
 					hold = tryGetRange(results, &tr, keys);
 					rangeEnd = keys.end;
 				}
 			} else {
+				dbgPrint("DbgFooFetchKeys_2", keys.begin, keys.end);
 				hold = tryGetRange(results, &tr, keys);
 				rangeEnd = keys.end;
 			}
@@ -13742,6 +13778,7 @@ ACTOR Future<Void> initTenantMap(StorageServer* self) {
 			state Version version = wait(tr->getReadVersion());
 			// This limits the number of tenants, but eventually we shouldn't need to do this at all
 			// when SSs store only the local tenants
+			dbgPrint("DbgFooInitTenantMap_1", KeyRef{}, KeyRef{});
 			KeyBackedRangeResult<std::pair<int64_t, TenantMapEntry>> entries =
 			    wait(TenantMetadata::tenantMap().getRange(tr, {}, {}, CLIENT_KNOBS->MAX_TENANTS_PER_CLUSTER + 1));
 			ASSERT(entries.results.size() <= CLIENT_KNOBS->MAX_TENANTS_PER_CLUSTER && !entries.more);
