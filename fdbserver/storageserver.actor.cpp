@@ -4935,6 +4935,7 @@ ACTOR Future<Void> getKeyValuesQ(StorageServer* data, GetKeyValuesRequest req)
 			}
 		}
 	} catch (Error& e) {
+		TraceEvent("FooDbgGetKeyValuesQ1").errorUnsuppressed(e);
 		if (!canReplyWith(e))
 			throw;
 		data->sendErrorWithPenalty(req.reply, e, data->getPenalty());
@@ -9555,6 +9556,7 @@ ACTOR Future<Void> fetchKeys(StorageServer* data, AddingShard* shard) {
 		}
 
 	} catch (Error& e) {
+		TraceEvent("FooDbgFetchKeysError1").errorUnsuppressed(e);
 		TraceEvent(SevDebug, interval.end(), data->thisServerID)
 		    .errorUnsuppressed(e)
 		    .detail("Version", data->version.get());
