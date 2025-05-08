@@ -689,6 +689,13 @@ void populateMetaData(CheckpointMetaData* checkpoint, const rocksdb::ExportImpor
 			liveFileMetaData.db_path = fileMetaData.db_path;
 			liveFileMetaData.column_family_name = fileMetaData.column_family_name;
 			liveFileMetaData.level = fileMetaData.level;
+			// tmp start
+			Standalone<StringRef> tmpObj = ObjectWriter::toValue(liveFileMetaData, IncludeVersion());
+			const auto tmpObjSize = tmpObj.size();
+			// tmp end
+			const auto nextSize = std::max(5000, ((tmpObjSize + 4999) / 5000) * 5000);
+			const auto paddingBytes = nextSize - tmpObjSize;
+			liveFileMetaData.padding = std::string(paddingBytes, 'x');
 			rocksCF.sstFiles.push_back(liveFileMetaData);
 		}
 	}

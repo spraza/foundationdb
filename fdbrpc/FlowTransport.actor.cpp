@@ -1291,7 +1291,6 @@ static void scanPackets(TransportData* transport,
 				TraceEvent(SevInfo, "BitsFlip").log();
 				int flipBits = 32 - (int)floor(log2(deterministicRandom()->randomUInt32()));
 
-				TraceEvent("Foo1").detail("PacketLen", packetLen);
 				uint32_t firstFlipByteLocation = deterministicRandom()->randomUInt32() % packetLen;
 				int firstFlipBitLocation = deterministicRandom()->randomInt(0, 8);
 				*(p + firstFlipByteLocation) ^= 1 << firstFlipBitLocation;

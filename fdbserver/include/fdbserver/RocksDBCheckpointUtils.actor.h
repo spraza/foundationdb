@@ -190,6 +190,8 @@ struct SstFileMetaData {
 	std::string smallest{}; // Smallest internal key served by table
 	std::string largest{}; // Largest internal key served by table
 
+	std::string padding{}; // for determinism, only in simulation, ideally compile out in simulation
+
 	template <class Ar>
 	void serialize(Ar& ar) {
 		serializer(ar,
@@ -216,7 +218,8 @@ struct SstFileMetaData {
 		           name,
 		           db_path,
 		           smallest,
-		           largest);
+		           largest,
+		           padding);
 	}
 };
 
@@ -257,7 +260,8 @@ struct LiveFileMetaData : public SstFileMetaData {
 		           level,
 		           fetched,
 		           SstFileMetaData::smallest,
-		           SstFileMetaData::largest);
+		           SstFileMetaData::largest,
+		           SstFileMetaData::padding);
 	}
 };
 
