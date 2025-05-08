@@ -58,9 +58,6 @@ struct CheckpointMetaData {
 	int16_t state; // CheckpointState.
 	Optional<std::string> bytesSampleFile;
 
-	// A serialized metadata associated with format, this data can be understood by the corresponding KVS.
-	Standalone<StringRef> serializedCheckpoint;
-
 	Optional<UID> actionId; // Unique ID defined by the application.
 
 	std::string dir;
@@ -88,6 +85,45 @@ struct CheckpointMetaData {
 	CheckpointFormat getFormat() const { return static_cast<CheckpointFormat>(format); }
 
 	void setFormat(CheckpointFormat format) { this->format = static_cast<int16_t>(format); }
+
+	void setSerializedCheckpoint(Standalone<StringRef> tmpObj) { serializedCheckpoint = tmpObj; }
+
+	Standalone<StringRef> getSerializedCheckpoint() const { return serializedCheckpoint; }
+
+	// void setSerializedCheckpoint(Standalone<StringRef> tmpObj) {
+	// 	// 	Standalone<StringRef> tmpObj = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	// 	const auto tmpObjSize = tmpObj.size();
+	// 	const auto nextSize = std::max(5000, ((tmpObjSize + 4999) / 5000) * 5000);
+	// 	const auto paddingBytes = nextSize - tmpObjSize;
+	// 	std::string padding = std::string(paddingBytes, 'x');
+	// 	std::string paddingSize(100 /* fixed size */, 'x');
+	// 	std::memcpy(&paddingSize[0], std::to_string(padding.size()).c_str(), padding.size());
+	// 	ASSERT(paddingSize.size() == 100);
+	// 	std::string newStr = tmpObj.toString() + padding + paddingSize;
+	// 	serializedCheckpoint = newStr;
+	// }
+
+	// Standalone<StringRef> getSerializedCheckpoint() const {
+	// 	const std::string& str = serializedCheckpoint.toString();
+	// 	ASSERT(str.size() >= 100); // must be at least enough for paddingSize
+
+	// 	// Step 1: extract trailing paddingSize
+	// 	std::string paddingSizeStr = str.substr(str.size() - 100, 100);
+
+	// 	// Step 2: extract numeric prefix (e.g., "3000xxxxx...") ⇒ parse until non-digit
+	// 	size_t paddingBytes = 0;
+	// 	size_t i = 0;
+	// 	while (i < paddingSizeStr.size() && std::isdigit(paddingSizeStr[i])) {
+	// 		paddingBytes = paddingBytes * 10 + (paddingSizeStr[i] - '0');
+	// 		++i;
+	// 	}
+
+	// 	// Step 3: compute tmpObj size
+	// 	const size_t tmpObjSize = str.size() - paddingBytes - 100;
+	// 	ASSERT(tmpObjSize <= str.size());
+
+	// 	return Standalone<StringRef>(std::string(str.data(), tmpObjSize));
+	// }
 
 	bool hasRange(const KeyRangeRef range) const {
 		for (const auto& checkpointRange : ranges) {
@@ -144,6 +180,10 @@ struct CheckpointMetaData {
 		           bytesSampleFile,
 		           dir);
 	}
+
+private:
+	// A serialized metadata associated with format, this data can be understood by the corresponding KVS.
+	Standalone<StringRef> serializedCheckpoint;
 };
 
 namespace std {

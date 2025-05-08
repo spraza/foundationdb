@@ -1,4 +1,5 @@
 #include "fdbclient/FDBTypes.h"
+#include "flow/Arena.h"
 #ifdef WITH_ROCKSDB
 
 #include "fdbclient/KeyRangeMap.h"
@@ -693,7 +694,7 @@ void populateMetaData(CheckpointMetaData* checkpoint, const rocksdb::ExportImpor
 		}
 	}
 	checkpoint->setFormat(DataMoveRocksCF);
-	checkpoint->serializedCheckpoint = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	checkpoint->setSerializedCheckpoint(ObjectWriter::toValue(rocksCF, IncludeVersion()));
 }
 
 const rocksdb::Slice toSlice(StringRef s) {
