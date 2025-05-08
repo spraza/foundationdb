@@ -1,4 +1,6 @@
 #include "fdbclient/FDBTypes.h"
+#include "fdbclient/StorageCheckpoint.h"
+#include "flow/Arena.h"
 #ifdef WITH_ROCKSDB
 
 #include "fdbclient/KeyRangeMap.h"
@@ -693,7 +695,7 @@ void populateMetaData(CheckpointMetaData* checkpoint, const rocksdb::ExportImpor
 		}
 	}
 	checkpoint->setFormat(DataMoveRocksCF);
-	checkpoint->serializedCheckpoint = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	checkpoint->setSerializedCheckpoint(ObjectWriter::toValue(rocksCF, IncludeVersion()));
 }
 
 const rocksdb::Slice toSlice(StringRef s) {
@@ -4846,6 +4848,49 @@ TEST_CASE("perf/ShardedRocksDB/ConcurrentReadWrite") {
 	ASSERT(!directoryExists(rocksDBTestDir));
 	return Void();
 }
+
+TEST_CASE("noSim/determinism/checkpoint_metadata/serde1") {
+	CheckpointMetaData metadata;
+	Standalone<StringRef> serialized = StringRef(std::string("some_rocksdb_checkpoint_metadata_123"));
+	metadata.setSerializedCheckpoint(serialized);
+	Standalone<StringRef> deserialized = metadata.getSerializedCheckpoint();
+	TraceEvent("Serde").detail("Ser", serialized).detail("Deser", deserialized);
+	ASSERT(serialized == deserialized);
+	return Void();
+}
+
+TEST_CASE("noSim/determinism/checkpoint_metadata/serde2") {
+	CheckpointMetaData metadata;
+	Standalone<StringRef> serialized = StringRef(std::string(""));
+	metadata.setSerializedCheckpoint(serialized);
+	Standalone<StringRef> deserialized = metadata.getSerializedCheckpoint();
+	TraceEvent("Serde").detail("Ser", serialized).detail("Deser", deserialized);
+	ASSERT(serialized == deserialized);
+	return Void();
+}
+
+TEST_CASE("noSim/determinism/checkpoint_metadata/serde3") {
+	CheckpointMetaData metadata;
+	Standalone<StringRef> serialized = StringRef(
+	    std::string("some_rocksdb_checkpoint_metadata_123some_rocksdb_checkpoint_metadata_123some_rocksdb_checkpoint_"
+	                "metadata_123some_rocksdb_checkpoint_metadata_123some_rocksdb_checkpoint_metadata_123"));
+	metadata.setSerializedCheckpoint(serialized);
+	Standalone<StringRef> deserialized = metadata.getSerializedCheckpoint();
+	TraceEvent("Serde").detail("Ser", serialized).detail("Deser", deserialized);
+	ASSERT(serialized == deserialized);
+	return Void();
+}
+
+TEST_CASE("noSim/determinism/checkpoint_metadata/serde4") {
+	CheckpointMetaData metadata;
+	Standalone<StringRef> serialized = StringRef(std::string("some_\nrocksdb_checkpoint_\nmetadata_123\0"));
+	metadata.setSerializedCheckpoint(serialized);
+	Standalone<StringRef> deserialized = metadata.getSerializedCheckpoint();
+	TraceEvent("Serde").detail("Ser", serialized).detail("Deser", deserialized);
+	ASSERT(serialized == deserialized);
+	return Void();
+}
+
 } // namespace
 
 #endif // WITH_ROCKSDB
