@@ -2734,6 +2734,9 @@ struct ShardedRocksDBKeyValueStore : IKeyValueStore {
 				}
 
 				populateMetaData(&res, pMetadata);
+				TraceEvent("Foo2")
+				    .detail("MetadataCheckpointSize", res.serializedCheckpoint.size())
+				    .detail("MetadataCheckpointExpectedSize", res.serializedCheckpoint.expectedSize());
 				rocksdb::ExportImportFilesMetaData metadata = *pMetadata;
 				delete pMetadata;
 				if (!metadata.files.empty() && SERVER_KNOBS->ROCKSDB_ENABLE_CHECKPOINT_VALIDATION) {
