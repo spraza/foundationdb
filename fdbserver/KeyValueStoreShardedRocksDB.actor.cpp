@@ -689,11 +689,20 @@ void populateMetaData(CheckpointMetaData* checkpoint, const rocksdb::ExportImpor
 			liveFileMetaData.db_path = fileMetaData.db_path;
 			liveFileMetaData.column_family_name = fileMetaData.column_family_name;
 			liveFileMetaData.level = fileMetaData.level;
-			rocksCF.sstFiles.push_back(liveFileMetaData);
 		}
 	}
 	checkpoint->setFormat(DataMoveRocksCF);
-	checkpoint->serializedCheckpoint = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	// checkpoint->serializedCheckpoint = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	//  tmp start
+	//  Standalone<StringRef> tmpObj = ObjectWriter::toValue(liveFileMetaData, IncludeVersion());
+	Standalone<StringRef> tmpObj = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	const auto tmpObjSize = tmpObj.size();
+	// tmp end
+	const auto nextSize = std::max(5000, ((tmpObjSize + 4999) / 5000) * 5000);
+	const auto paddingBytes = nextSize - tmpObjSize;
+	std::string padding = std::string(paddingBytes, 'x');
+	std::string newStr = tmpObj.toString() + padding;
+	checkpoint->serializedCheckpoint = newStr;
 }
 
 const rocksdb::Slice toSlice(StringRef s) {
