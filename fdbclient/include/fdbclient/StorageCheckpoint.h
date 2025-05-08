@@ -59,7 +59,7 @@ struct CheckpointMetaData {
 	Optional<std::string> bytesSampleFile;
 
 	// A serialized metadata associated with format, this data can be understood by the corresponding KVS.
-	Standalone<StringRef> serializedCheckpoint;
+	std::string serializedCheckpoint;
 
 	Optional<UID> actionId; // Unique ID defined by the application.
 
@@ -88,6 +88,9 @@ struct CheckpointMetaData {
 	CheckpointFormat getFormat() const { return static_cast<CheckpointFormat>(format); }
 
 	void setFormat(CheckpointFormat format) { this->format = static_cast<int16_t>(format); }
+
+	void setSerializedCheckpoint(Standalone<StringRef> tmpObj);
+	Standalone<StringRef> getSerializedCheckpoint() const;
 
 	bool hasRange(const KeyRangeRef range) const {
 		for (const auto& checkpointRange : ranges) {
