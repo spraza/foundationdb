@@ -1,4 +1,5 @@
 #include "fdbclient/FDBTypes.h"
+#include "flow/Arena.h"
 #ifdef WITH_ROCKSDB
 
 #include "fdbclient/KeyRangeMap.h"
@@ -693,7 +694,17 @@ void populateMetaData(CheckpointMetaData* checkpoint, const rocksdb::ExportImpor
 		}
 	}
 	checkpoint->setFormat(DataMoveRocksCF);
-	checkpoint->serializedCheckpoint = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	// checkpoint->serializedCheckpoint = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	//  tmp start
+	//  Standalone<StringRef> tmpObj = ObjectWriter::toValue(liveFileMetaData, IncludeVersion());
+	// Standalone<StringRef> tmpObj = ObjectWriter::toValue(rocksCF, IncludeVersion());
+	// const auto tmpObjSize = tmpObj.size();
+	// // tmp end
+	// const auto nextSize = std::max(5000, ((tmpObjSize + 4999) / 5000) * 5000);
+	// const auto paddingBytes = nextSize - tmpObjSize;
+	// std::string padding = std::string(paddingBytes, 'x');
+	// std::string newStr = tmpObj.toString() + padding;
+	checkpoint->setSerializedCheckpoint(ObjectWriter::toValue(rocksCF, IncludeVersion()));
 }
 
 const rocksdb::Slice toSlice(StringRef s) {
