@@ -2541,6 +2541,12 @@ ACTOR Future<EncryptionAtRestMode> getEncryptionAtRestMode(TLogData* self) {
 	}
 }
 
+std::string ptrToString(const void* ptr) {
+	std::ostringstream oss;
+	oss << ptr; // streams pointer as hex
+	return oss.str();
+}
+
 // send stopped promise instead of LogData* to avoid reference cycles
 ACTOR Future<Void> rejoinClusterController(TLogData* self,
                                            TLogInterface tli,
@@ -2550,19 +2556,30 @@ ACTOR Future<Void> rejoinClusterController(TLogData* self,
                                            bool isPrimary) {
 	state LifetimeToken lastMasterLifetime;
 	loop {
+		TraceEvent("Baz1").detail("Self", ptrToString(self));
+		TraceEvent("Baz1").detail("DbInfo", ptrToString(self->dbInfo.getPtr()));
+		TraceEvent("Baz1").detail("DbInfo", ptrToString(&self->dbInfo->get()));
 		auto const& inf = self->dbInfo->get();
+		TraceEvent("Baz11").detail("X", inf.priorCommittedLogServers.size()).detail("Y", tli.id());
 		bool isDisplaced =
 		    std::find(inf.priorCommittedLogServers.begin(), inf.priorCommittedLogServers.end(), tli.id()) ==
 		    inf.priorCommittedLogServers.end();
+		TraceEvent("Baz12");
 		if (isPrimary) {
+			TraceEvent("Baz13");
 			isDisplaced =
 			    isDisplaced && inf.recoveryCount >= recoveryCount && inf.recoveryState != RecoveryState::UNINITIALIZED;
+			TraceEvent("Baz14");
 		} else {
+			TraceEvent("Baz15");
 			isDisplaced = isDisplaced &&
 			              ((inf.recoveryCount > recoveryCount && inf.recoveryState != RecoveryState::UNINITIALIZED) ||
 			               (inf.recoveryCount == recoveryCount && inf.recoveryState == RecoveryState::FULLY_RECOVERED));
+			TraceEvent("Baz16");
 		}
+		TraceEvent("Baz17");
 		isDisplaced = isDisplaced && !inf.logSystemConfig.hasTLog(tli.id());
+		TraceEvent("Baz18");
 		if (isDisplaced) {
 			TraceEvent("TLogDisplaced", tli.id())
 			    .detail("Reason", "DBInfoDoesNotContain")
@@ -2576,13 +2593,18 @@ ACTOR Future<Void> rejoinClusterController(TLogData* self,
 				wait(delay(SERVER_KNOBS->BUGGIFY_WORKER_REMOVED_MAX_LAG * deterministicRandom()->random01()));
 			throw worker_removed();
 		} else if (inf.recoveryCount > recoveryCount && stoppedPromise.canBeSet()) {
+			TraceEvent("Baz19");
 			CODE_PROBE(true, "Stopping tlog because new dbinfo has a higher recovery count");
 			TraceEvent("StoppingTLog", self->dbgid)
 			    .detail("LogId", tli.id())
 			    .detail("NewRecoveryCount", inf.recoveryCount)
 			    .detail("MyRecoveryCount", recoveryCount);
+			TraceEvent("Baz2");
 			stoppedPromise.send(Void());
+			TraceEvent("Baz3");
 		}
+
+		TraceEvent("Baz191");
 
 		if (self->terminated.isSet()) {
 			return Void();
@@ -2590,6 +2612,7 @@ ACTOR Future<Void> rejoinClusterController(TLogData* self,
 
 		if (registerWithCC.isReady()) {
 			if (!lastMasterLifetime.isEqual(self->dbInfo->get().masterLifetime)) {
+				TraceEvent("Baz4");
 				// The TLogRejoinRequest is needed to establish communications with a new master, which doesn't have our
 				// TLogInterface
 				TLogRejoinRequest req(tli);
@@ -2605,11 +2628,16 @@ ACTOR Future<Void> rejoinClusterController(TLogData* self,
 					}
 					when(wait(self->dbInfo->onChange())) {}
 				}
+				TraceEvent("Baz5");
 			} else {
+				TraceEvent("Baz6");
 				wait(self->dbInfo->onChange());
+				TraceEvent("Baz7");
 			}
 		} else {
+			TraceEvent("Baz8");
 			wait(registerWithCC || self->dbInfo->onChange());
+			TraceEvent("Baz9");
 		}
 	}
 }
