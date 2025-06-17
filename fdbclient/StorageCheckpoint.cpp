@@ -92,14 +92,14 @@ void CheckpointMetaData::setSerializedCheckpoint(Standalone<StringRef> checkpoin
 	serializedCheckpoint = std::move(payload) + padding + footer;
 
 	// Debug trace for verification (uncomment if needed for debugging)
-	// TraceEvent("CheckpointSet")
-	//     .detail("OriginalCheckpoint", checkpoint)
-	//     .detail("OriginalCheckpointSize", checkpoint.size())
-	//     .detail("SerializedCheckpoint", serializedCheckpoint)
-	//     .detail("SerializedCheckpointSize", serializedCheckpoint.size())
-	//     .detail("Footer", footer)
-	//     .detail("FooterSize", FOOTER_BYTE_SIZE)
-	//     .detail("PaddingSize", paddingBytes);
+	TraceEvent("CheckpointSet")
+	    .detail("OriginalCheckpoint", checkpoint)
+	    .detail("OriginalCheckpointSize", checkpoint.size())
+	    .detail("SerializedCheckpoint", serializedCheckpoint)
+	    .detail("SerializedCheckpointSize", serializedCheckpoint.size())
+	    .detail("Footer", footer)
+	    .detail("FooterSize", FOOTER_BYTE_SIZE)
+	    .detail("PaddingSize", paddingBytes);
 }
 
 Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
@@ -134,13 +134,13 @@ Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 	auto ret = Standalone<StringRef>(ref);
 
 	// Debug trace for verification
-	// TraceEvent("CheckpointGet")
-	//     .detail("ReturnedCheckpoint", ret)
-	//     .detail("ReturnedCheckpointSize", ret.size())
-	//     .detail("SerializedCheckpoint", serializedCheckpoint)
-	//     .detail("SerializedCheckpointSize", serializedCheckpoint.size())
-	//     .detail("FooterSize", FOOTER_BYTE_SIZE)
-	//     .detail("PaddingSize", paddingBytes);
+	TraceEvent("CheckpointGet")
+	    .detail("ReturnedCheckpoint", ret)
+	    .detail("ReturnedCheckpointSize", ret.size())
+	    .detail("SerializedCheckpoint", serializedCheckpoint)
+	    .detail("SerializedCheckpointSize", serializedCheckpoint.size())
+	    .detail("FooterSize", FOOTER_BYTE_SIZE)
+	    .detail("PaddingSize", paddingBytes);
 
 	return ret;
 }
