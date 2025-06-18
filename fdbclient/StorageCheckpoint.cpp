@@ -93,7 +93,9 @@ void CheckpointMetaData::setSerializedCheckpoint(Standalone<StringRef> checkpoin
 	std::string tmp = std::move(payload) + padding + footer;
 	Standalone<StringRef> buf = makeString(tmp.size());
 	memcpy(mutateString(buf), tmp.data(), tmp.size());
-	serializedCheckpoint = buf;
+	// serializedCheckpoint = buf;
+	// serializedCheckpoint = Standalone<StringRef>(buf.arena(), buf);
+	serializedCheckpoint = Standalone<StringRef>(StringRef(buf.begin(), buf.size()), buf.arena());
 
 	// Debug trace for verification (uncomment if needed for debugging)
 	TraceEvent("CheckpointSet")
