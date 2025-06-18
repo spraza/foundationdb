@@ -1,4 +1,5 @@
 #include "fdbclient/StorageCheckpoint.h"
+#include "flow/Arena.h"
 
 namespace {
 // PAYLOAD_ROUND_TO_NEXT: The granularity for rounding up payload sizes.
@@ -89,7 +90,10 @@ void CheckpointMetaData::setSerializedCheckpoint(Standalone<StringRef> checkpoin
 	// Structure: [original payload] + [padding bytes] + [footer]
 	std::string payload = checkpoint.toString();
 	std::string padding(paddingBytes, 'p'); // Fill padding with 'p' characters
-	serializedCheckpoint = std::move(payload) + padding + footer;
+	std::string tmp = std::move(payload) + padding + footer;
+	Standalone<StringRef> buf = makeString(tmp.size());
+	memcpy(mutateString(buf), tmp.data(), tmp.size());
+	serializedCheckpoint = buf;
 
 	// Debug trace for verification (uncomment if needed for debugging)
 	TraceEvent("CheckpointSet")
