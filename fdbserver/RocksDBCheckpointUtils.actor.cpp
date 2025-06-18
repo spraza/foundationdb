@@ -95,6 +95,7 @@ rocksdb::ExportImportFilesMetaData getMetaData(const CheckpointMetaData& checkpo
 		liveFileMetaData.file_creation_time = fileMetaData.file_creation_time;
 		liveFileMetaData.epoch_number = fileMetaData.epoch_number;
 		liveFileMetaData.name = fileMetaData.name;
+		TraceEvent("FooBar4").detail("DBPath", fileMetaData.db_path);
 		liveFileMetaData.db_path = fileMetaData.db_path;
 		liveFileMetaData.column_family_name = fileMetaData.column_family_name;
 		liveFileMetaData.level = fileMetaData.level;
@@ -636,7 +637,9 @@ rocksdb::Status RocksDBColumnFamilyReader::Reader::importCheckpoint(const std::s
 		descriptors.emplace_back(name, cfOptions);
 	}
 
+	TraceEvent("FooBar1").detail("DBPath", path);
 	status = rocksdb::DB::Open(options, path, descriptors, &handles, &db);
+
 	if (!status.ok()) {
 		TraceEvent(SevWarn, "CheckpointReaderOpenedFailed", logId)
 		    .detail("Status", status.ToString())
@@ -645,15 +648,23 @@ rocksdb::Status RocksDBColumnFamilyReader::Reader::importCheckpoint(const std::s
 		return status;
 	}
 
-	TraceEvent(SevInfo, "CheckpointReaderOpenedForImport", logId)
-	    .detail("Path", path)
-	    .detail("Checkpoint", checkpoint.toString());
+	TraceEvent(SevInfo, "FooBar2", logId).detail("Path", path).detail("Checkpoint", checkpoint.toString());
 
 	rocksdb::ExportImportFilesMetaData metaData = getMetaData(checkpoint);
+	for (const auto& f : metaData.files) {
+		TraceEvent("FooBar3")
+		    .detail("CheckpointFileName", f.relative_filename)
+		    .detail("CheckpointDbPath", f.db_path)
+		    .detail("CheckpointName", f.column_family_name)
+		    .detail("CheckpointDir", f.directory);
+	}
+
 	rocksdb::ImportColumnFamilyOptions importOptions;
 	importOptions.move_files = false;
+
 	status = db->CreateColumnFamilyWithImport(cfOptions, checkpointCf, importOptions, metaData, &cf);
 	if (!status.ok()) {
+		TraceEvent("FooBar5");
 		logRocksDBError(status, "CheckpointReaderImportCheckpoint", logId);
 		return status;
 	}
