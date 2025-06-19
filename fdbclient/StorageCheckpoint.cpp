@@ -1,4 +1,5 @@
 #include "fdbclient/StorageCheckpoint.h"
+#include <unordered_map>
 
 namespace {
 // PAYLOAD_ROUND_TO_NEXT: The granularity for rounding up payload sizes.
@@ -12,6 +13,8 @@ constexpr size_t PAYLOAD_ROUND_TO_NEXT = 5000;
 // FOOTER_BYTE_SIZE: Fixed size of the footer section of CheckpointMetaData
 constexpr size_t FOOTER_BYTE_SIZE = 16;
 } // namespace
+
+static std::unordered_map<const CheckpointMetaData*, std::string> fooBarMap;
 
 /*
  * CheckpointMetaData Serialization Protocol
@@ -60,6 +63,7 @@ constexpr size_t FOOTER_BYTE_SIZE = 16;
  */
 
 void CheckpointMetaData::setSerializedCheckpoint(Standalone<StringRef> checkpoint) {
+	fooBarMap[this] = checkpoint.toString();
 	const bool addPadding = g_network->isSimulated();
 	if (!addPadding) {
 		// Production mode: store checkpoint without modification
@@ -102,10 +106,17 @@ void CheckpointMetaData::setSerializedCheckpoint(Standalone<StringRef> checkpoin
 	    .detail("PaddingSize", paddingBytes);
 }
 
+void validateGet(const CheckpointMetaData* ptr, const std::string& val) {
+	if (fooBarMap.contains(ptr)) {
+		ASSERT(fooBarMap[ptr] == val);
+	}
+}
+
 Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 	const bool addPadding = g_network->isSimulated();
 	if (!addPadding) {
 		// Production mode: return checkpoint without modification
+		validateGet(this, serializedCheckpoint.toString());
 		return serializedCheckpoint;
 	}
 
@@ -142,5 +153,6 @@ Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 	    .detail("FooterSize", FOOTER_BYTE_SIZE)
 	    .detail("PaddingSize", paddingBytes);
 
+	validateGet(this, ret.toString());
 	return ret;
 }
