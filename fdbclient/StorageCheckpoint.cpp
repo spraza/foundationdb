@@ -1,5 +1,6 @@
 #include "fdbclient/StorageCheckpoint.h"
 #include <unordered_map>
+#include "flow/Arena.h"
 
 namespace {
 // PAYLOAD_ROUND_TO_NEXT: The granularity for rounding up payload sizes.
@@ -141,8 +142,11 @@ Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 	// Step 3: Extract and return the original payload
 	// Create a StringRef pointing to just the payload portion
 	auto ptr = reinterpret_cast<const uint8_t*>(str.data());
-	StringRef ref(ptr, int(payloadSize));
-	auto ret = Standalone<StringRef>(ref);
+	// StringRef ref(ptr, int(payloadSize));
+	//  auto ret = Standalone<StringRef>(ref);
+
+	Standalone<StringRef> ret = makeString(payloadSize); // alloc in arena
+	memcpy(mutateString(ret), ptr, payloadSize); // copy payload
 
 	// Debug trace for verification
 	TraceEvent("CheckpointGet")
