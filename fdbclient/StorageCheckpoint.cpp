@@ -1,5 +1,4 @@
 #include "fdbclient/StorageCheckpoint.h"
-#include <unordered_map>
 #include "flow/Arena.h"
 
 namespace {
@@ -14,8 +13,6 @@ constexpr size_t PAYLOAD_ROUND_TO_NEXT = 5000;
 // FOOTER_BYTE_SIZE: Fixed size of the footer section of CheckpointMetaData
 constexpr size_t FOOTER_BYTE_SIZE = 16;
 } // namespace
-
-static std::unordered_map<const CheckpointMetaData*, std::string> fooBarMap;
 
 /*
  * CheckpointMetaData Serialization Protocol
@@ -64,8 +61,6 @@ static std::unordered_map<const CheckpointMetaData*, std::string> fooBarMap;
  */
 
 void CheckpointMetaData::setSerializedCheckpoint(Standalone<StringRef> checkpoint) {
-	serializedCheckpoint2 = checkpoint;
-	fooBarMap[this] = checkpoint.toString();
 	const bool addPadding = g_network->isSimulated();
 	if (!addPadding) {
 		// Production mode: store checkpoint without modification
@@ -108,19 +103,11 @@ void CheckpointMetaData::setSerializedCheckpoint(Standalone<StringRef> checkpoin
 	    .detail("PaddingSize", paddingBytes);
 }
 
-void validateGet(const CheckpointMetaData* ptr, const std::string& val) {
-	if (fooBarMap.contains(ptr)) {
-		ASSERT(fooBarMap[ptr] == val);
-	}
-}
-
 Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 	const bool addPadding = g_network->isSimulated();
 	if (!addPadding) {
 		// Production mode: return checkpoint without modification
-		validateGet(this, serializedCheckpoint.toString());
-		return serializedCheckpoint2;
-		// return serializedCheckpoint;
+		return serializedCheckpoint;
 	}
 
 	// Simulation mode: extract original payload by removing padding and footer
@@ -143,12 +130,18 @@ Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 
 	// Step 3: Extract and return the original payload
 	// Create a StringRef pointing to just the payload portion
-	auto ptr = reinterpret_cast<const uint8_t*>(str.data());
-	// StringRef ref(ptr, int(payloadSize));
-	//  auto ret = Standalone<StringRef>(ref);
+	// auto ptr = reinterpret_cast<const uint8_t*>(str.data());
 
-	Standalone<StringRef> ret = makeString(payloadSize); // alloc in arena
-	memcpy(mutateString(ret), ptr, payloadSize); // copy payload
+	auto ret =
+	    Standalone<StringRef>(StringRef(serializedCheckpoint.begin(), payloadSize), serializedCheckpoint.arena());
+
+	// Standalone<StringRef> ret = makeString(payloadSize);
+	// memcpy(mutateString(ret), str.data(), payloadSize);
+	// StringRef ref(serializedCheckpoint.arena(), ptr, int(payloadSize));
+	// auto ret = Standalone<StringRef>(ref);
+
+	// Standalone<StringRef> ret = makeString(payloadSize); // alloc in arena
+	// memcpy(mutateString(ret), ptr, payloadSize); // copy payload
 
 	// Debug trace for verification
 	TraceEvent("CheckpointGet")
@@ -159,7 +152,6 @@ Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 	    .detail("FooterSize", FOOTER_BYTE_SIZE)
 	    .detail("PaddingSize", paddingBytes);
 
-	validateGet(this, ret.toString());
-	return serializedCheckpoint2;
-	// return ret;
+	// return serializedCheckpoint2;
+	return ret;
 }
