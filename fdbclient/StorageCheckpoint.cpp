@@ -64,6 +64,7 @@ static std::unordered_map<const CheckpointMetaData*, std::string> fooBarMap;
  */
 
 void CheckpointMetaData::setSerializedCheckpoint(Standalone<StringRef> checkpoint) {
+	serializedCheckpoint2 = checkpoint;
 	fooBarMap[this] = checkpoint.toString();
 	const bool addPadding = g_network->isSimulated();
 	if (!addPadding) {
@@ -118,7 +119,8 @@ Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 	if (!addPadding) {
 		// Production mode: return checkpoint without modification
 		validateGet(this, serializedCheckpoint.toString());
-		return serializedCheckpoint;
+		return serializedCheckpoint2;
+		// return serializedCheckpoint;
 	}
 
 	// Simulation mode: extract original payload by removing padding and footer
@@ -158,5 +160,6 @@ Standalone<StringRef> CheckpointMetaData::getSerializedCheckpoint() const {
 	    .detail("PaddingSize", paddingBytes);
 
 	validateGet(this, ret.toString());
-	return ret;
+	return serializedCheckpoint2;
+	// return ret;
 }

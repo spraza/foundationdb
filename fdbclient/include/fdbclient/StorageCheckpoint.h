@@ -60,6 +60,7 @@ struct CheckpointMetaData {
 
 	// A serialized metadata associated with format, this data can be understood by the corresponding KVS.
 	Standalone<StringRef> serializedCheckpoint;
+	Standalone<StringRef> serializedCheckpoint2;
 
 	Optional<UID> actionId; // Unique ID defined by the application.
 
