@@ -45,7 +45,7 @@ void ClientKnobs::initialize(Randomize randomize) {
 	init( FAILURE_MIN_DELAY,                       4.0 ); if( randomize && BUGGIFY ) FAILURE_MIN_DELAY = 1.0;
 	init( RECOVERY_DELAY_START_GENERATION,          70 );
 	init( RECOVERY_DELAY_SECONDS_PER_GENERATION,  60.0 );
-	init( MAX_GENERATIONS,                         100 );
+	init( MAX_GENERATIONS,                         20 );
 	init( MAX_GENERATIONS_OVERRIDE,                  0 );
 	init( MAX_GENERATIONS_SIM,                      50 ); //Disable network connections after this many generations in simulation, should be less than RECOVERY_DELAY_START_GENERATION
 

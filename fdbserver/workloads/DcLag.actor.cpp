@@ -84,7 +84,7 @@ struct DcLagWorkload : TestWorkload {
 		// Find all primary satellite tlogs
 		std::vector<NetworkAddress> logs; // all primary satellite logs
 		for (const auto& tlogset : dbInfo->get().logSystemConfig.tLogs) {
-			if (!tlogset.isLocal || tlogset.locality != tagLocalitySatellite)
+			if (!tlogset.isLocal)
 				continue;
 			for (const auto& log : tlogset.tLogs) {
 				const NetworkAddress& addr = log.interf().address();
@@ -101,8 +101,8 @@ struct DcLagWorkload : TestWorkload {
 		for (const auto& ip : ips) {
 			if (tlog != ip) {
 				// Clog TLogReply messages, but allow peek/pop requests
-				// g_simulator->clogPair(ip, tlog, seconds);
-				g_simulator->clogPair(tlog, ip, seconds);
+				g_simulator->disconnectPair(ip, tlog, seconds);
+				g_simulator->disconnectPair(tlog, ip, seconds);
 				cloggedPairs.emplace_back(tlog, ip);
 			}
 		}
@@ -112,7 +112,8 @@ struct DcLagWorkload : TestWorkload {
 	void unclogAll() {
 		// unclog previously clogged connections
 		for (const auto& pair : cloggedPairs) {
-			g_simulator->unclogPair(pair.first, pair.second);
+			g_simulator->reconnectPair(pair.second, pair.first);
+			g_simulator->reconnectPair(pair.first, pair.second);
 		}
 		cloggedPairs.clear();
 	}
@@ -162,27 +163,11 @@ struct DcLagWorkload : TestWorkload {
 			return Void(); // skip the test if no satellite found
 		}
 
-		state Future<Optional<double>> status = Never();
-		state bool lagged = false;
-		loop choose {
-			when(wait(delay(5.0))) {
-				// Fetch DC lag every 5s
-				status = fetchDatacenterLag(cx);
-			}
-			when(Optional<double> lag = wait(status)) {
-				if (lag.present() && lag.get() >= SERVER_KNOBS->LOG_ROUTER_PEEK_SWITCH_DC_TIME - 10.0) {
-					// Detect DC Lag happened before Log router switch DC reactions
-					lagged = true;
-					TraceEvent("DcLagDetected");
-				}
-				if (lagged && lag.present() && lag.get() < 5.0) {
-					TraceEvent("DcLagRecovered");
-					self->unclogAll();
-					return Void();
-				}
-				status = Never();
-			}
-		}
+		wait(delay(self->testDuration));
+
+		self->unclogAll();
+
+		return Void();
 	}
 };
 
