@@ -32,7 +32,7 @@ struct SlowTaskWorkload : TestWorkload {
 	SlowTaskWorkload(WorkloadContext const& wcx) : TestWorkload(wcx) {}
 
 	Future<Void> start(Database const& cx) override {
-		setupRunLoopProfiler();
+		// setupRunLoopProfiler();
 		return go();
 	}
 
@@ -41,41 +41,41 @@ struct SlowTaskWorkload : TestWorkload {
 	void getMetrics(std::vector<PerfMetric>& m) override {}
 
 	ACTOR static Future<Void> go() {
-		wait(delay(1));
-		int64_t phc = dl_iterate_phdr_calls;
-		int64_t startProfilesDisabled = getNumProfilesDisabled();
-		int64_t startProfilesOverflowed = getNumProfilesOverflowed();
-		int64_t startProfilesCaptured = getNumProfilesCaptured();
-		int64_t exc = 0;
-		fprintf(stderr, "Slow task starting\n");
-		for (int i = 0; i < 10; i++) {
-			fprintf(stderr, "  %d\n", i);
-			double end = timer() + 1;
-			while (timer() < end) {
-				do_slow_exception_thing(&exc);
-			}
-		}
-		fmt::print(stderr,
-		           "Slow task complete: {0} exceptions; {1} calls to dl_iterate_phdr, {2}"
-		           " profiles disabled, {3} profiles overflowed, {4} profiles captured\n",
-		           exc,
-		           dl_iterate_phdr_calls - phc,
-		           getNumProfilesDisabled() - startProfilesDisabled,
-		           getNumProfilesOverflowed() - startProfilesOverflowed,
-		           getNumProfilesCaptured() - startProfilesCaptured);
+		// wait(delay(1));
+		// int64_t phc = dl_iterate_phdr_calls;
+		// int64_t startProfilesDisabled = getNumProfilesDisabled();
+		// int64_t startProfilesOverflowed = getNumProfilesOverflowed();
+		// int64_t startProfilesCaptured = getNumProfilesCaptured();
+		// int64_t exc = 0;
+		// fprintf(stderr, "Slow task starting\n");
+		// for (int i = 0; i < 10; i++) {
+		// 	fprintf(stderr, "  %d\n", i);
+		// 	double end = timer() + 1;
+		// 	while (timer() < end) {
+		// 		do_slow_exception_thing(&exc);
+		// 	}
+		// }
+		// fmt::print(stderr,
+		//            "Slow task complete: {0} exceptions; {1} calls to dl_iterate_phdr, {2}"
+		//            " profiles disabled, {3} profiles overflowed, {4} profiles captured\n",
+		//            exc,
+		//            dl_iterate_phdr_calls - phc,
+		//            getNumProfilesDisabled() - startProfilesDisabled,
+		//            getNumProfilesOverflowed() - startProfilesOverflowed,
+		//            getNumProfilesCaptured() - startProfilesCaptured);
 
 		return Void();
 	}
 
-	static void do_slow_exception_thing(int64_t* exc_count) {
-		// Has to be a non-actor function so that actual exception unwinding occurs
-		for (int j = 0; j < 1000; j++)
-			try {
-				throw success();
-			} catch (Error&) {
-				++*exc_count;
-			}
-	}
+	// static void do_slow_exception_thing(int64_t* exc_count) {
+	// 	// Has to be a non-actor function so that actual exception unwinding occurs
+	// 	for (int j = 0; j < 1000; j++)
+	// 		try {
+	// 			throw success();
+	// 		} catch (Error&) {
+	// 			++*exc_count;
+	// 		}
+	// }
 };
 
 WorkloadFactory<SlowTaskWorkload> SlowTaskWorkloadFactory;
