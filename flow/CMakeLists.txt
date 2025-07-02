@@ -14,7 +14,6 @@ endif()
 # Remove files with `main` defined so we can create a link test executable.
 list(REMOVE_ITEM FLOW_SRCS LinkTest.cpp)
 list(REMOVE_ITEM FLOW_SRCS TLSTest.cpp)
-list(REMOVE_ITEM FLOW_SRCS MkCertCli.cpp)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
     list(APPEND FLOW_SRCS aarch64/memcmp.S aarch64/memcpy.S)
@@ -152,13 +151,6 @@ target_compile_definitions(flow_sampling PRIVATE -DENABLE_SAMPLING)
 if(WIN32)
     add_dependencies(flow_sampling_actors flow_actors)
 endif()
-
-if(OPEN_FOR_IDE)
-    add_library(mkcert OBJECT MkCertCli.cpp)
-else()
-    add_executable(mkcert MkCertCli.cpp)
-endif()
-target_link_libraries(mkcert PUBLIC flow)
 
 set(FLOW_BINARY_DIR "${CMAKE_BINARY_DIR}/flow")
 if (WITH_SWIFT)
