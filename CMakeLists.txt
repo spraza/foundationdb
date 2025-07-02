@@ -29,6 +29,14 @@ project(foundationdb
   HOMEPAGE_URL "http://www.foundationdb.org/"
   LANGUAGES C CXX ASM Swift)
 
+##### Jemalloc
+if(USE_JEMALLOC)
+    # Make the jemalloc headers emit plain mallctl/malloc_stats_print
+    add_compile_definitions(USE_JEMALLOC JEMALLOC_NO_RENAME)
+    # Make every target we build link jemalloc **last**, so static symbols resolve.
+    link_libraries(jemalloc)
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 message (STATUS "${PROJECT_SOURCE_DIR} ${PROJECT_BINARY_DIR}")

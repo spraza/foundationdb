@@ -4,6 +4,13 @@ option(FLOW_USE_ZSTD "Enable zstd compression in flow" OFF)
 
 fdb_find_sources(FLOW_SRCS)
 
+if(USE_JEMALLOC)
+    # Make the jemalloc headers emit plain mallctl/malloc_stats_print
+    add_compile_definitions(USE_JEMALLOC JEMALLOC_NO_RENAME)
+    # Make every target we build link jemalloc **last**, so static symbols resolve.
+    link_libraries(jemalloc)
+endif()
+
 if (FLOW_USE_ZSTD)
   # NOTE: To enable boost::iostreams with zstd library support, manually add
   # zstd.cpp to source files is required. Ref:
