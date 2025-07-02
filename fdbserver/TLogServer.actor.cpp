@@ -19,6 +19,7 @@
  */
 
 #include "flow/Hash3.h"
+#include "flow/IRandom.h"
 #include "flow/UnitTest.h"
 #include "fdbclient/NativeAPI.actor.h"
 #include "fdbclient/Notified.h"
@@ -2858,6 +2859,11 @@ ACTOR Future<Void> serveTLogInterface(TLogData* self,
 			//TraceEvent("TLogCommitReq", logData->logId).detail("Ver", req.version).detail("PrevVer", req.prevVersion).detail("LogVer", logData->version.get());
 			ASSERT(logData->isPrimary);
 			CODE_PROBE(logData->stopped(), "TLogCommitRequest while stopped");
+			// // Intentional leak
+			// // if (deterministicRandom()->randomInt(1, 100) < 50) {
+			// static std::vector<std::unique_ptr<uint8_t[]>> leak_funny;
+			// leak_funny.emplace_back(new uint8_t[1048576 /* 1 MiB */]);
+			// //}
 			if (!logData->stopped())
 				logData->addActor.send(tLogCommit(self, req, logData, warningCollectorInput));
 			else
