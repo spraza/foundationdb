@@ -15,7 +15,6 @@ endif()
 list(REMOVE_ITEM FLOW_SRCS LinkTest.cpp)
 list(REMOVE_ITEM FLOW_SRCS TLSTest.cpp)
 list(REMOVE_ITEM FLOW_SRCS MkCertCli.cpp)
-list(REMOVE_ITEM FLOW_SRCS acac.cpp)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
     list(APPEND FLOW_SRCS aarch64/memcmp.S aarch64/memcpy.S)
@@ -148,14 +147,6 @@ foreach(ft flow flow_sampling flowlinktest)
     find_package(Coroutines COMPONENTS Experimental Final REQUIRED)
     target_link_libraries(${ft} PUBLIC std::coroutines)
 endforeach()
-
-if(OPEN_FOR_IDE)
-	# AcAC requires actor transpiler
-    add_library(acac OBJECT acac.cpp)
-else()
-    add_executable(acac acac.cpp)
-endif()
-target_link_libraries(acac PUBLIC flow boost_target_program_options)
 
 target_compile_definitions(flow_sampling PRIVATE -DENABLE_SAMPLING)
 if(WIN32)
