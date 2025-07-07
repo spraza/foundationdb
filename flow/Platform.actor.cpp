@@ -60,6 +60,10 @@
 #include "flow/UnitTest.h"
 #include "flow/Util.h"
 
+#ifdef USE_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#endif
+
 // boost uses either std::array or boost::asio::detail::array to store the IPv6 Addresses.
 // Enforce the format of IPAddressStore, which is declared in IPAddress.h, is using the same type
 // to boost.
@@ -3427,6 +3431,12 @@ extern "C" void flushAndExit(int exitCode) {
 	// to the crashAndDie call below.
 	TerminateProcess(GetCurrentProcess(), exitCode);
 #else
+#ifdef USE_JEMALLOC
+	// malloc_stats_print(nullptr, nullptr, nullptr);
+	if (exitCode != FDB_EXIT_SUCCESS) {
+		mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
+	}
+#endif
 	// Send a signal to allow the Kernel to generate a coredump for this process.
 	// See: https://man7.org/linux/man-pages/man5/core.5.html
 	// The abort method will send a SIGABRT, which causes the kernel to collect a coredump.

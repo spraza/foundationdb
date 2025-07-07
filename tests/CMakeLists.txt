@@ -117,7 +117,6 @@ if(WITH_PYTHON)
     add_fdb_test(TEST_FILES SimpleExternalTest.txt IGNORE)
   endif()
 
-  add_fdb_test(TEST_FILES noSim/SlowTask.txt IGNORE)
   add_fdb_test(TEST_FILES SpecificUnitTest.txt IGNORE)
   add_fdb_test(TEST_FILES StorageMetricsSampleTests.txt IGNORE)
   add_fdb_test(TEST_FILES WorkerTests.txt IGNORE)
