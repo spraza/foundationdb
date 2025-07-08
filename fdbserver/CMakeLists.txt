@@ -152,9 +152,9 @@ else()
   target_link_libraries(fdbserver PRIVATE fdbclient metacluster sqlite)
 endif()
 
-if(USE_JEMALLOC)
-  target_include_directories(fdbserver INTERFACE $<TARGET_PROPERTY:jemalloc::jemalloc, INTERFACE_INCLUDE_DIRECTORIES>)
-  target_link_libraries(fdbserver PRIVATE jemalloc::jemalloc)
+if(USE_JEMALLOC)  
+  target_include_directories(fdbserver INTERFACE $<TARGET_PROPERTY:jemalloc_pic::jemalloc_pic, INTERFACE_INCLUDE_DIRECTORIES>)  
+  target_link_libraries(fdbserver PRIVATE jemalloc_pic::jemalloc_pic)
 endif()
 
 target_link_libraries(fdbserver PRIVATE toml11_target rapidjson)
