@@ -185,6 +185,10 @@ static_assert(std::is_same<boost::asio::ip::address_v6::bytes_type, std::array<u
 
 #endif // __unixish__
 
+#ifdef USE_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#endif
+
 #include "flow/actorcompiler.h" // This must be the last #include.
 
 std::string removeWhitespace(const std::string& t) {
@@ -3427,6 +3431,12 @@ extern "C" void flushAndExit(int exitCode) {
 	// to the crashAndDie call below.
 	TerminateProcess(GetCurrentProcess(), exitCode);
 #else
+#ifdef USE_JEMALLOC
+	// malloc_stats_print(nullptr, nullptr, nullptr);
+	if (exitCode != FDB_EXIT_SUCCESS) {
+		mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
+	}
+#endif
 	// Send a signal to allow the Kernel to generate a coredump for this process.
 	// See: https://man7.org/linux/man-pages/man5/core.5.html
 	// The abort method will send a SIGABRT, which causes the kernel to collect a coredump.

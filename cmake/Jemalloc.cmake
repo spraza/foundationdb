@@ -14,8 +14,8 @@ ExternalProject_add(Jemalloc_project
   URL_HASH SHA256=2db82d1e7119df3e71b7640219b6dfe84789bc0537983c3b7ac4f7189aecfeaa
   BUILD_BYPRODUCTS "${JEMALLOC_DIR}/include/jemalloc/jemalloc.h"
   "${JEMALLOC_DIR}/lib/libjemalloc.a"
-  "${JEMALLOC_DIR}/lib/libjemalloc_pic.a"
-  CONFIGURE_COMMAND CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} ./configure --prefix=${JEMALLOC_DIR} --enable-static --disable-cxx --enable-prof
+  "${JEMALLOC_DIR}/lib/libjemalloc_pic.a"  
+  CONFIGURE_COMMAND CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} ./configure --prefix=${JEMALLOC_DIR} --enable-static --disable-cxx --enable-prof --enable-stats --with-pic --with-malloc-conf=prof:true,prof_prefix:/var/tmp/fdbserver
   BUILD_IN_SOURCE ON
   BUILD_COMMAND make
   INSTALL_DIR "${JEMALLOC_DIR}"
