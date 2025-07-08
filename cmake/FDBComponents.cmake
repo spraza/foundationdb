@@ -253,3 +253,7 @@ if(FORCE_ALL_COMPONENTS)
     message(FATAL_ERROR "FORCE_ALL_COMPONENTS is set but not all dependencies could be found")
   endif()
 endif()
+
+option(USE_JEMALLOC "Enable jemalloc memory allocator" OFF)
+option(USE_CUSTOM_JEMALLOC "Use custom built jemalloc instead of system jemalloc" ON)
+
