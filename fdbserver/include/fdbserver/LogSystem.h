@@ -827,10 +827,6 @@ struct LogPushData : NonCopyable {
 	// getAllMessages() and is used before writing any other mutations.
 	void setMutations(uint32_t totalMutations, VectorRef<StringRef> mutations);
 
-	Optional<Tag> savedRandomRouterTag;
-	void storeRandomRouterTag() { savedRandomRouterTag = logSystem->getRandomRouterTag(); }
-	int getLogRouterTags() { return logSystem->getLogRouterTags(); }
-
 private:
 	Reference<ILogSystem> logSystem;
 	std::vector<Tag> next_message_tags;
@@ -853,17 +849,13 @@ private:
 	// true on a successful write, and false if the location has already been
 	// written.
 	bool writeTransactionInfo(int location, uint32_t subseq);
-
-	Tag chooseRouterTag() {
-		return savedRandomRouterTag.present() ? savedRandomRouterTag.get() : logSystem->getRandomRouterTag();
-	}
 };
 
 template <class T>
 void LogPushData::writeTypedMessage(T const& item, bool metadataMessage, bool allLocations) {
 	prev_tags.clear();
 	if (logSystem->hasRemoteLogs()) {
-		prev_tags.push_back(chooseRouterTag());
+		prev_tags.push_back(logSystem->getRandomRouterTag());
 	}
 	for (auto& tag : next_message_tags) {
 		prev_tags.push_back(tag);

@@ -865,11 +865,6 @@ std::set<Tag> CommitBatchContext::getWrittenTagsPreResolution() {
 		}
 	}
 
-	if (toCommit.getLogRouterTags()) {
-		toCommit.storeRandomRouterTag();
-		transactionTags.insert(toCommit.savedRandomRouterTag.get());
-	}
-
 	return transactionTags;
 }
 
