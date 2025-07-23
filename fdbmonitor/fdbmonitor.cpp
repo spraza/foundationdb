@@ -471,9 +471,13 @@ public:
 	Command(const CSimpleIni& ini, std::string _section, ProcessID id, fdb_fd_set fds, int* maxfd)
 	  : fds(fds), argv(nullptr), section(_section), fork_retry_time(-1), quiet(false), delete_envvars(nullptr),
 	    deconfigured(false), kill_on_configuration_change(true), memory_rss(0) {
-		char _ssection[strlen(section.c_str()) + 22];
-		snprintf(_ssection, strlen(section.c_str()) + 22, "%s", id.c_str());
-		ssection = _ssection;
+		std::vector<char> _ssection(strlen(section.c_str()) + 22);
+		snprintf(_ssection.data(), _ssection.size(), "%s", id.c_str());
+		ssection = _ssection.data();
+
+		// char _ssection[strlen(section.c_str()) + 22];
+		// snprintf(_ssection, strlen(section.c_str()) + 22, "%s", id.c_str());
+		// ssection = _ssection;
 
 		for (auto p : pipes) {
 			if ((pipe(p) == 0)) {
