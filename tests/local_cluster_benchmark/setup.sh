@@ -28,6 +28,21 @@ EOF
   exit 1
 }
 
+wait_full_replication() {
+  local cluster_file=$1   # path to .cluster
+  local fdbcli=$2         # fdbcli binary
+
+  echo "Waiting until all priority>=0 regions are fully replicated …"
+  while true; do
+    if "$fdbcli" -C "$cluster_file" --exec 'status json' | grep -q '\"full_replication\" : true'; then
+      echo "✓ Full replication reached"
+      break
+    fi
+    # echo "still migrating shards"
+    sleep 2
+  done
+}
+
 [[ $# -eq 0 ]] && usage
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -189,41 +204,13 @@ echo "(END) Coordinators auto …"
 
 echo "(BEGIN) HA configure …"
 "$FDB_CLI" -C "$CLUSTER" --exec "fileconfigure $REGIONS_JSON"
-echo "Waiting until all priority>=0 regions are fully replicated …"
-while true; do
-  if "$FDB_CLI" -C "$CLUSTER" --exec 'status details' | grep -q 'Healthy'; then
-    echo "✓ Full replication reached"
-    break
-  fi
-  echo "still migrating shards"
-  sleep 5
-done
+wait_full_replication "$CLUSTER" "$FDB_CLI"
 "$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS"
-echo "(END) HA configure …"
-
-echo "(BEGIN) HA 2 configure …"
-echo "Waiting until all priority>=0 regions are fully replicated …"
-while true; do
-  if "$FDB_CLI" -C "$CLUSTER" --exec 'status details' | grep -q 'Healthy'; then
-    echo "✓ Full replication reached"
-    break
-  fi
-  echo "still migrating shards"
-  sleep 5
-done
-# TODO: ERROR: When usable_regions > 1, All regions with priority >= 0 must be fully replicated before changing the configuration
+wait_full_replication "$CLUSTER" "$FDB_CLI"
 "$FDB_CLI" -C "$CLUSTER" --exec "fileconfigure $REGIONS_2_JSON"
-echo "Waiting until all priority>=0 regions are fully replicated …"
-while true; do
-  if "$FDB_CLI" -C "$CLUSTER" --exec 'status details' | grep -q 'Healthy'; then
-    echo "✓ Full replication reached"
-    break
-  fi
-  echo "still migrating shards"
-  sleep 5
-done
-"$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS"
-echo "(END) HA 2 configure …"
+# wait_full_replication "$CLUSTER" "$FDB_CLI"
+#"$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS"
+echo "(END) HA configure …"
 
 echo "(BEGIN) Ensuring cluster is available …"
 until "$FDB_CLI" -C "$CLUSTER" --exec 'status minimal' | grep -q 'available'; do
