@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """
 measure.py – interactive “top”‑style monitor for a local FoundationDB cluster
- ▸ Header: generation + recovery state
- ▸ Table : DC ▸ addr ▸ roles ▸ CPU % ▸ RSS MB
- Keys: ↑/↓  or  Ctrl‑K / Ctrl‑J   – move highlight   ·   q – quit
 
+▸ Header shows generation + recovery state
+▸ Table: DC ▸ addr ▸ roles ▸ CPU % ▸ RSS MB
+▸ Keys:  ↑ / ↓   or   Ctrl‑K / Ctrl‑J   – move highlight      q – quit
 
-usage: 
-    $ python3 measure.py --cluster_file /tmp/fdblocal/conf/fdb.cluster --fdb_cli ~/cnd_build_output/bin/fdbcli
-
-todos:
-    - bug: scroll to a row down, then upon refresh, goes to top row automatically
+Sorting:  --sort {dc,addr,cpu,rss}   (default addr)
+Example : python3 measure.py --cluster_file /tmp/fdblocal/conf/fdb.cluster \
+                             --fdb_cli      ~/cnd_build_output/bin/fdbcli     \
+                             --sort cpu
 """
-
 from __future__ import annotations
 import argparse, json, shlex, subprocess
 from pathlib import Path
@@ -36,22 +34,22 @@ def port(addr: str) -> int:                       # handles :tls suffix
     raise ValueError
 
 def pid_map() -> Dict[int, int]:
-    out: Dict[int, int] = {}
+    mp: Dict[int, int] = {}
     for p in psutil.process_iter(["pid", "name"]):
         if p.info["name"] != "fdbserver":
             continue
         for c in p.net_connections(kind="inet"):
             if c.status == psutil.CONN_LISTEN:
-                out[c.laddr.port] = p.pid
-    return out
+                mp[c.laddr.port] = p.pid
+    return mp
 
-def scroll_row(tbl: DataTable, row: int) -> None:   # work on all Textual versions
+def scroll_row(tbl: DataTable, row: int) -> None:   # support old Textual
     if hasattr(tbl, "scroll_to_row"):
         tbl.scroll_to_row(row)
     elif hasattr(tbl, "scroll_to_cell"):
         tbl.scroll_to_cell(row, 0)
 
-# ── TUI app ────────────────────────────────────────────────────────────
+# ── TUI application ────────────────────────────────────────────────────
 class FDBTop(App):
     CSS = """
     Screen   { layout: vertical; }
@@ -66,12 +64,13 @@ class FDBTop(App):
         ("ctrl+j", "row_down", ""),
     ]
 
-    def __init__(self, cluster: Path, fdbcli: Path, interval: float):
+    def __init__(self, cluster: Path, fdbcli: Path, interval: float, sort_key: str):
         super().__init__()
         self.cluster, self.fdbcli, self.interval = cluster, fdbcli, interval
+        self.sort_key = sort_key
         self.header: Static
         self.table:  DataTable
-        self.row              = 0
+        self.row = 0
         self.rows: List[Tuple[str, ...]] = []
         self.sel_port: int | None = None
         self.proc_cache: Dict[int, psutil.Process] = {}
@@ -87,10 +86,9 @@ class FDBTop(App):
         yield self.table
 
     async def on_mount(self):
-        # run _update() every self.interval seconds
         self.set_interval(self.interval, self._update)
 
-    # periodic update loop  (renamed to avoid clashing with App.refresh)
+    # update loop
     async def _update(self):
         stat = status_json(self.cluster, self.fdbcli)
         rec  = stat["cluster"]["recovery_state"]
@@ -98,7 +96,7 @@ class FDBTop(App):
             f"FoundationDB – generation {rec['active_generations']}, {rec['name']}"
         )
 
-        if self.tick % 5 == 0:                # refresh port→pid map ~10 s
+        if self.tick % 5 == 0:                     # refresh port→pid every ~10 s
             self.port_pid = pid_map()
         self.tick += 1
         port_pid = self.port_pid
@@ -113,8 +111,8 @@ class FDBTop(App):
             except ValueError:
                 continue
 
-            pid = port_pid.get(pnum)
-            dc  = info["locality"].get("dcid", "?")
+            pid   = port_pid.get(pnum)
+            dc    = info["locality"].get("dcid", "?")
             roles = ",".join(r["role"] for r in info["roles"])
 
             if pid:
@@ -126,7 +124,14 @@ class FDBTop(App):
 
             rows.append((dc, addr, roles, cpu_s, rss_s, pnum))
 
-        rows.sort(key=lambda r: r[1])
+        # sort
+        key_map = {
+            "dc"  : lambda r: r[0],
+            "addr": lambda r: r[1],
+            "cpu" : lambda r: float(r[3] if r[3] != "n/a" else -1.0),
+            "rss" : lambda r: float(r[4] if r[4] != "n/a" else -1.0),
+        }
+        rows.sort(key=key_map[self.sort_key], reverse=self.sort_key in {"cpu", "rss"})
 
         # keep highlight on same port if still present
         if self.sel_port is not None:
@@ -144,7 +149,7 @@ class FDBTop(App):
         scroll_row(self.table, self.row)
         self.rows = rows
 
-    # key actions
+    # key handlers
     def action_row_up(self):
         if self.row > 0:
             self.row -= 1
@@ -159,14 +164,18 @@ class FDBTop(App):
             self.table.cursor_coordinate = (self.row, 0)
             scroll_row(self.table, self.row)
 
-# ── CLI glue ────────────────────────────────────────────────────────────
+# CLI
 def parse_args():
     p = argparse.ArgumentParser(description="Interactive FDB process monitor")
     p.add_argument("--cluster_file", required=True, type=Path)
     p.add_argument("--fdb_cli",     required=True, type=Path)
     p.add_argument("--interval",    default=2.0, type=float)
+    p.add_argument(
+        "--sort", choices=["dc", "addr", "cpu", "rss"], default="addr",
+        help="column to sort by (default addr)",
+    )
     return p.parse_args()
 
 if __name__ == "__main__":
     a = parse_args()
-    FDBTop(a.cluster_file, a.fdb_cli, a.interval).run()
+    FDBTop(a.cluster_file, a.fdb_cli, a.interval, a.sort).run()
