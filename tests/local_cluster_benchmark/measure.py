@@ -23,6 +23,9 @@ from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
+proc_cache: dict[int, psutil.Process] = {}
+cpu_cache : dict[int, float]          = {}
+
 ################################################################################
 def run(cmd: str) -> str:
     """Run shell cmd, return stdout (raise on non‑zero)."""
@@ -58,14 +61,14 @@ def map_port_to_pid() -> dict[int, int]:
     return mapping
 
 ################################################################################
-def make_table(rows: list[tuple]):
-    tbl = Table(title="FoundationDB local cluster – live view", expand=True)
+def make_table(rows: list[tuple], gen: int, rec_name: str):    
+    title = f"FoundationDB – generation {gen}, {rec_name}"
+    tbl = Table(title=title, expand=True)
     tbl.add_column("DC")
     tbl.add_column("Addr")
     tbl.add_column("Roles")
-    tbl.add_column("Gen", justify="right")
-    tbl.add_column("CPU%", justify="right")
-    tbl.add_column("RSS MB", justify="right")
+    tbl.add_column("CPU%")
+    tbl.add_column("RSS MB")
     for r in rows:
         tbl.add_row(*r)
     return tbl
@@ -96,6 +99,9 @@ def main():
         while True:
             try:
                 status = get_status_json(args.cluster_file, args.fdb_cli)
+                recovery = status["cluster"]["recovery_state"]
+                active_gen = recovery["active_generations"]
+                rec_name   = recovery["name"]          # e.g. fully_recovered                
             except subprocess.CalledProcessError as e:
                 live.update(f"[red]fdbcli failed:\n{e.output}")
                 time.sleep(args.interval)
@@ -118,20 +124,26 @@ def main():
 
                 pid = port_pid.get(port)
                 dc    = info["locality"].get("dcid", "?")
-                roles = ",".join(sorted(r["role"] for r in info["roles"]))
-                gen   = str(info.get("active_generations", "?"))
+                roles = ",".join(sorted(r["role"] for r in info["roles"]))                
 
                 if pid:
-                    p   = psutil.Process(pid)
-                    cpu = f"{p.cpu_percent(None):4.1f}"
+                    # reuse same Process object to get a proper delta sample
+                    p = proc_cache.get(pid)
+                    if p is None:
+                        p = proc_cache[pid] = psutil.Process(pid)
+                        p.cpu_percent(None)          # prime, returns 0.0
+                        pct = 0.0                    # first cycle shows 0 %
+                    else:
+                        pct = p.cpu_percent(None)    # non‑blocking delta over refresh_interval
+                    cpu = f"{pct:4.1f}"
                     rss = f"{p.memory_info().rss / (1024**2):6.1f}"
                 else:
                     cpu = rss = "n/a"
 
-                rows.append((dc, addr, roles, gen, cpu, rss))
+                rows.append((dc, addr, roles, cpu, rss))
 
             rows.sort(key=lambda r: r[1])  # sort by address            
-            live.update(make_table(rows))
+            live.update(make_table(rows, active_gen, rec_name))
             time.sleep(args.interval)
 
 ################################################################################
