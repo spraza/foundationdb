@@ -1,151 +1,143 @@
 #!/usr/bin/env python3
 """
-measure.py – live “top”‑style view of FoundationDB processes
+measure.py – interactive “top”‑style monitor for a local FoundationDB cluster
 
-  • app  : shows   active_generations  (status json)
-  • system: shows  CPU % and RSS MB    (psutil)
+▸ Cluster headline: generation + recovery state
+▸ Per‑process: DC ▸ addr ▸ roles ▸ CPU % ▸ RSS MB
+▸ Keys:  ↑ / ↓ or Ctrl‑P / Ctrl‑N  – move highlight
+          q                        – quit
 
-Grouping key:  dcid / ip:port / roles
-
-pre-reqs (once): 
-    $ pip3 install psutil rich
-
-usage:
-    $ python3 measure.py /tmp/fdblocal/conf/fdb.cluster
+prereqs:   pip install psutil rich textual
+usage:     python3 measure.py --cluster_file /tmp/fdblocal/conf/fdb.cluster \
+                              --fdb_cli      ~/cnd_build_output/bin/fdbcli
 """
-
-import argparse, json, os, re, shlex, subprocess, time
-from collections import defaultdict
+import argparse, json, shlex, subprocess, time
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 import psutil
-from rich.console import Console
-from rich.live import Live
 from rich.table import Table
+from textual.app import App, ComposeResult
+from textual.widgets import DataTable, Static
 
-proc_cache: dict[int, psutil.Process] = {}
-cpu_cache : dict[int, float]          = {}
-
-################################################################################
+# ------------------------------ helpers ------------------------------------ #
 def run(cmd: str) -> str:
-    """Run shell cmd, return stdout (raise on non‑zero)."""
     return subprocess.check_output(shlex.split(cmd), text=True)
 
-def get_status_json(cluster_file: Path, fdbcli: str) -> dict:
-    out = run(f'{fdbcli} -C {cluster_file} --exec "status json"')
-    return json.loads(out)
+def status_json(cluster: Path, fdbcli: Path) -> dict:
+    return json.loads(run(f"{fdbcli} -C {cluster} --exec 'status json'"))
 
-def port_from_address(addr: str) -> int:
-    """Extract numeric port from 'IP:PORT' or 'IP:PORT:tls'."""
+def port(addr: str) -> int:                    # handles :tls suffix
     for part in reversed(addr.split(":")):
         if part.isdigit():
             return int(part)
-    raise ValueError(f"no port in {addr}")
+    raise ValueError
 
-def map_port_to_pid() -> dict[int, int]:
-    """
-    Return {LISTEN_port: pid} for every local fdbserver.
-    Works on all psutil versions (no attrs= trick).
-    """
-    mapping = {}
-    for p in psutil.process_iter(attrs=["pid", "name"]):
+def pid_map() -> Dict[int, int]:
+    mp: Dict[int, int] = {}
+    for p in psutil.process_iter(["pid", "name"]):
         if p.info["name"] != "fdbserver":
             continue
-        try:            
-            conns = p.net_connections(kind="inet")
-        except (psutil.AccessDenied, psutil.ZombieProcess):
-            continue
-        for c in conns:
+        for c in p.net_connections(kind="inet"):
             if c.status == psutil.CONN_LISTEN:
-                mapping[c.laddr.port] = p.pid
-    return mapping
+                mp[c.laddr.port] = p.pid
+    return mp
 
-################################################################################
-def make_table(rows: list[tuple], gen: int, rec_name: str):    
-    title = f"FoundationDB – generation {gen}, {rec_name}"
-    tbl = Table(title=title, expand=True)
-    tbl.add_column("DC")
-    tbl.add_column("Addr")
-    tbl.add_column("Roles")
-    tbl.add_column("CPU%")
-    tbl.add_column("RSS MB")
-    for r in rows:
-        tbl.add_row(*r)
-    return tbl
+# ------------------------------ TUI class ---------------------------------- #
+class FDBTop(App):
+    CSS = """
+    Screen { layout: vertical; }
+    Static { height: 1; content-align: center middle; }
+    DataTable { height: 1fr; width: 100%; }
+    """
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Live CPU/RSS + active_generations monitor for a local FDB cluster",
-        prog="measure.py",
-    )
-    parser.add_argument(
-        "--cluster_file", required=True, type=Path, metavar="PATH",
-        help="path to fdb.cluster (e.g. /tmp/fdblocal/conf/fdb.cluster)",
-    )
-    parser.add_argument(
-        "--fdb_cli", required=True, metavar="BIN",
-        help="path to fdbcli binary (e.g. ~/cnd_build_output/bin/fdbcli)",
-    )
-    parser.add_argument(
-        "--interval", default=2.0, type=float, metavar="SEC",
-        help="refresh period (default: 2 s)",
-    )
-    return parser.parse_args()    
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("up", "up", "Prev"),
+        ("down", "down", "Next"),
+        ("ctrl+p", "up", None),
+        ("ctrl+n", "down", None),
+    ]
 
-def main():
-    args = parse_args()
-    console = Console()
-    with Live(console=console, refresh_per_second=4) as live:
-        while True:
-            try:
-                status = get_status_json(args.cluster_file, args.fdb_cli)
-                recovery = status["cluster"]["recovery_state"]
-                active_gen = recovery["active_generations"]
-                rec_name   = recovery["name"]          # e.g. fully_recovered                
-            except subprocess.CalledProcessError as e:
-                live.update(f"[red]fdbcli failed:\n{e.output}")
-                time.sleep(args.interval)
+    def __init__(self, cl_file: Path, fdbcli: Path, interval: float):
+        super().__init__()
+        self.cluster, self.fdbcli, self.interval = cl_file, fdbcli, interval
+        self.table: DataTable
+        self.row = 0
+        self.proc_cache: Dict[int, psutil.Process] = {}
+
+    def compose(self) -> ComposeResult:
+        self.header = Static("")   # <- cluster title widget
+        self.table  = DataTable(zebra_stripes=True, show_header=True, show_cursor=True)
+        self.table.add_columns("DC", "Addr", "Roles", "CPU%", "RSS MB")
+        yield self.header
+        yield self.table
+
+    async def on_mount(self):
+        self.set_interval(self.interval, self.refresh_table)
+
+    async def refresh_table(self):
+        try:
+            s = status_json(self.cluster, self.fdbcli)
+        except subprocess.CalledProcessError as e:
+            self.table.title = f"[red]fdbcli error: {e.output}"
+            return
+
+        rec = s["cluster"]["recovery_state"]
+        gen, rec_name = rec["active_generations"], rec["name"]        
+        self.header.update(f"FoundationDB – generation {gen}, {rec_name}")
+
+        port_pid = pid_map()
+        rows: List[Tuple[str, ...]] = []
+
+        for key, info in s["cluster"]["processes"].items():
+            addr = info.get("address", key)
+            if ":" not in addr:
                 continue
+            try:
+                prt = port(addr)
+            except ValueError:
+                continue
+            pid = port_pid.get(prt)
+            dc   = info["locality"].get("dcid", "?")
+            roles= ",".join(r["role"] for r in info["roles"])
 
-            # build dictionaries
-            port_pid   = map_port_to_pid()
-            proc_info  = status["cluster"]["processes"]
+            if pid:
+                proc = self.proc_cache.setdefault(pid, psutil.Process(pid))
+                cpu  = proc.cpu_percent(None)      # delta since last refresh
+                rss  = proc.memory_info().rss / 2**20
+                cpu_s, rss_s = f"{cpu:4.1f}", f"{rss:6.1f}"
+            else:
+                cpu_s = rss_s = "n/a"
 
-            rows = []
-            for key, info in proc_info.items():
-                addr = info.get("address", key)     # hex‑key → use its address field
-                if ":" not in addr:                 # still no port? skip
-                    continue
+            rows.append((dc, addr, roles, cpu_s, rss_s))
 
-                try:
-                    port = port_from_address(addr)
-                except ValueError:
-                    continue
+        rows.sort(key=lambda r: r[1])
+        sel_max = len(rows) - 1
+        self.row = max(0, min(self.row, sel_max))
 
-                pid = port_pid.get(port)
-                dc    = info["locality"].get("dcid", "?")
-                roles = ",".join(sorted(r["role"] for r in info["roles"]))                
+        # redraw table
+        self.table.clear()
+        for r in rows:
+            self.table.add_row(*r)
+        self.table.cursor_coordinate = (self.row, 0)        
 
-                if pid:
-                    # reuse same Process object to get a proper delta sample
-                    p = proc_cache.get(pid)
-                    if p is None:
-                        p = proc_cache[pid] = psutil.Process(pid)
-                        p.cpu_percent(None)          # prime, returns 0.0
-                        pct = 0.0                    # first cycle shows 0 %
-                    else:
-                        pct = p.cpu_percent(None)    # non‑blocking delta over refresh_interval
-                    cpu = f"{pct:4.1f}"
-                    rss = f"{p.memory_info().rss / (1024**2):6.1f}"
-                else:
-                    cpu = rss = "n/a"
+    # ---------- key actions ----------
+    def action_up(self):
+        if self.row > 0:
+            self.row -= 1
 
-                rows.append((dc, addr, roles, cpu, rss))
+    def action_down(self):
+        self.row += 1
 
-            rows.sort(key=lambda r: r[1])  # sort by address            
-            live.update(make_table(rows, active_gen, rec_name))
-            time.sleep(args.interval)
+# --------------------------- CLI / main ------------------------------------ #
+def parse_args():
+    ap = argparse.ArgumentParser(description="Interactive FDB process monitor")
+    ap.add_argument("--cluster_file", required=True, type=Path, metavar="PATH")
+    ap.add_argument("--fdb_cli",     required=True, type=Path, metavar="BIN")
+    ap.add_argument("--interval", default=2.0, type=float, metavar="SEC")
+    return ap.parse_args()
 
-################################################################################
 if __name__ == "__main__":
-    main()
+    a = parse_args()
+    FDBTop(a.cluster_file, a.fdb_cli, a.interval).run()
