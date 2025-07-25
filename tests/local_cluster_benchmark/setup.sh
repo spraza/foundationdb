@@ -14,7 +14,9 @@
 #   --stateless     4
 #   --cluster-name  local74
 #
-set -euo pipefail
+# set -euo pipefail
+
+# usage: ~/s/f/t/local_cluster_benchmark $ ./setup.sh --fdb-monitor ~/cnd_build_output/bin/fdbmonitor --fdb-server ~/cnd_build_output/bin/fdbserver --fdb-cli ~/cnd_build_output/bin/fdbcli --base-dir /tmp/fdblocal --port-start 4500 --main-logs 4 --sat-logs 2 --main-stores 4 --stateless 4 --cluster-name prazalocal
 
 ############################  arg‑parsing  ####################################
 usage() {
@@ -73,6 +75,7 @@ datadir       = $dir
 logdir        = $BASE_DIR/logs
 class         = $klass
 locality_dcid = $dc
+locality_zoneid = ${dc}_z${p}
 EOF
 }
 
@@ -121,28 +124,28 @@ COORDS=$(printf ",127.0.0.1:%s" $(seq $PORT_START $((PORT_START+4))))
 echo "$CLUSTER_NAME:$(uuidgen | tr -d -)@${COORDS#,}" >"$CLUSTER"
 
 cat >"$REGIONS_JSON" <<JSON
-[
-  {
-    "priority": 1,
-    "satellite_redundancy_mode": "two_satellite_fast",
-    "satellite_logs": $SAT_LOGS,
-    "datacenters": [
-      { "id": "dc1",  "priority": 1, "satellite": 0 },
-      { "id": "dc1s1","priority": 2, "satellite": 1 },
-      { "id": "dc1s2","priority": 1, "satellite": 1 }
-    ]
-  },
-  {
-    "priority": 0,
-    "satellite_redundancy_mode": "two_satellite_fast",
-    "satellite_logs": $SAT_LOGS,
-    "datacenters": [
-      { "id": "dc2",  "priority": 1, "satellite": 0 },
-      { "id": "dc2s1","priority": 2, "satellite": 1 },
-      { "id": "dc2s2","priority": 1, "satellite": 1 }
-    ]
-  }
-]
+{
+  "regions": [
+    {
+      "satellite_redundancy_mode": "one_satellite_double",
+      "satellite_logs": $SAT_LOGS,
+      "datacenters": [
+        { "id": "dc1",  "priority": 1, "satellite": 0 },
+        { "id": "dc1s1","priority": -1, "satellite": 1 },
+        { "id": "dc1s2","priority": -1, "satellite": 1 }
+      ]
+    },
+    {
+      "satellite_redundancy_mode": "one_satellite_double",
+      "satellite_logs": $SAT_LOGS,
+      "datacenters": [
+        { "id": "dc2",  "priority": -1, "satellite": 0 },
+        { "id": "dc2s1","priority": -1, "satellite": 1 },
+        { "id": "dc2s2","priority": -1, "satellite": 1 }
+      ]
+    }
+  ]
+}
 JSON
 
 ############################  launch & configure  #############################
@@ -151,17 +154,35 @@ echo "Starting fdbmonitor …"
 MON_PID=$!
 
 echo "(BEGIN) Initialising database (single region) …"
-"$FDB_CLI" -C "$CLUSTER" --exec "configure new single ssd-2 logs=$MAIN_LOGS"
+"$FDB_CLI" -C "$CLUSTER" --exec "configure new triple ssd-2 logs=$MAIN_LOGS"
 echo "(END) Initialising database (single region) …"
 
-# "$FDB_CLI" -C "$CLUSTER" --exec "coordinators auto"
-# "$FDB_CLI" -C "$CLUSTER" --exec "fileconfigure $REGIONS_JSON"
-# "$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS"
+echo "(BEGIN) Coordinators auto …"
+"$FDB_CLI" -C "$CLUSTER" --exec "coordinators auto"
+echo "(END) Coordinators auto …"
 
-# echo "Waiting for cluster to become healthy …"
-# until "$FDB_CLI" -C "$CLUSTER" --exec 'status minimal' | grep -q 'Healthy'; do
-#   sleep 1
-# done
+echo "(BEGIN) HA configure …"
+"$FDB_CLI" -C "$CLUSTER" --exec "fileconfigure $REGIONS_JSON"
+echo "Waiting until all priority>=0 regions are fully replicated …"
+while true; do
+  if "$FDB_CLI" -C "$CLUSTER" --exec 'status details' | grep -q 'Healthy'; then
+    echo "✓ Full replication reached"
+    break
+  fi
+  echo "still migrating shards"
+  sleep 10
+done
+"$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS"
+echo "(END) HA configure …"
+
+echo "(BEGIN) Waiting for cluster to become replication healthy + available …"
+until "$FDB_CLI" -C "$CLUSTER" --exec 'status minimal' | grep -q 'available'; do
+  sleep 1
+done
+until "$FDB_CLI" -C "$CLUSTER" --exec 'status' | grep -q 'Healthy'; do
+  sleep 1
+done
+echo "(END) Waiting for cluster to become replication healthy + available …"
 
 echo -e "\n✅  Cluster is up in $BASE_DIR"
 echo "   (script will clean up fdbmonitor if you Ctrl‑C)"
