@@ -16,7 +16,12 @@
 #
 # set -euo pipefail
 
-# usage: ~/s/f/t/local_cluster_benchmark $ ./setup.sh --fdb-monitor ~/cnd_build_output/bin/fdbmonitor --fdb-server ~/cnd_build_output/bin/fdbserver --fdb-cli ~/cnd_build_output/bin/fdbcli --base-dir /tmp/fdblocal --port-start 4500 --main-logs 4 --sat-logs 2 --main-stores 4 --stateless 4 --cluster-name prazalocal
+# setup usage: 
+# ~/s/f/t/local_cluster_benchmark $ ./setup.sh --fdb-monitor ~/cnd_build_output/bin/fdbmonitor --fdb-server ~/cnd_build_output/bin/fdbserver --fdb-cli ~/cnd_build_output/bin/fdbcli --base-dir /tmp/fdblocal --port-start 4500 --main-logs 4 --sat-logs 2 --main-stores 4 --stateless 4 --cluster-name prazalocal
+
+# cli usage after cluster is setup: 
+# ~/cnd_build_output/bin/fdbcli -C /tmp/fdblocal/conf/fdb.cluster --exec 'status minimal'
+# ~/cnd_build_output/bin/fdbcli -C /tmp/fdblocal/conf/fdb.cluster --exec 'status json' | jq -C | less -R
 
 ############################  arg‑parsing  ####################################
 usage() {
@@ -172,8 +177,8 @@ cat >"$REGIONS_2_JSON" <<JSON
       "satellite_logs": $SAT_LOGS,
       "datacenters": [
         { "id": "dc1",  "priority": 1, "satellite": 0 },
-        { "id": "dc1s1","priority": 0, "satellite": 1 },
-        { "id": "dc1s2","priority": 0, "satellite": 1 }
+        { "id": "dc1s1","priority": 2, "satellite": 1 },
+        { "id": "dc1s2","priority": 1, "satellite": 1 }
       ]
     },
     {
@@ -181,8 +186,8 @@ cat >"$REGIONS_2_JSON" <<JSON
       "satellite_logs": $SAT_LOGS,
       "datacenters": [
         { "id": "dc2",  "priority": 0, "satellite": 0 },
-        { "id": "dc2s1","priority": 0, "satellite": 1 },
-        { "id": "dc2s2","priority": 0, "satellite": 1 }
+        { "id": "dc2s1","priority": 2, "satellite": 1 },
+        { "id": "dc2s2","priority": 1, "satellite": 1 }
       ]
     }
   ]
@@ -209,14 +214,20 @@ wait_full_replication "$CLUSTER" "$FDB_CLI"
 wait_full_replication "$CLUSTER" "$FDB_CLI"
 "$FDB_CLI" -C "$CLUSTER" --exec "fileconfigure $REGIONS_2_JSON"
 # wait_full_replication "$CLUSTER" "$FDB_CLI"
-#"$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS"
+#"$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS" # not needed again
 echo "(END) HA configure …"
 
-echo "(BEGIN) Ensuring cluster is available …"
+echo "(BEGIN) Final cluster checks …"
+until "$FDB_CLI" -C "$CLUSTER" --exec 'status json' | grep -q '\"full_replication\" : true'; do
+  sleep 1
+done
+until "$FDB_CLI" -C "$CLUSTER" --exec 'status json' | grep -q '\"can_clean_bounce\" : true'; do
+  sleep 1
+done
 until "$FDB_CLI" -C "$CLUSTER" --exec 'status minimal' | grep -q 'available'; do
   sleep 1
 done
-echo "(END) Ensuring cluster is available …"
+echo "(END) Final cluster checks …"
 
 echo -e "\n✅  Cluster is up in $BASE_DIR"
 echo "   (script will clean up fdbmonitor if you Ctrl‑C)"
