@@ -57,6 +57,7 @@ mkdir -p "$BASE_DIR"/{conf,data,logs}
 CFG="$BASE_DIR/conf/fdbmonitor.conf"
 CLUSTER="$BASE_DIR/conf/fdb.cluster"
 REGIONS_JSON="$BASE_DIR/conf/regions.json"
+REGIONS_2_JSON="$BASE_DIR/conf/regions2.json"
 
 port() { echo $((PORT_START + $1)); }
 
@@ -148,6 +149,31 @@ cat >"$REGIONS_JSON" <<JSON
 }
 JSON
 
+cat >"$REGIONS_2_JSON" <<JSON
+{
+  "regions": [
+    {
+      "satellite_redundancy_mode": "one_satellite_double",
+      "satellite_logs": $SAT_LOGS,
+      "datacenters": [
+        { "id": "dc1",  "priority": 1, "satellite": 0 },
+        { "id": "dc1s1","priority": 0, "satellite": 1 },
+        { "id": "dc1s2","priority": 0, "satellite": 1 }
+      ]
+    },
+    {
+      "satellite_redundancy_mode": "one_satellite_double",
+      "satellite_logs": $SAT_LOGS,
+      "datacenters": [
+        { "id": "dc2",  "priority": 0, "satellite": 0 },
+        { "id": "dc2s1","priority": 0, "satellite": 1 },
+        { "id": "dc2s2","priority": 0, "satellite": 1 }
+      ]
+    }
+  ]
+}
+JSON
+
 ############################  launch & configure  #############################
 echo "Starting fdbmonitor …"
 "$FDB_MONITOR" --conffile "$CFG" &
@@ -170,19 +196,40 @@ while true; do
     break
   fi
   echo "still migrating shards"
-  sleep 10
+  sleep 5
 done
 "$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS"
 echo "(END) HA configure …"
 
-echo "(BEGIN) Waiting for cluster to become replication healthy + available …"
+echo "(BEGIN) HA 2 configure …"
+echo "Waiting until all priority>=0 regions are fully replicated …"
+while true; do
+  if "$FDB_CLI" -C "$CLUSTER" --exec 'status details' | grep -q 'Healthy'; then
+    echo "✓ Full replication reached"
+    break
+  fi
+  echo "still migrating shards"
+  sleep 5
+done
+# TODO: ERROR: When usable_regions > 1, All regions with priority >= 0 must be fully replicated before changing the configuration
+"$FDB_CLI" -C "$CLUSTER" --exec "fileconfigure $REGIONS_2_JSON"
+echo "Waiting until all priority>=0 regions are fully replicated …"
+while true; do
+  if "$FDB_CLI" -C "$CLUSTER" --exec 'status details' | grep -q 'Healthy'; then
+    echo "✓ Full replication reached"
+    break
+  fi
+  echo "still migrating shards"
+  sleep 5
+done
+"$FDB_CLI" -C "$CLUSTER" --exec "configure usable_regions=2 logs=$MAIN_LOGS"
+echo "(END) HA 2 configure …"
+
+echo "(BEGIN) Ensuring cluster is available …"
 until "$FDB_CLI" -C "$CLUSTER" --exec 'status minimal' | grep -q 'available'; do
   sleep 1
 done
-until "$FDB_CLI" -C "$CLUSTER" --exec 'status' | grep -q 'Healthy'; do
-  sleep 1
-done
-echo "(END) Waiting for cluster to become replication healthy + available …"
+echo "(END) Ensuring cluster is available …"
 
 echo -e "\n✅  Cluster is up in $BASE_DIR"
 echo "   (script will clean up fdbmonitor if you Ctrl‑C)"
