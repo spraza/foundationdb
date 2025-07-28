@@ -92,8 +92,9 @@ class FDBTop(App):
     async def _update(self):
         stat = status_json(self.cluster, self.fdbcli)
         rec  = stat["cluster"]["recovery_state"]
+        dclag = stat["cluster"]["datacenter_lag"]
         self.header.update(
-            f"FoundationDB – generation {rec['active_generations']}, {rec['name']}"
+            f"FoundationDB – generation {rec['active_generations']}, {rec['name']} - dc_lag {dclag['seconds']} secs"
         )
 
         if self.tick % 5 == 0:                     # refresh port→pid every ~10 s
@@ -112,7 +113,7 @@ class FDBTop(App):
                 continue
 
             pid   = port_pid.get(pnum)
-            dc    = info["locality"].get("dcid", "?")
+            dc    = info.get("locality", {}).get("dcid", "?")
             roles = ",".join(r["role"] for r in info["roles"])
 
             if pid:
