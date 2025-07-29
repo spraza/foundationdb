@@ -107,19 +107,78 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
+int64_t g_arenas_created{ 0 };
+int64_t g_arenas_destroyed{ 0 };
+int64_t g_arenas_active{ 0 };
+
 Arena::Arena() : impl(nullptr) {}
+
 Arena::Arena(size_t reservedSize) : impl(0) {
 	UNSTOPPABLE_ASSERT(reservedSize < std::numeric_limits<int>::max());
+	doCounting = (reservedSize > 0);
+
 	if (reservedSize) {
 		allowAccess(impl.getPtr());
-		ArenaBlock::create((int)reservedSize, impl);
+		ArenaBlock::create(static_cast<int>(reservedSize), impl);
 		disallowAccess(impl.getPtr());
 	}
+	if (doCounting) {
+		++g_arenas_created;
+		++g_arenas_active;
+	}
 }
-Arena::Arena(const Arena& r) = default;
-Arena::Arena(Arena&& r) noexcept = default;
-Arena& Arena::operator=(const Arena& r) = default;
-Arena& Arena::operator=(Arena&& r) noexcept = default;
+
+Arena::Arena(const Arena& r) // copy‑ctor
+  : impl(r.impl), doCounting(r.doCounting) {
+	if (doCounting)
+		++g_arenas_active; // extra live wrapper
+}
+
+Arena::Arena(Arena&& r) noexcept // move‑ctor
+  : impl(std::move(r.impl)), doCounting(r.doCounting) {
+	r.doCounting = false; // old wrapper will not decrement
+}
+
+Arena::~Arena() {
+	if (doCounting) {
+		--g_arenas_active;
+		++g_arenas_destroyed;
+	}
+}
+
+Arena& Arena::operator=(const Arena& r) {
+	if (this != &r) {
+		// drop old contents
+		if (doCounting)
+			--g_arenas_active;
+
+		impl = r.impl;
+		doCounting = r.doCounting;
+
+		// acquire new contents
+		if (doCounting)
+			++g_arenas_active;
+	}
+	return *this;
+}
+
+Arena& Arena::operator=(Arena&& r) noexcept {
+	if (this != &r) {
+		// drop old contents
+		if (doCounting)
+			--g_arenas_active;
+
+		impl = std::move(r.impl);
+		doCounting = r.doCounting;
+		r.doCounting = false; // silence old wrapper
+
+		// this now holds the live wrapper
+		if (doCounting)
+			++g_arenas_active;
+	}
+	return *this;
+}
+
 void Arena::dependsOn(const Arena& p) {
 	// x.dependsOn(y) is a no-op if they refer to the same ArenaBlocks.
 	// They will already have the same lifetime.

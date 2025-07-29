@@ -102,6 +102,10 @@ std::string capitalizeCgroupKey(const std::string& key) {
 
 } // anonymous namespace
 
+extern int64_t g_arenas_created;
+extern int64_t g_arenas_destroyed;
+extern int64_t g_arenas_active;
+
 SystemStatistics customSystemMonitor(std::string const& eventName, StatisticsState* statState, bool machineMetrics) {
 	const IPAddress ipAddr = machineState.ip.present() ? machineState.ip.get() : IPAddress();
 	SystemStatistics currentStats = getSystemStatistics(
@@ -198,6 +202,9 @@ SystemStatistics customSystemMonitor(std::string const& eventName, StatisticsSta
 			    .DETAILALLOCATORMEMUSAGE(8192)
 			    .DETAILALLOCATORMEMUSAGE(16384)
 			    .detail("HugeArenaMemory", g_hugeArenaMemory.load())
+			    // .detail("ArenasCreated", g_arenas_created)
+			    // .detail("ArenasDestroyed", g_arenas_destroyed)
+			    // .detail("ArenasActive", g_arenas_active)
 			    .detail("DCID", machineState.dcId)
 			    .detail("ZoneID", machineState.zoneId)
 			    .detail("MachineID", machineState.machineId);

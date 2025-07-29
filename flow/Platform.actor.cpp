@@ -800,6 +800,10 @@ void getNetworkTraffic(const IPAddress& ip,
 	snmp_stream >> retransSegs;
 }
 
+extern int64_t g_arenas_created;
+extern int64_t g_arenas_destroyed;
+extern int64_t g_arenas_active;
+
 void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 	INJECT_FAULT(platform_error,
 	             "getMachineLoad"); // getMachineLoad: Even though this function doesn't throw errors, the equivalents
@@ -825,7 +829,10 @@ void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 		    .detail("IRQ", t_irq)
 		    .detail("SoftIRQ", t_softirq)
 		    .detail("Steal", t_steal)
-		    .detail("Guest", t_guest);
+		    .detail("Guest", t_guest)
+		    .detail("ArenasCreated", g_arenas_created)
+		    .detail("ArenasDestroyed", g_arenas_destroyed)
+		    .detail("ArenasActive", g_arenas_active);
 }
 
 void getDiskStatistics(std::string const& directory,

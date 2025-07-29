@@ -110,7 +110,7 @@ public:
 	constexpr static auto fb_must_appear_last = true;
 	Arena();
 	explicit Arena(size_t reservedSize);
-	//~Arena();
+	virtual ~Arena();
 	Arena(const Arena&);
 	Arena(Arena&& r) noexcept;
 	Arena& operator=(const Arena&);
@@ -137,6 +137,7 @@ public:
 
 private:
 	Reference<struct ArenaBlock> impl;
+	bool doCounting{ false };
 };
 
 template <>
