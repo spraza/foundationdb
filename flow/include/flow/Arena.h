@@ -109,8 +109,8 @@ class Arena {
 public:
 	constexpr static auto fb_must_appear_last = true;
 	Arena();
-	explicit Arena(size_t reservedSize);
-	//~Arena();
+	explicit Arena(size_t reservedSize, bool emitActiveArenas = true);
+	virtual ~Arena();
 	Arena(const Arena&);
 	Arena(Arena&& r) noexcept;
 	Arena& operator=(const Arena&);
@@ -137,6 +137,8 @@ public:
 
 private:
 	Reference<struct ArenaBlock> impl;
+	bool emitActiveArenas{ true };
+	static uint64_t activeArenas; // no std::atomic, assuming Arena is thread-safe
 };
 
 template <>
@@ -307,7 +309,7 @@ public:
 	T const& contents() const { return *(T const*)this; }
 
 	Standalone() {}
-	Standalone(const T& t) : Arena(t.expectedSize()), T(arena(), t) {}
+	Standalone(const T& t, bool emitActiveArenas = true) : Arena(t.expectedSize(), emitActiveArenas), T(arena(), t) {}
 	Standalone<T>& operator=(const T& t) {
 		Arena old = std::move(arena()); // We want to defer the destruction of the arena until after we have copied t,
 		                                // in case it cross-references our previous value

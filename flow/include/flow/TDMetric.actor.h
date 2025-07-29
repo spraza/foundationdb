@@ -22,6 +22,7 @@
 
 // When actually compiled (NO_INTELLISENSE), include the generated version of this file.  In intellisense use the source
 // version.
+#include "flow/Arena.h"
 #include "flow/IRandom.h"
 #include "flow/Trace.h"
 #include <cstddef>
@@ -967,7 +968,7 @@ private:
 
 // A field Descriptor compatible with EventField but with name set at runtime
 struct DynamicDescriptor {
-	DynamicDescriptor(const char* name) : _name(StringRef((uint8_t*)name, strlen(name))) {}
+	DynamicDescriptor(const char* name) : _name(StringRef((uint8_t*)name, strlen(name)), false) {}
 	StringRef name() const { return _name; }
 
 private:
@@ -1114,7 +1115,9 @@ public:
 	template <typename ValueType>
 	void setField(const char* fieldName, const ValueType& value) {
 		StringRef fname((uint8_t*)fieldName, strlen(fieldName));
-		auto& p = fields[fname];
+		Standalone<StringRef> fnameKey(fname, false);
+		auto [it, _] = fields.try_emplace(fnameKey, nullptr);
+		auto& p = it->second;
 		// DynamicFieldBase *&p = fields[fname];
 		if (p.get() != nullptr) {
 			// FIXME:  This will break for DynamicEventMetric instances that are reused, such as use cases outside

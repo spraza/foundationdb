@@ -107,15 +107,27 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
+uint64_t Arena::activeArenas = 0;
+
 Arena::Arena() : impl(nullptr) {}
-Arena::Arena(size_t reservedSize) : impl(0) {
+Arena::Arena(size_t reservedSize, bool emitActiveArenas) : impl(0), emitActiveArenas(emitActiveArenas) {
 	UNSTOPPABLE_ASSERT(reservedSize < std::numeric_limits<int>::max());
 	if (reservedSize) {
+		activeArenas += 1;
 		allowAccess(impl.getPtr());
 		ArenaBlock::create((int)reservedSize, impl);
 		disallowAccess(impl.getPtr());
+		// std::cout << "active arenas: " << activeArenas << std::endl;
+		if (emitActiveArenas) {
+			TraceEvent("ActiveArenas").suppressFor(10.0).detail("Count", activeArenas);
+		}
 	}
 }
+
+Arena::~Arena() {
+	activeArenas -= 1;
+}
+
 Arena::Arena(const Arena& r) = default;
 Arena::Arena(Arena&& r) noexcept = default;
 Arena& Arena::operator=(const Arena& r) = default;
