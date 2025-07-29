@@ -43,8 +43,8 @@ fdb.api_version(api_ver)
 print(f"Using API version {api_ver}")
 
 # ───────────── workload constants ----------------------------------------
-PREFIX, KEY_COUNT, VAL_SIZE = b"wl"+os.urandom(2), 200_000, 256
-RANGE_LEN, OPS_PER_TX = 50, 12
+PREFIX, KEY_COUNT, VAL_SIZE = b"wl"+os.urandom(2), 800_000, 1024
+RANGE_LEN, OPS_PER_TX = 100, 32
 rk = lambda: PREFIX + f"{random.randint(0,KEY_COUNT-1):08d}".encode()
 rv = lambda: "".join(random.choice(string.ascii_letters)
                      for _ in range(VAL_SIZE)).encode()

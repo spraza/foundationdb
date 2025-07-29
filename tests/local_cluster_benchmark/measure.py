@@ -93,9 +93,11 @@ class FDBTop(App):
         stat = status_json(self.cluster, self.fdbcli)
         rec  = stat["cluster"]["recovery_state"]
         dclag = stat["cluster"]["datacenter_lag"]
+        sec   = dclag["seconds"]               # float
         self.header.update(
-            f"FoundationDB – generation {rec['active_generations']}, {rec['name']} - dc_lag {dclag['seconds']} secs"
-        )
+            f"FoundationDB – generation {rec['active_generations']}, "
+            f"{rec['name']} – dc_lag {sec:.3f} s"    # ← 3 decimal places
+        )        
 
         if self.tick % 5 == 0:                     # refresh port→pid every ~10 s
             self.port_pid = pid_map()
