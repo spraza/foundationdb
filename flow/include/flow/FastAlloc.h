@@ -50,9 +50,11 @@ bool valgrindPrecise();
 #include <assert.h>
 #include <atomic>
 #include <vector>
+#include <unordered_set>
 #include <cstdlib>
 #include <cstdio>
 #include <unordered_map>
+#include <mutex>
 
 #if defined(ALLOC_INSTRUMENTATION) && defined(__linux__)
 #include <execinfo.h>
@@ -180,6 +182,52 @@ extern std::atomic<int64_t> g_hugeArenaMemory;
 void hugeArenaSample(int size);
 void releaseAllThreadMagazines();
 int64_t getTotalUnusedAllocatedMemory();
+
+struct VectorHash {
+	size_t operator()(const std::vector<std::string>& vec) const {
+		size_t hash = 0;
+		for (const auto& s : vec) {
+			hash ^= std::hash<std::string>()(s) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+		}
+		return hash;
+	}
+};
+
+struct VectorEqual {
+	bool operator()(const std::vector<std::string>& a, const std::vector<std::string>& b) const { return a == b; }
+};
+
+class TopMap {
+public:
+	using Key = std::vector<std::string>;
+
+	void inc(const Key& key, const int delta = 1);
+	void clear();
+	std::string topN(int N) const;
+
+private:
+	struct Data {
+		std::unordered_map<Key, int, VectorHash> kv;
+		// std::map<int, std::unordered_set<Key>, std::greater<>> by_count;
+		std::map<int, std::unordered_set<Key, VectorHash, VectorEqual>, std::greater<>> by_count;
+	};
+
+	std::unique_ptr<Data> data = std::make_unique<Data>();
+	mutable std::mutex mu;
+};
+
+// TU initialize global/statics in undefined order
+// To overcome, centralize access in a lazy construction way
+struct ArenaStatTypes {
+	static int64_t& getArenasCreated();
+	static int64_t& getArenasDestroyed();
+	static int64_t& getArenasActive();
+	static std::vector<std::string>& getActorStack();
+	static TopMap& getActorMap(); // num of arena object constructions
+	static TopMap& getActorByteLastTMap(); // same as getActorMap, but for bytes at arenablock level
+	static TopMap& getActorAllocLastTMap();
+	static TopMap& getActor96AllocLastTMap();
+};
 
 // Allow temporary overriding of default allocators used by arena to let memory survive deallocation and test
 // correctness of memory policy (e.g. zeroing out sensitive contents after use)
