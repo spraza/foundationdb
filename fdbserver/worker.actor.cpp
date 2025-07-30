@@ -4260,6 +4260,19 @@ Optional<UID> readClusterId(std::string filePath) {
 	return clusterId;
 }
 
+ACTOR Future<Void> memoryProfiler() {
+	loop {
+		TraceEvent("NewMemoryProfiler")
+		    .detail("ArenasCreated", ArenaStatTypes::getArenasCreated())
+		    .detail("ArenasDestroyed", ArenaStatTypes::getArenasDestroyed())
+		    .detail("ArenasActive", ArenaStatTypes::getArenasActive())
+		    .detail("TopActorsAlloc", ArenaStatTypes::getActorMap().topN(5))
+		    .detail("TopActorsBytes", ArenaStatTypes::getActorByteLastTMap().topN(5));
+		ArenaStatTypes::getActorByteLastTMap() = TopMap(); // reset everytime, that's why we have "last T"
+		wait(delay(15));
+	}
+}
+
 ACTOR Future<Void> fdbd(Reference<IClusterConnectionRecord> connRecord,
                         LocalityData localities,
                         ProcessClass processClass,
@@ -4290,6 +4303,7 @@ ACTOR Future<Void> fdbd(Reference<IClusterConnectionRecord> connRecord,
 
 	actors.push_back(serveProtocolInfo());
 	actors.push_back(serveProcess());
+	actors.push_back(memoryProfiler());
 
 	try {
 		ServerCoordinators coordinators(connRecord, configDBType);
