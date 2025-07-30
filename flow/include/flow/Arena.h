@@ -101,6 +101,21 @@ FDB_BOOLEAN_PARAM(FastInaccurateEstimate);
 // Tag struct to indicate that the block containing allocated memory needs to be zero-ed out after use
 struct WipeAfterUse {};
 
+struct ArenaCounter {
+	ArenaCounter();
+
+	// copy‑ and move‑constructors must also call inc()
+	ArenaCounter(const ArenaCounter&);
+	ArenaCounter(ArenaCounter&&) noexcept;
+	~ArenaCounter();
+
+	ArenaCounter& operator=(const ArenaCounter&) = default;
+	ArenaCounter& operator=(ArenaCounter&&) = default;
+
+private:
+	void inc();
+	void dec();
+};
 // An Arena is a custom allocator that consists of a set of ArenaBlocks.  Allocation is performed by bumping a pointer
 // on the most recent ArenaBlock until the block is unable to service the next allocation request.  When the current
 // ArenaBlock is full, a new (larger) one is added to the Arena.  Deallocation is not directly supported.  Instead,
@@ -111,10 +126,10 @@ public:
 	Arena();
 	explicit Arena(size_t reservedSize);
 	//~Arena();
-	Arena(const Arena&);
-	Arena(Arena&& r) noexcept;
-	Arena& operator=(const Arena&);
-	Arena& operator=(Arena&&) noexcept;
+	Arena(const Arena&) = default;
+	Arena(Arena&& r) noexcept = default;
+	Arena& operator=(const Arena&) = default;
+	Arena& operator=(Arena&&) noexcept = default;
 
 	void dependsOn(const Arena& p);
 	void* allocate4kAlignedBuffer(uint32_t size);
@@ -137,6 +152,7 @@ public:
 
 private:
 	Reference<struct ArenaBlock> impl;
+	ArenaCounter counter;
 };
 
 template <>

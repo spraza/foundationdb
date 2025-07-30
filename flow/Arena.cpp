@@ -30,6 +30,10 @@ extern "C" const char* __lsan_default_options(void) {
 	return "use_unaligned=1";
 }
 
+extern int64_t g_arenasCreated;
+extern int64_t g_arenasDestroyed;
+extern int64_t g_arenasActive;
+
 #ifdef ADDRESS_SANITIZER
 #include <sanitizer/asan_interface.h>
 #endif
@@ -107,6 +111,29 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
+ArenaCounter::ArenaCounter() {
+	inc();
+}
+ArenaCounter::ArenaCounter(const ArenaCounter&) {
+	inc();
+}
+ArenaCounter::ArenaCounter(ArenaCounter&&) noexcept {
+	inc();
+}
+ArenaCounter::~ArenaCounter() {
+	dec();
+}
+
+void ArenaCounter::inc() {
+	++g_arenasActive;
+	++g_arenasCreated;
+}
+
+void ArenaCounter::dec() {
+	--g_arenasActive;
+	++g_arenasDestroyed;
+}
+
 Arena::Arena() : impl(nullptr) {}
 Arena::Arena(size_t reservedSize) : impl(0) {
 	UNSTOPPABLE_ASSERT(reservedSize < std::numeric_limits<int>::max());
@@ -116,10 +143,10 @@ Arena::Arena(size_t reservedSize) : impl(0) {
 		disallowAccess(impl.getPtr());
 	}
 }
-Arena::Arena(const Arena& r) = default;
-Arena::Arena(Arena&& r) noexcept = default;
-Arena& Arena::operator=(const Arena& r) = default;
-Arena& Arena::operator=(Arena&& r) noexcept = default;
+// Arena::Arena(const Arena& r) = default;
+// Arena::Arena(Arena&& r) noexcept = default;
+// Arena& Arena::operator=(const Arena& r) = default;
+// Arena& Arena::operator=(Arena&& r) noexcept = default;
 void Arena::dependsOn(const Arena& p) {
 	// x.dependsOn(y) is a no-op if they refer to the same ArenaBlocks.
 	// They will already have the same lifetime.
