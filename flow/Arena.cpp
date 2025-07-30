@@ -107,6 +107,102 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
+void TopMap::inc(const std::vector<std::string>& key) {
+	int oldVal = kv_[key]; // inserts 0 if missing
+	if (oldVal > 0) {
+		auto& bucket = byVal_[oldVal];
+		bucket.erase(key);
+		if (bucket.empty())
+			byVal_.erase(oldVal);
+	}
+	int newVal = ++kv_[key];
+	byVal_[newVal].insert(key);
+}
+
+void TopMap::dec(const std::vector<std::string>& key) {
+	assert(kv_.count(key));
+	int oldVal = kv_[key];
+	{
+		auto& bucket = byVal_[oldVal];
+		bucket.erase(key);
+		if (bucket.empty())
+			byVal_.erase(oldVal);
+	}
+	if (--kv_[key] == 0) {
+		kv_.erase(key);
+	} else {
+		byVal_[kv_[key]].insert(key);
+	}
+}
+
+std::string TopMap::topN(int N) const {
+	if (N <= 0)
+		return {};
+	std::ostringstream oss;
+	int emitted = 0;
+	for (const auto& [val, keys] : byVal_) {
+		for (const auto& key : keys) {
+			if (emitted++)
+				oss << ' ';
+			oss << join(key) << '=' << val;
+			if (emitted == N)
+				return oss.str();
+		}
+	}
+	return oss.str();
+}
+
+int64_t& ArenaStatTypes::getArenasCreated() {
+	static int64_t x;
+	return x;
+}
+
+int64_t& ArenaStatTypes::getArenasDestroyed() {
+	static int64_t x;
+	return x;
+}
+
+int64_t& ArenaStatTypes::getArenasActive() {
+	static int64_t x;
+	return x;
+}
+
+std::vector<std::string>& ArenaStatTypes::getActorStack() {
+	static std::vector<std::string> x;
+	return x;
+}
+
+TopMap& ArenaStatTypes::getActorMap() {
+	static TopMap x;
+	return x;
+}
+
+ArenaCounter::ArenaCounter() : actorStack() {
+	inc();
+}
+ArenaCounter::ArenaCounter(const ArenaCounter&) {
+	inc();
+}
+ArenaCounter::ArenaCounter(ArenaCounter&&) noexcept {
+	inc();
+}
+ArenaCounter::~ArenaCounter() {
+	dec();
+}
+
+void ArenaCounter::inc() {
+	++ArenaStatTypes::getArenasActive();
+	++ArenaStatTypes::getArenasCreated();
+	actorStack = ArenaStatTypes::getActorStack();
+	ArenaStatTypes::getActorMap().inc(actorStack);
+}
+
+void ArenaCounter::dec() {
+	--ArenaStatTypes::getArenasActive();
+	++ArenaStatTypes::getArenasDestroyed();
+	ArenaStatTypes::getActorMap().dec(actorStack);
+}
+
 Arena::Arena() : impl(nullptr) {}
 Arena::Arena(size_t reservedSize) : impl(0) {
 	UNSTOPPABLE_ASSERT(reservedSize < std::numeric_limits<int>::max());
@@ -116,10 +212,7 @@ Arena::Arena(size_t reservedSize) : impl(0) {
 		disallowAccess(impl.getPtr());
 	}
 }
-Arena::Arena(const Arena& r) = default;
-Arena::Arena(Arena&& r) noexcept = default;
-Arena& Arena::operator=(const Arena& r) = default;
-Arena& Arena::operator=(Arena&& r) noexcept = default;
+
 void Arena::dependsOn(const Arena& p) {
 	// x.dependsOn(y) is a no-op if they refer to the same ArenaBlocks.
 	// They will already have the same lifetime.

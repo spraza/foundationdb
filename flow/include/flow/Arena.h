@@ -101,6 +101,70 @@ FDB_BOOLEAN_PARAM(FastInaccurateEstimate);
 // Tag struct to indicate that the block containing allocated memory needs to be zero-ed out after use
 struct WipeAfterUse {};
 
+class TopMap {
+private:
+	struct VecHash {
+		std::size_t operator()(const std::vector<std::string>& v) const noexcept {
+			std::size_t h = 0;
+			for (const auto& s : v) {
+				h ^= std::hash<std::string>{}(s) + 0x9e3779b9 + (h << 6) + (h >> 2);
+			}
+			return h;
+		}
+	};
+	struct VecLess { // lexicographic order (needed by std::set)
+		bool operator()(const std::vector<std::string>& a, const std::vector<std::string>& b) const noexcept {
+			return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
+		}
+	};
+
+	std::unordered_map<std::vector<std::string>, int, VecHash> kv_;
+	std::map<int, std::set<std::vector<std::string>, VecLess>, std::greater<>> byVal_;
+
+	static std::string join(const std::vector<std::string>& v, const char* sep = "->") {
+		std::ostringstream oss;
+		for (std::size_t i = 0; i < v.size(); ++i) {
+			if (i)
+				oss << sep;
+			oss << v[i];
+		}
+		return oss.str();
+	}
+
+public:
+	void inc(const std::vector<std::string>& key);
+	void dec(const std::vector<std::string>& key);
+	std::string topN(int N) const;
+};
+
+// TU initialize global/statics in undefined order
+// To overcome, centralize access in a lazy construction way
+struct ArenaStatTypes {
+	static int64_t& getArenasCreated();
+	static int64_t& getArenasDestroyed();
+	static int64_t& getArenasActive();
+	static std::vector<std::string>& getActorStack();
+	static TopMap& getActorMap();
+};
+
+struct ArenaCounter {
+	ArenaCounter();
+
+	// copy‑ and move‑constructors must also call inc()
+	ArenaCounter(const ArenaCounter&);
+	ArenaCounter(ArenaCounter&&) noexcept;
+	~ArenaCounter();
+
+	ArenaCounter& operator=(const ArenaCounter&) = default;
+	ArenaCounter& operator=(ArenaCounter&&) = default;
+
+private:
+	void inc();
+	void dec();
+
+	std::vector<std::string> actorStack;
+};
+
 // An Arena is a custom allocator that consists of a set of ArenaBlocks.  Allocation is performed by bumping a pointer
 // on the most recent ArenaBlock until the block is unable to service the next allocation request.  When the current
 // ArenaBlock is full, a new (larger) one is added to the Arena.  Deallocation is not directly supported.  Instead,
@@ -111,10 +175,10 @@ public:
 	Arena();
 	explicit Arena(size_t reservedSize);
 	//~Arena();
-	Arena(const Arena&);
-	Arena(Arena&& r) noexcept;
-	Arena& operator=(const Arena&);
-	Arena& operator=(Arena&&) noexcept;
+	Arena(const Arena&) = default;
+	Arena(Arena&& r) noexcept = default;
+	Arena& operator=(const Arena&) = default;
+	Arena& operator=(Arena&&) noexcept = default;
 
 	void dependsOn(const Arena& p);
 	void* allocate4kAlignedBuffer(uint32_t size);
@@ -137,6 +201,7 @@ public:
 
 private:
 	Reference<struct ArenaBlock> impl;
+	ArenaCounter counter;
 };
 
 template <>
