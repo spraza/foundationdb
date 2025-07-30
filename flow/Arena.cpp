@@ -130,8 +130,10 @@ Arena::Arena(size_t reservedSize) : impl(0) {
 
 Arena::Arena(const Arena& r) // copy‑ctor
   : impl(r.impl), doCounting(r.doCounting) {
-	if (doCounting)
+	if (doCounting) {
+		++g_arenas_created;
 		++g_arenas_active; // extra live wrapper
+	}
 }
 
 Arena::Arena(Arena&& r) noexcept // move‑ctor
@@ -146,35 +148,19 @@ Arena::~Arena() {
 	}
 }
 
-Arena& Arena::operator=(const Arena& r) {
-	if (this != &r) {
-		// drop old contents
-		if (doCounting)
-			--g_arenas_active;
-
-		impl = r.impl;
-		doCounting = r.doCounting;
-
-		// acquire new contents
-		if (doCounting)
-			++g_arenas_active;
-	}
-	return *this;
-}
+Arena& Arena::operator=(const Arena& r) = default;
 
 Arena& Arena::operator=(Arena&& r) noexcept {
 	if (this != &r) {
 		// drop old contents
-		if (doCounting)
+		if (doCounting) {
 			--g_arenas_active;
+			++g_arenas_destroyed;
+		}
 
 		impl = std::move(r.impl);
-		doCounting = r.doCounting;
+		// doCounting = r.doCounting;
 		r.doCounting = false; // silence old wrapper
-
-		// this now holds the live wrapper
-		if (doCounting)
-			++g_arenas_active;
 	}
 	return *this;
 }
