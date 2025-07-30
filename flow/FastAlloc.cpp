@@ -114,6 +114,10 @@ void* FastAllocator<Size>::freelist = nullptr;
 
 std::atomic<int64_t> g_hugeArenaMemory(0);
 
+std::atomic<int64_t> g_arenasCreated(0);
+std::atomic<int64_t> g_arenasDestroyed(0);
+std::atomic<int64_t> g_arenasActive(0);
+
 double hugeArenaLastLogged = 0;
 std::map<std::string, std::pair<int, int64_t>> hugeArenaTraces;
 
