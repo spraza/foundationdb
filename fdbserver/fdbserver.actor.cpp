@@ -1987,7 +1987,15 @@ bool validateSimulationDataFiles(std::string const& dataFolder, bool isRestartin
 
 } // namespace
 
+extern int64_t g_arenasCreated;
+extern int64_t g_arenasDestroyed;
+extern int64_t g_arenasActive;
+
 int main(int argc, char* argv[]) {
+	std::cout << "test start - arenas active: " << g_arenasActive << std::endl;
+	std::cout << "test start - arenas created: " << g_arenasCreated << std::endl;
+	std::cout << "test start - arenas destroyed: " << g_arenasDestroyed << std::endl;
+
 	// TODO: Remove later, this is just to force the statics to be initialized
 	// otherwise the unit test won't run
 #ifdef ENABLE_SAMPLING
@@ -2680,6 +2688,10 @@ int main(int argc, char* argv[]) {
 		}
 #endif
 		// printf("\n%d tests passed; %d tests failed\n", passCount, failCount);
+		std::cout << "test finish - arenas active: " << g_arenasActive << std::endl;
+		std::cout << "test finish - arenas created: " << g_arenasCreated << std::endl;
+		std::cout << "test finish - arenas destroyed: " << g_arenasDestroyed << std::endl;
+
 		flushAndExit(rc);
 	} catch (Error& e) {
 		fprintf(stderr, "Error: %s\n", e.what());
