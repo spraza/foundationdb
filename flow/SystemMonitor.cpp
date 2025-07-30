@@ -34,6 +34,10 @@
 #include <sanitizer/asan_interface.h>
 #endif
 
+extern std::atomic<int64_t> g_arenasCreated;
+extern std::atomic<int64_t> g_arenasDestroyed;
+extern std::atomic<int64_t> g_arenasActive;
+
 SystemMonitorMachineState machineState;
 
 void initializeSystemMonitorMachineState(SystemMonitorMachineState machineState) {
@@ -198,6 +202,9 @@ SystemStatistics customSystemMonitor(std::string const& eventName, StatisticsSta
 			    .DETAILALLOCATORMEMUSAGE(8192)
 			    .DETAILALLOCATORMEMUSAGE(16384)
 			    .detail("HugeArenaMemory", g_hugeArenaMemory.load())
+			    .detail("ArenasCreated", g_arenasCreated.load())
+			    .detail("ArenasDestroyed", g_arenasDestroyed.load())
+			    .detail("ArenasActive", g_arenasActive.load())
 			    .detail("DCID", machineState.dcId)
 			    .detail("ZoneID", machineState.zoneId)
 			    .detail("MachineID", machineState.machineId);
