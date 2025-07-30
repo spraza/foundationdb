@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-measure.py – interactive “top”‑style monitor for a local FoundationDB cluster
+measure.py – interactive “top”-style monitor for a local FoundationDB cluster
 
 ▸ Header shows generation + recovery state
-▸ Table: DC ▸ addr ▸ roles ▸ CPU % ▸ RSS MB
-▸ Keys:  ↑ / ↓   or   Ctrl‑K / Ctrl‑J   – move highlight      q – quit
+▸ Table: DC ▸ addr ▸ roles ▸ CPU % ▸ RSS MB
+▸ Keys:  ↑ / ↓   or   Ctrl-K / Ctrl-J   – move highlight      q – quit
 
 Sorting:  --sort {dc,addr,cpu,rss}   (default addr)
 Example : python3 measure.py --cluster_file /tmp/fdblocal/conf/fdb.cluster \
@@ -81,7 +81,7 @@ class FDBTop(App):
     def compose(self) -> ComposeResult:
         self.header = Static("")
         self.table  = DataTable(zebra_stripes=True, show_header=True, show_cursor=True)
-        self.table.add_columns("DC", "Addr", "Roles", "CPU%", "RSS MB")
+        self.table.add_columns("DC", "Addr", "Roles", "CPU%", "RSS MB")
         yield self.header
         yield self.table
 
@@ -90,16 +90,23 @@ class FDBTop(App):
 
     # update loop
     async def _update(self):
-        stat = status_json(self.cluster, self.fdbcli)
-        rec  = stat["cluster"]["recovery_state"]
-        dclag = stat["cluster"]["datacenter_lag"]
-        sec   = dclag["seconds"]               # float
+        try:
+            stat = status_json(self.cluster, self.fdbcli)
+            rec  = stat["cluster"]["recovery_state"]
+            dclag = stat["cluster"]["datacenter_lag"]
+            sec   = dclag["seconds"]
+        except Exception:          # any error == cluster not reachable / bad JSON
+            self.header.update("db unavailable")
+            self.table.clear()
+            return                 # try again next tick
+
+        # header line
         self.header.update(
             f"FoundationDB – generation {rec['active_generations']}, "
-            f"{rec['name']} – dc_lag {sec:.3f} s"    # ← 3 decimal places
-        )        
+            f"{rec['name']} – dc_lag {sec:.3f} s"
+        )
 
-        if self.tick % 5 == 0:                     # refresh port→pid every ~10 s
+        if self.tick % 5 == 0:        # refresh port→pid every ~10 s
             self.port_pid = pid_map()
         self.tick += 1
         port_pid = self.port_pid
@@ -144,7 +151,7 @@ class FDBTop(App):
                     break
         self.row = min(self.row, max(0, len(rows) - 1))
 
-        # redraw
+        # redraw table
         self.table.clear()
         for dc, addr, roles, cpu, rss, _ in rows:
             self.table.add_row(dc, addr, roles, cpu, rss)
