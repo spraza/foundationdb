@@ -304,6 +304,130 @@ static int64_t getSizeCode(int i) {
 }
 #endif
 
+void TopMap::inc(const Key key, const int delta) {
+	std::lock_guard<std::mutex> lock(mu);
+
+	int old_val = data->kv[key];
+	int new_val = old_val + delta;
+
+	if (old_val > 0) {
+		auto& old_bucket = data->by_count[old_val];
+		old_bucket.erase(key);
+		if (old_bucket.empty())
+			data->by_count.erase(old_val);
+	}
+
+	data->kv[key] = new_val;
+	data->by_count[new_val].insert(key);
+}
+
+void TopMap::clear() {
+	std::lock_guard<std::mutex> lock(mu);
+	data = std::make_unique<Data>();
+}
+
+std::string TopMap::topN(int N) const {
+	std::lock_guard<std::mutex> lock(mu);
+	std::string result;
+	int count_so_far = 0;
+
+	for (const auto& [count, keys] : data->by_count) {
+		for (const auto& key : keys) {
+			if (count_so_far++ >= N)
+				break;
+
+			// Join vector<string> with "--"
+			std::string joined;
+			for (size_t i = 0; i < key.size(); ++i) {
+				if (i > 0)
+					joined += "--";
+				joined += key[i];
+			}
+
+			if (!result.empty())
+				result += " ";
+			result += joined + "=" + std::to_string(count);
+		}
+		if (count_so_far >= N)
+			break;
+	}
+
+	return result;
+}
+
+int64_t& ArenaStatTypes::getArenasCreated() {
+	static int64_t x = 0;
+	return x;
+}
+
+int64_t& ArenaStatTypes::getArenasDestroyed() {
+	static int64_t x = 0;
+	return x;
+}
+
+int64_t& ArenaStatTypes::getArenasActive() {
+	static int64_t x = 0;
+	return x;
+}
+
+TopMap& ArenaStatTypes::getActorMap() {
+	static TopMap x;
+	return x;
+}
+
+TopMap& ArenaStatTypes::getActorByteLastTMap() {
+	static TopMap x;
+	return x;
+}
+
+TopMap& ArenaStatTypes::getActorAllocLastTMap() {
+	static TopMap x;
+	return x;
+}
+
+TopMap& ArenaStatTypes::getActor96AllocLastTMap() {
+	static TopMap x;
+	return x;
+}
+
+/* ---- helpers (C++17: seq-cst) -------------------------------------- */
+namespace {
+template <class T>
+inline std::shared_ptr<const T> load_sp(const std::shared_ptr<const T>* p) {
+	return std::atomic_load(p); // seq-cst load
+}
+
+template <class T>
+inline void store_sp(std::shared_ptr<const T>* p, std::shared_ptr<const T> v) {
+	std::atomic_store(p, std::move(v)); // seq-cst store
+}
+} // namespace
+
+/* ---- public API ---------------------------------------------------- */
+ArenaStatTypes::KeyPtr ArenaStatTypes::stackSnapshot() noexcept {
+	return load_sp(&g_stack_);
+}
+
+void ArenaStatTypes::pushFrame(const std::string& label) {
+	KeyPtr cur = load_sp(&g_stack_);
+	auto mut = std::make_shared<Key>(*cur); // private mutable copy
+	mut->push_back(label);
+
+	// promote to const and publish
+	store_sp(&g_stack_, std::static_pointer_cast<const Key>(mut));
+}
+
+void ArenaStatTypes::popFrame() {
+	KeyPtr cur = load_sp(&g_stack_);
+	if (cur->empty())
+		return;
+
+	auto mut = std::make_shared<Key>(*cur);
+	mut->pop_back();
+
+	store_sp(&g_stack_, std::static_pointer_cast<const Key>(mut));
+}
+
 namespace keepalive_allocator {
 
 namespace detail {
@@ -370,6 +494,11 @@ std::vector<std::pair<const uint8_t*, int>> const& getWipedAreaSet() {
 
 template <int Size>
 void* FastAllocator<Size>::allocate() {
+	// ArenaStatTypes::getActorAllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
+	if (Size == 96) {
+		ArenaStatTypes::getActor96AllocLastTMap().inc(*ArenaStatTypes::stackSnapshot(), Size);
+	}
+
 	if (keepalive_allocator::isActive()) [[unlikely]]
 		return keepalive_allocator::allocate(Size);
 
