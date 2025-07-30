@@ -137,6 +137,7 @@ public:
 
 private:
 	Reference<struct ArenaBlock> impl;
+	bool someData{ false };
 };
 
 template <>

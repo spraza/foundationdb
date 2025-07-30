@@ -114,18 +114,23 @@ int64_t g_arenas_active{ 0 };
 Arena::Arena() : impl(nullptr) {}
 Arena::Arena(size_t reservedSize) : impl(0) {
 	UNSTOPPABLE_ASSERT(reservedSize < std::numeric_limits<int>::max());
+	someData = (reservedSize > 0);
 	if (reservedSize) {
-		g_arenas_created += 1;
-		g_arenas_active += 1;
 		allowAccess(impl.getPtr());
 		ArenaBlock::create((int)reservedSize, impl);
 		disallowAccess(impl.getPtr());
 	}
+	if (someData) {
+		g_arenas_created++;
+		g_arenas_active++;
+	}
 }
 
 Arena::~Arena() {
-	g_arenas_active -= 1;
-	g_arenas_destroyed++;
+	if (someData) {
+		g_arenas_active--;
+		g_arenas_destroyed++;
+	}
 }
 
 Arena::Arena(const Arena& r) = default;
