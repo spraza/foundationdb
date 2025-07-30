@@ -102,6 +102,10 @@ std::string capitalizeCgroupKey(const std::string& key) {
 
 } // anonymous namespace
 
+extern int64_t g_arenasCreated;
+extern int64_t g_arenasDestroyed;
+extern int64_t g_arenasActive;
+
 SystemStatistics customSystemMonitor(std::string const& eventName, StatisticsState* statState, bool machineMetrics) {
 	const IPAddress ipAddr = machineState.ip.present() ? machineState.ip.get() : IPAddress();
 	SystemStatistics currentStats = getSystemStatistics(
@@ -200,7 +204,10 @@ SystemStatistics customSystemMonitor(std::string const& eventName, StatisticsSta
 			    .detail("HugeArenaMemory", g_hugeArenaMemory.load())
 			    .detail("DCID", machineState.dcId)
 			    .detail("ZoneID", machineState.zoneId)
-			    .detail("MachineID", machineState.machineId);
+			    .detail("MachineID", machineState.machineId)
+			    .detail("ArenasCreated", g_arenasCreated)
+			    .detail("ArenasDestroyed", g_arenasDestroyed)
+			    .detail("ArenasActive", g_arenasActive);
 
 			uint64_t total_memory = 0;
 			total_memory += FastAllocator<16>::getTotalMemory();
