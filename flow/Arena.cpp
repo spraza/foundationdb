@@ -107,9 +107,9 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
-int64_t g_arenas_created{ 0 };
-int64_t g_arenas_destroyed{ 0 };
-int64_t g_arenas_active{ 0 };
+std::atomic<int64_t> g_arenas_created{ 0 };
+std::atomic<int64_t> g_arenas_destroyed{ 0 };
+std::atomic<int64_t> g_arenas_active{ 0 };
 
 Arena::Arena() : impl(nullptr) {}
 Arena::Arena(size_t reservedSize) : impl(0) {

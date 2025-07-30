@@ -102,9 +102,9 @@ std::string capitalizeCgroupKey(const std::string& key) {
 
 } // anonymous namespace
 
-extern int64_t g_arenas_created;
-extern int64_t g_arenas_destroyed;
-extern int64_t g_arenas_active;
+extern std::atomic<int64_t> g_arenas_created;
+extern std::atomic<int64_t> g_arenas_destroyed;
+extern std::atomic<int64_t> g_arenas_active;
 
 SystemStatistics customSystemMonitor(std::string const& eventName, StatisticsState* statState, bool machineMetrics) {
 	const IPAddress ipAddr = machineState.ip.present() ? machineState.ip.get() : IPAddress();
