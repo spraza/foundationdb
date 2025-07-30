@@ -304,6 +304,98 @@ static int64_t getSizeCode(int i) {
 }
 #endif
 
+void TopMap::inc(const Key& key, const int delta) {
+	int old_val = data->kv[key];
+	int new_val = old_val + delta;
+
+	if (old_val > 0) {
+		auto& old_bucket = data->by_count[old_val];
+		old_bucket.erase(key);
+		if (old_bucket.empty())
+			data->by_count.erase(old_val);
+	}
+
+	data->kv[key] = new_val;
+	data->by_count[new_val].insert(key);
+}
+
+void TopMap::clear() {
+	data = std::make_unique<Data>();
+}
+
+std::string TopMap::topN(int N) const {
+	std::string result;
+	int count_so_far = 0;
+
+	for (const auto& [count, keys] : data->by_count) {
+		for (const auto& key : keys) {
+			if (count_so_far++ >= N)
+				break;
+
+			// Join vector<string> with "--"
+			std::string joined;
+			for (size_t i = 0; i < key.size(); ++i) {
+				if (i > 0)
+					joined += "--";
+				joined += key[i];
+			}
+
+			if (!result.empty())
+				result += " ";
+			result += joined + "=" + std::to_string(count);
+		}
+		if (count_so_far >= N)
+			break;
+	}
+
+	return result;
+}
+
+int64_t& ArenaStatTypes::getArenasCreated() {
+	static int64_t x = 0;
+	return x;
+}
+
+int64_t& ArenaStatTypes::getArenasDestroyed() {
+	static int64_t x = 0;
+	return x;
+}
+
+int64_t& ArenaStatTypes::getArenasActive() {
+	static int64_t x = 0;
+	return x;
+}
+
+std::vector<std::string>& ArenaStatTypes::getActorStack() {
+	static std::vector<std::string> x;
+	return x;
+}
+
+bool& ArenaStatTypes::filter() {
+	static bool x{ false };
+	return x;
+}
+
+// TopMap& ArenaStatTypes::getActorMap() {
+// 	static TopMap x;
+// 	return x;
+// }
+
+// TopMap& ArenaStatTypes::getActorByteLastTMap() {
+// 	static TopMap x;
+// 	return x;
+// }
+
+// TopMap& ArenaStatTypes::getActorAllocLastTMap() {
+// 	static TopMap x;
+// 	return x;
+// }
+
+TopMap& ArenaStatTypes::getActor96AllocLastTMap() {
+	static TopMap x;
+	return x;
+}
+
 namespace keepalive_allocator {
 
 namespace detail {
@@ -370,6 +462,11 @@ std::vector<std::pair<const uint8_t*, int>> const& getWipedAreaSet() {
 
 template <int Size>
 void* FastAllocator<Size>::allocate() {
+	// ArenaStatTypes::getActorAllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
+	if (Size == 96 && ArenaStatTypes::filter()) {
+		ArenaStatTypes::getActor96AllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
+	}
+
 	if (keepalive_allocator::isActive()) [[unlikely]]
 		return keepalive_allocator::allocate(Size);
 

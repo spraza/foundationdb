@@ -24,6 +24,7 @@
 #include "flow/ScopeExit.h"
 
 #include "flow/config.h"
+#include <memory>
 
 // We don't align memory properly, and we need to tell lsan about that.
 extern "C" const char* __lsan_default_options(void) {
@@ -107,6 +108,32 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
+ArenaCounter::ArenaCounter() : actorStack() {
+	inc();
+}
+ArenaCounter::ArenaCounter(const ArenaCounter&) {
+	inc();
+}
+ArenaCounter::ArenaCounter(ArenaCounter&&) noexcept {
+	inc();
+}
+ArenaCounter::~ArenaCounter() {
+	dec();
+}
+
+void ArenaCounter::inc() {
+	++ArenaStatTypes::getArenasActive();
+	++ArenaStatTypes::getArenasCreated();
+	// actorStack = ArenaStatTypes::getActorStack();
+	//  ArenaStatTypes::getActorMap().inc(actorStack);
+}
+
+void ArenaCounter::dec() {
+	--ArenaStatTypes::getArenasActive();
+	++ArenaStatTypes::getArenasDestroyed();
+	// ArenaStatTypes::getActorMap().dec(actorStack);
+}
+
 Arena::Arena() : impl(nullptr) {}
 Arena::Arena(size_t reservedSize) : impl(0) {
 	UNSTOPPABLE_ASSERT(reservedSize < std::numeric_limits<int>::max());
@@ -116,10 +143,7 @@ Arena::Arena(size_t reservedSize) : impl(0) {
 		disallowAccess(impl.getPtr());
 	}
 }
-Arena::Arena(const Arena& r) = default;
-Arena::Arena(Arena&& r) noexcept = default;
-Arena& Arena::operator=(const Arena& r) = default;
-Arena& Arena::operator=(Arena&& r) noexcept = default;
+
 void Arena::dependsOn(const Arena& p) {
 	// x.dependsOn(y) is a no-op if they refer to the same ArenaBlocks.
 	// They will already have the same lifetime.
@@ -450,6 +474,7 @@ ArenaBlock* ArenaBlock::create(int dataSize, Reference<ArenaBlock>& next) {
 	b->setrefCountUnsafe(1);
 	next.setPtrUnsafe(b);
 	makeNoAccess(reinterpret_cast<uint8_t*>(b) + b->used(), b->unused());
+	// ArenaStatTypes::getActorByteLastTMap().inc(ArenaStatTypes::getActorStack(), dataSize);
 	return b;
 }
 
