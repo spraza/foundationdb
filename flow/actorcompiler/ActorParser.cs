@@ -325,6 +325,8 @@ namespace actorcompiler
         {
             writer.NewLine = "\n";
             writer.WriteLine("#define POST_ACTOR_COMPILER 1");
+            writer.WriteLine("#include <string>");
+            writer.WriteLine("extern std::string g_currActor;");
             int outLine = 1;
             if (LineNumbersEnabled)
             {

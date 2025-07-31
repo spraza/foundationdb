@@ -185,9 +185,9 @@ static_assert(std::is_same<boost::asio::ip::address_v6::bytes_type, std::array<u
 
 #endif // __unixish__
 
-// extern int64_t g_arenasCreated;
-// extern int64_t g_arenasDestroyed;
-// extern int64_t g_arenasActive;
+extern int64_t g_arenasCreated;
+extern int64_t g_arenasDestroyed;
+extern int64_t g_arenasActive;
 
 #include "flow/actorcompiler.h" // This must be the last #include.
 
@@ -830,9 +830,11 @@ void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 		    .detail("SoftIRQ", t_softirq)
 		    .detail("Steal", t_steal)
 		    .detail("Guest", t_guest);
-	// .detail("ArenasCreated", g_arenasCreated)
-	// .detail("ArenasDestroyed", g_arenasDestroyed)
-	// .detail("ArenasActive", g_arenasActive);
+
+	TraceEvent("NewMemoryStats")
+	    .detail("ArenasCreated", g_arenasCreated)
+	    .detail("ArenasDestroyed", g_arenasDestroyed)
+	    .detail("ArenasActive", g_arenasActive);
 }
 
 void getDiskStatistics(std::string const& directory,
