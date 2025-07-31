@@ -102,20 +102,67 @@ FDB_BOOLEAN_PARAM(FastInaccurateEstimate);
 struct WipeAfterUse {};
 
 struct ArenaCounter {
-	ArenaCounter();
+	ArenaCounter(const size_t bytes);
 
 	// copy‑ and move‑constructors must also call inc()
 	ArenaCounter(const ArenaCounter&);
 	ArenaCounter(ArenaCounter&&) noexcept;
 	~ArenaCounter();
 
-	ArenaCounter& operator=(const ArenaCounter&) = default;
-	ArenaCounter& operator=(ArenaCounter&&) = default;
+	ArenaCounter& operator=(const ArenaCounter&);
+	ArenaCounter& operator=(ArenaCounter&&);
+
+	size_t bytes;
+
+	static void inc(const size_t bytes);
+	static void dec(const size_t bytes);
+};
+
+class ActorByteStats {
+public:
+	// singleton accessor
+	static ActorByteStats& instance();
+
+	// bump up / down the running total for an actor
+	void add(std::uint64_t bytes, const std::string& actor);
+	void remove(std::uint64_t bytes, const std::string& actor);
+
+	// get the top-N report (largest→smallest); prettyBytes toggles human units
+	std::string report(bool prettyBytes = true) const;
 
 private:
-	void inc();
-	void dec();
+	struct Entry {
+		std::uint64_t bytes = 0;
+		std::multimap<std::uint64_t, std::string>::iterator it;
+	};
+
+	static constexpr int topN = 3;
+
+	// map actor→(bytes, iterator into heap_)
+	std::unordered_map<std::string, Entry> table_;
+
+	// ascending by bytes only; value is actor name
+	std::multimap<std::uint64_t, std::string> heap_;
+
+	// helper for human-friendly formatting
+	static std::string pretty(std::uint64_t bytes);
 };
+
+class ActorArenaStats {
+public:
+	// Add `bytes` to cumulative total for `actor`
+	void add(const std::string& actor);
+
+	void remove(const std::string& actor);
+
+	// Human-readable report (top-5, largest → smallest)
+	std::string report() const;
+
+	static ActorArenaStats& instance(); // accessor
+private:
+	ActorByteStats stats;
+};
+
 // An Arena is a custom allocator that consists of a set of ArenaBlocks.  Allocation is performed by bumping a pointer
 // on the most recent ArenaBlock until the block is unable to service the next allocation request.  When the current
 // ArenaBlock is full, a new (larger) one is added to the Arena.  Deallocation is not directly supported.  Instead,
