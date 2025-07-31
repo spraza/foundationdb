@@ -102,20 +102,64 @@ FDB_BOOLEAN_PARAM(FastInaccurateEstimate);
 struct WipeAfterUse {};
 
 struct ArenaCounter {
-	ArenaCounter();
+	ArenaCounter(size_t bytes);
+
+	void setBytes(size_t x);
 
 	// copy‑ and move‑constructors must also call inc()
 	ArenaCounter(const ArenaCounter&);
 	ArenaCounter(ArenaCounter&&) noexcept;
 	~ArenaCounter();
 
-	ArenaCounter& operator=(const ArenaCounter&) = default;
-	ArenaCounter& operator=(ArenaCounter&&) = default;
+	ArenaCounter& operator=(const ArenaCounter&);
+	ArenaCounter& operator=(ArenaCounter&&);
 
 private:
 	void inc();
 	void dec();
+
+	size_t bytes;
 };
+
+class ActorByteStats {
+public:
+	// Add `bytes` to cumulative total for `actor`
+	void add(std::uint64_t bytes, const std::string& actor);
+
+	// Human-readable report (top-5, largest → smallest)
+	std::string report(bool prettyBytes = true) const;
+
+	static ActorByteStats& instance(); // accessor
+
+private:
+	struct Entry {
+		std::uint64_t bytes = 0;
+		std::multimap<std::uint64_t, std::string>::iterator it;
+	};
+
+	using MinHeap = std::multimap<std::uint64_t, std::string>; // ascending by bytes
+
+	const int topN{ 3 };
+	std::unordered_map<std::string, Entry> table_;
+	MinHeap heap_;
+
+	void evictIfNeeded();
+	static std::string pretty(std::uint64_t bytes);
+};
+
+class ActorArenaStats {
+public:
+	// Add `bytes` to cumulative total for `actor`
+	void add(const std::string& actor);
+
+	// Human-readable report (top-5, largest → smallest)
+	std::string report() const;
+
+	static ActorArenaStats& instance(); // accessor
+private:
+	ActorByteStats stats;
+};
+
 // An Arena is a custom allocator that consists of a set of ArenaBlocks.  Allocation is performed by bumping a pointer
 // on the most recent ArenaBlock until the block is unable to service the next allocation request.  When the current
 // ArenaBlock is full, a new (larger) one is added to the Arena.  Deallocation is not directly supported.  Instead,

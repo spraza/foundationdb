@@ -24,6 +24,7 @@
 #include "flow/ScopeExit.h"
 
 #include "flow/config.h"
+#include <iomanip>
 
 // We don't align memory properly, and we need to tell lsan about that.
 extern "C" const char* __lsan_default_options(void) {
@@ -33,6 +34,9 @@ extern "C" const char* __lsan_default_options(void) {
 extern int64_t g_arenasCreated;
 extern int64_t g_arenasDestroyed;
 extern int64_t g_arenasActive;
+extern std::string g_currActor;
+
+// ActorByteStats g_actorByteStats;
 
 #ifdef ADDRESS_SANITIZER
 #include <sanitizer/asan_interface.h>
@@ -111,13 +115,13 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
-ArenaCounter::ArenaCounter() {
+ArenaCounter::ArenaCounter(size_t bytes) : bytes{ bytes } {
 	inc();
 }
-ArenaCounter::ArenaCounter(const ArenaCounter&) {
+ArenaCounter::ArenaCounter(const ArenaCounter& x) : bytes{ x.bytes } {
 	inc();
 }
-ArenaCounter::ArenaCounter(ArenaCounter&&) noexcept {
+ArenaCounter::ArenaCounter(ArenaCounter&& x) noexcept : bytes{ x.bytes } {
 	inc();
 }
 ArenaCounter::~ArenaCounter() {
@@ -127,6 +131,9 @@ ArenaCounter::~ArenaCounter() {
 void ArenaCounter::inc() {
 	++g_arenasActive;
 	++g_arenasCreated;
+	ActorByteStats::instance().add(bytes, g_currActor);
+	ActorArenaStats::instance().add(
+	    g_currActor); // hack to really look at number of allocations (by using 1 byte per allocation always)
 }
 
 void ArenaCounter::dec() {
@@ -134,9 +141,102 @@ void ArenaCounter::dec() {
 	++g_arenasDestroyed;
 }
 
-Arena::Arena() : impl(nullptr) {}
-Arena::Arena(size_t reservedSize) : impl(0) {
+void ArenaCounter::setBytes(size_t x) {
+	bytes = x;
+}
+
+ArenaCounter& ArenaCounter::operator=(const ArenaCounter& x) {
+	this->bytes = x.bytes;
+	return *this;
+}
+ArenaCounter& ArenaCounter::operator=(ArenaCounter&& x) {
+	this->bytes = x.bytes;
+	return *this;
+}
+
+void ActorByteStats::add(std::uint64_t bytes, const std::string& actor) {
+	// try_emplace so we can tell when this Entry is brand-new
+	auto [itMap, inserted] = table_.try_emplace(actor);
+	auto& e = itMap->second;
+
+	if (inserted) {
+		// first time we see this actor → mark "not in heap"
+		e.it = heap_.end();
+	}
+
+	e.bytes += bytes; // always update running total
+
+	if (e.it != heap_.end()) {
+		// already in heap → update its key
+		heap_.erase(e.it);
+		e.it = heap_.emplace(e.bytes, actor);
+	} else {
+		// not in heap: see if it now qualifies for topN
+		if ((int)heap_.size() < topN || e.bytes > heap_.begin()->first) {
+			e.it = heap_.emplace(e.bytes, actor);
+			evictIfNeeded();
+		}
+	}
+}
+
+void ActorByteStats::evictIfNeeded() {
+	while ((int)heap_.size() > topN) {
+		auto victim = heap_.begin(); // smallest total
+		auto itMap = table_.find(victim->second);
+		if (itMap != table_.end()) {
+			// mark as "out of heap"
+			itMap->second.it = heap_.end();
+		}
+		heap_.erase(victim);
+	}
+}
+
+std::string ActorByteStats::report(bool prettyBytes) const {
+	std::ostringstream out;
+	for (auto it = heap_.rbegin(); it != heap_.rend(); ++it) {
+		out << (prettyBytes ? pretty(it->first) : std::to_string(it->first)) << " - " << it->second << " ... ";
+	}
+	return out.str();
+}
+
+ActorByteStats& ActorByteStats::instance() {
+	static ActorByteStats s; // constructed on first call
+	return s;
+}
+
+std::string ActorByteStats::pretty(std::uint64_t b) {
+	static const char* u[] = { "B", "KB", "MB", "GB", "TB" };
+	int idx = 0;
+	double val = static_cast<double>(b);
+	while (val >= 1024.0 && idx < 4) {
+		val /= 1024.0;
+		++idx;
+	}
+
+	std::ostringstream os;
+	os << std::fixed << std::setprecision(idx ? 1 : 0) << val << u[idx];
+	return os.str();
+}
+
+void ActorArenaStats::add(const std::string& actor) {
+	stats.add(1, actor);
+}
+
+std::string ActorArenaStats::report() const {
+	return stats.report(/* prettyBytes */ false);
+}
+
+ActorArenaStats& ActorArenaStats::instance() {
+	static ActorArenaStats s; // constructed on first call
+	return s;
+}
+
+Arena::Arena() : impl(nullptr), counter(0) {
+	counter.setBytes(this->getSize());
+}
+Arena::Arena(size_t reservedSize) : impl(0), counter(reservedSize) {
 	UNSTOPPABLE_ASSERT(reservedSize < std::numeric_limits<int>::max());
+	counter.setBytes(this->getSize());
 	if (reservedSize) {
 		allowAccess(impl.getPtr());
 		ArenaBlock::create((int)reservedSize, impl);
