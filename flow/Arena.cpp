@@ -24,6 +24,7 @@
 #include "flow/ScopeExit.h"
 
 #include "flow/config.h"
+#include <iomanip>
 
 // We don't align memory properly, and we need to tell lsan about that.
 extern "C" const char* __lsan_default_options(void) {
@@ -33,6 +34,9 @@ extern "C" const char* __lsan_default_options(void) {
 extern int64_t g_arenasCreated;
 extern int64_t g_arenasDestroyed;
 extern int64_t g_arenasActive;
+extern std::string g_currActor;
+
+// ActorByteStats g_actorByteStats;
 
 #ifdef ADDRESS_SANITIZER
 #include <sanitizer/asan_interface.h>
@@ -127,11 +131,85 @@ ArenaCounter::~ArenaCounter() {
 void ArenaCounter::inc() {
 	++g_arenasActive;
 	++g_arenasCreated;
+	ActorByteStats::instance().add(
+	    1, g_currActor); // hack to really look at number of allocations (by using 1 byte per allocation always)
 }
 
 void ArenaCounter::dec() {
 	--g_arenasActive;
 	++g_arenasDestroyed;
+}
+
+void ActorByteStats::add(std::uint64_t bytes, const std::string& actor) {
+	auto& e = table_[actor];
+
+	// first time we see this actor
+	if (e.bytes == 0 && bytes) {
+		e.it = heap_.end(); // not yet in heap
+	}
+
+	e.bytes += bytes; // always update the tally
+
+	// If actor is already in heap_: update key.
+	if (e.it != heap_.end()) {
+		heap_.erase(e.it);
+		e.it = heap_.emplace(e.bytes, actor);
+	} else {
+		// Actor not in heap — see if it now belongs.
+		if (heap_.size() < 5 || e.bytes > heap_.begin()->first) {
+			// Insert new node
+			e.it = heap_.emplace(e.bytes, actor);
+			evictIfNeeded(); // may kick somebody else out
+		}
+	}
+}
+
+void ActorByteStats::evictIfNeeded() {
+	if (heap_.size() <= 5)
+		return;
+
+	auto victim = heap_.begin(); // smallest in the heap
+	auto itName = victim->second; // actor name
+
+	/*  DO NOT erase from table_ — we keep the running sum.   */
+	auto& entry = table_.at(itName);
+	entry.it = heap_.end(); // mark “not in heap”
+
+	heap_.erase(victim); // just drop the heap node
+}
+
+std::string ActorByteStats::report() const {
+	std::vector<std::pair<std::uint64_t, std::string>> v;
+	for (auto& [bytes, name] : heap_)
+		v.emplace_back(bytes, name);
+	std::sort(v.begin(), v.end(), [](auto& a, auto& b) { return a.first > b.first; });
+
+	std::ostringstream out;
+	out << "=== Top-5 actors by allocated bytes ===\n";
+	for (auto& [bytes, name] : v) {
+		out << std::setw(9) << pretty(bytes) << "  " << name << '\n';
+	}
+	out << "=======================================\n";
+	return out.str();
+}
+
+ActorByteStats& ActorByteStats::instance() {
+	static ActorByteStats s; // constructed on first call
+	return s;
+}
+
+std::string ActorByteStats::pretty(std::uint64_t b) {
+	static const char* u[] = { "B", "KB", "MB", "GB", "TB" };
+	int idx = 0;
+	double val = static_cast<double>(b);
+	while (val >= 1024.0 && idx < 4) {
+		val /= 1024.0;
+		++idx;
+	}
+
+	std::ostringstream os;
+	os << std::fixed << std::setprecision(idx ? 1 : 0) << val << u[idx];
+	return os.str();
 }
 
 Arena::Arena() : impl(nullptr) {}

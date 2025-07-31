@@ -116,6 +116,32 @@ private:
 	void inc();
 	void dec();
 };
+
+class ActorByteStats {
+public:
+	// Add `bytes` to cumulative total for `actor`
+	void add(std::uint64_t bytes, const std::string& actor);
+
+	// Human-readable report (top-5, largest → smallest)
+	std::string report() const;
+
+	static ActorByteStats& instance(); // accessor
+
+private:
+	struct Entry {
+		std::uint64_t bytes = 0;
+		std::multimap<std::uint64_t, std::string>::iterator it;
+	};
+
+	using MinHeap = std::multimap<std::uint64_t, std::string>; // ascending by bytes
+
+	std::unordered_map<std::string, Entry> table_;
+	MinHeap heap_;
+
+	void evictIfNeeded();
+	static std::string pretty(std::uint64_t bytes);
+};
+
 // An Arena is a custom allocator that consists of a set of ArenaBlocks.  Allocation is performed by bumping a pointer
 // on the most recent ArenaBlock until the block is unable to service the next allocation request.  When the current
 // ArenaBlock is full, a new (larger) one is added to the Arena.  Deallocation is not directly supported.  Instead,
