@@ -101,21 +101,64 @@ FDB_BOOLEAN_PARAM(FastInaccurateEstimate);
 // Tag struct to indicate that the block containing allocated memory needs to be zero-ed out after use
 struct WipeAfterUse {};
 
-struct ArenaCounter {
-	ArenaCounter();
+// ─────────────  Actor-level byte statistics  ─────────────
+class ActorByteStats final {
+public:
+	static ActorByteStats& instance(); // singleton
 
-	// copy‑ and move‑constructors must also call inc()
+	void add(std::uint64_t bytes, const std::string& actor);
+	void remove(std::uint64_t bytes, const std::string& actor);
+
+	// largest→smallest; prettyBytes toggles human units
+	std::string report(bool prettyBytes = true, int topN = 5) const;
+
+private:
+	struct Entry {
+		std::uint64_t bytes{ 0 };
+		std::multimap<std::uint64_t, std::string>::iterator it;
+	};
+
+	std::unordered_map<std::string, Entry> table_;
+	std::multimap<std::uint64_t, std::string> heap_; // asc by bytes
+
+	static std::string pretty(std::uint64_t bytes);
+};
+
+// ─────────────  Actor-level allocation count  ─────────────
+class ActorArenaStats final {
+public:
+	static ActorArenaStats& instance();
+
+	void add(const std::string& actor); // +1 arena
+	void remove(const std::string& actor); // –1 arena
+
+	std::string report(int topN = 5) const;
+
+private:
+	ActorByteStats stats_; // reuse byte-stats engine
+};
+
+// ─────────────  Per-arena lifetime counter  ─────────────
+class ArenaCounter final {
+public:
+	explicit ArenaCounter(std::size_t initialBytes = 0);
 	ArenaCounter(const ArenaCounter&);
 	ArenaCounter(ArenaCounter&&) noexcept;
 	~ArenaCounter();
 
-	ArenaCounter& operator=(const ArenaCounter&) = default;
-	ArenaCounter& operator=(ArenaCounter&&) = default;
+	ArenaCounter& operator=(const ArenaCounter&) = delete;
+	ArenaCounter& operator=(ArenaCounter&&) = delete;
+
+	// called once from Arena constructor to match getSize()
+	void setBytes(std::size_t newSize);
 
 private:
-	void inc();
-	void dec();
+	void inc(std::size_t);
+	void dec(std::size_t);
+
+	std::size_t bytes_{ 0 };
 };
+
 // An Arena is a custom allocator that consists of a set of ArenaBlocks.  Allocation is performed by bumping a pointer
 // on the most recent ArenaBlock until the block is unable to service the next allocation request.  When the current
 // ArenaBlock is full, a new (larger) one is added to the Arena.  Deallocation is not directly supported.  Instead,
@@ -128,8 +171,8 @@ public:
 	//~Arena();
 	Arena(const Arena&) = default;
 	Arena(Arena&& r) noexcept = default;
-	Arena& operator=(const Arena&) = default;
-	Arena& operator=(Arena&&) noexcept = default;
+	Arena& operator=(const Arena&);
+	Arena& operator=(Arena&&) noexcept;
 
 	void dependsOn(const Arena& p);
 	void* allocate4kAlignedBuffer(uint32_t size);
