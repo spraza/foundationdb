@@ -185,9 +185,11 @@ static_assert(std::is_same<boost::asio::ip::address_v6::bytes_type, std::array<u
 
 #endif // __unixish__
 
-// extern int64_t g_arenasCreated;
-// extern int64_t g_arenasDestroyed;
-// extern int64_t g_arenasActive;
+extern int64_t g_arenasCreated;
+extern int64_t g_arenasDestroyed;
+extern int64_t g_arenasActive;
+
+// extern ActorByteStats g_actorByteStats;
 
 #include "flow/actorcompiler.h" // This must be the last #include.
 
@@ -819,7 +821,7 @@ void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 	totalTime = t_user + t_nice + t_system + t_idle + t_iowait + t_irq + t_softirq + t_steal + t_guest;
 	idleTime = t_idle + t_iowait;
 
-	if (!DEBUG_DETERMINISM && logDetails)
+	if (!DEBUG_DETERMINISM && logDetails) {
 		TraceEvent("MachineLoadDetail")
 		    .detail("User", t_user)
 		    .detail("Nice", t_nice)
@@ -829,10 +831,15 @@ void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 		    .detail("IRQ", t_irq)
 		    .detail("SoftIRQ", t_softirq)
 		    .detail("Steal", t_steal)
-		    .detail("Guest", t_guest);
-	// .detail("ArenasCreated", g_arenasCreated)
-	// .detail("ArenasDestroyed", g_arenasDestroyed)
-	// .detail("ArenasActive", g_arenasActive);
+		    .detail("Guest", t_guest)
+		    .detail("ArenasCreated", g_arenasCreated)
+		    .detail("ArenasDestroyed", g_arenasDestroyed)
+		    .detail("ArenasActive", g_arenasActive);
+
+		TraceEvent("ActorMemoryStats")
+		    .detail("ByByte", ActorByteStats::instance().report())
+		    .detail("ByAlloc", ActorArenaStats::instance().report());
+	}
 }
 
 void getDiskStatistics(std::string const& directory,

@@ -24,6 +24,7 @@
 #include "flow/ScopeExit.h"
 
 #include "flow/config.h"
+#include <iomanip>
 
 // We don't align memory properly, and we need to tell lsan about that.
 extern "C" const char* __lsan_default_options(void) {
@@ -33,6 +34,9 @@ extern "C" const char* __lsan_default_options(void) {
 extern int64_t g_arenasCreated;
 extern int64_t g_arenasDestroyed;
 extern int64_t g_arenasActive;
+extern std::string g_currActor;
+
+// ActorByteStats g_actorByteStats;
 
 #ifdef ADDRESS_SANITIZER
 #include <sanitizer/asan_interface.h>
@@ -111,37 +115,141 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
-ArenaCounter::ArenaCounter() {
-	inc();
+ArenaCounter::ArenaCounter(const size_t bytes) : bytes(bytes) {
+	inc(bytes);
 }
-ArenaCounter::ArenaCounter(const ArenaCounter&) {
-	inc();
+ArenaCounter::ArenaCounter(const ArenaCounter& x) : bytes(x.bytes) {
+	inc(bytes);
 }
-ArenaCounter::ArenaCounter(ArenaCounter&&) noexcept {
-	inc();
+ArenaCounter::ArenaCounter(ArenaCounter&& x) noexcept : bytes(x.bytes) {
+	inc(bytes);
 }
 ArenaCounter::~ArenaCounter() {
-	dec();
+	dec(bytes);
 }
 
-void ArenaCounter::inc() {
+ArenaCounter& ArenaCounter::operator=(const ArenaCounter&) {
+	return *this;
+}
+
+ArenaCounter& ArenaCounter::operator=(ArenaCounter&&) {
+	return *this;
+}
+
+void ArenaCounter::inc(const size_t bytes) {
 	++g_arenasActive;
 	++g_arenasCreated;
+	ActorByteStats::instance().add(bytes, g_currActor);
+	ActorArenaStats::instance().add(
+	    g_currActor); // hack to really look at number of allocations (by using 1 byte per allocation always)
 }
 
-void ArenaCounter::dec() {
+void ArenaCounter::dec(const size_t bytes) {
 	--g_arenasActive;
 	++g_arenasDestroyed;
+	ActorByteStats::instance().remove(bytes, g_currActor);
+	ActorArenaStats::instance().remove(
+	    g_currActor); // hack to really look at number of allocations (by using 1 byte per allocation always)
 }
 
-Arena::Arena() : impl(nullptr) {}
-Arena::Arena(size_t reservedSize) : impl(0) {
+ActorByteStats& ActorByteStats::instance() {
+	static ActorByteStats s;
+	return s;
+}
+
+// ActorByteStats::add
+void ActorByteStats::add(std::uint64_t bytes, const std::string& actor) {
+	if (bytes == 0)
+		return; // ← early-return
+
+	auto [itMap, inserted] = table_.try_emplace(actor);
+	Entry& e = itMap->second;
+
+	if (inserted) {
+		e.bytes = bytes;
+		e.it = heap_.emplace(bytes, actor);
+	} else {
+		heap_.erase(e.it);
+		e.bytes += bytes;
+		e.it = heap_.emplace(e.bytes, actor);
+	}
+}
+
+// ActorByteStats::remove
+void ActorByteStats::remove(std::uint64_t bytes, const std::string& actor) {
+	if (bytes == 0)
+		return; // ← early-return
+
+	auto itMap = table_.find(actor);
+	ASSERT(itMap != table_.end());
+
+	Entry& e = itMap->second;
+	if (e.bytes < bytes)
+		return; // guard against underflow
+
+	heap_.erase(e.it);
+	e.bytes -= bytes;
+	if (e.bytes == 0) {
+		table_.erase(itMap); // drop actors back to 0
+		return;
+	}
+	e.it = heap_.emplace(e.bytes, actor);
+}
+
+std::string ActorByteStats::report(bool prettyBytes) const {
+	std::ostringstream out;
+	int count = 0;
+	// reverse-iterate heap_ (largest bytes first)
+	for (auto it = heap_.rbegin(); it != heap_.rend() && count < topN; ++it, ++count) {
+		std::uint64_t b = it->first;
+		out << std::setw(9) << (prettyBytes ? pretty(b) : std::to_string(b)) << "  " << it->second << "\n";
+	}
+	return out.str();
+}
+
+std::string ActorByteStats::pretty(std::uint64_t b) {
+	static constexpr char const* units[] = { "B", "KB", "MB", "GB", "TB" };
+	int idx = 0;
+	double v = double(b);
+	while (v >= 1024.0 && idx < 4) {
+		v /= 1024.0;
+		++idx;
+	}
+	std::ostringstream os;
+	os << std::fixed << std::setprecision(idx ? 1 : 0) << v << units[idx];
+	return os.str();
+}
+
+void ActorArenaStats::add(const std::string& actor) {
+	stats.add(1, actor);
+}
+
+void ActorArenaStats::remove(const std::string& actor) {
+	stats.remove(1, actor);
+}
+
+std::string ActorArenaStats::report() const {
+	return stats.report(/* prettyBytes */ false);
+}
+
+ActorArenaStats& ActorArenaStats::instance() {
+	static ActorArenaStats s; // constructed on first call
+	return s;
+}
+
+Arena::Arena() : impl(nullptr), counter(0) {
+	counter.dec(0);
+	counter.inc(this->getSize());
+}
+Arena::Arena(size_t reservedSize) : impl(0), counter(0) {
 	UNSTOPPABLE_ASSERT(reservedSize < std::numeric_limits<int>::max());
 	if (reservedSize) {
 		allowAccess(impl.getPtr());
 		ArenaBlock::create((int)reservedSize, impl);
 		disallowAccess(impl.getPtr());
 	}
+	counter.dec(0);
+	counter.inc(this->getSize());
 }
 // Arena::Arena(const Arena& r) = default;
 // Arena::Arena(Arena&& r) noexcept = default;
