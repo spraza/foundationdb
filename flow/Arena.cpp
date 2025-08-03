@@ -107,38 +107,45 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
-void TopMap::inc(const std::string& key) {
-	int old_val = kv[key];
-	if (old_val > 0) {
-		by_val[old_val].erase(key);
-		if (by_val[old_val].empty())
-			by_val.erase(old_val);
+void TopMap::inc(const std::vector<std::string>& key) {
+	int oldVal = kv_[key]; // inserts 0 if missing
+	if (oldVal > 0) {
+		auto& bucket = byVal_[oldVal];
+		bucket.erase(key);
+		if (bucket.empty())
+			byVal_.erase(oldVal);
 	}
-	int new_val = ++kv[key];
-	by_val[new_val].insert(key);
+	int newVal = ++kv_[key];
+	byVal_[newVal].insert(key);
 }
 
-void TopMap::dec(const std::string& key) {
-	assert(kv.count(key));
-	int old_val = kv[key];
-	by_val[old_val].erase(key);
-	if (by_val[old_val].empty())
-		by_val.erase(old_val);
-
-	if (--kv[key] == 0) {
-		kv.erase(key);
+void TopMap::dec(const std::vector<std::string>& key) {
+	assert(kv_.count(key));
+	int oldVal = kv_[key];
+	{
+		auto& bucket = byVal_[oldVal];
+		bucket.erase(key);
+		if (bucket.empty())
+			byVal_.erase(oldVal);
+	}
+	if (--kv_[key] == 0) {
+		kv_.erase(key);
 	} else {
-		by_val[kv[key]].insert(key);
+		byVal_[kv_[key]].insert(key);
 	}
 }
 
 std::string TopMap::topN(int N) const {
+	if (N <= 0)
+		return {};
 	std::ostringstream oss;
-	int count = 0;
-	for (const auto& [val, keys] : by_val) {
+	int emitted = 0;
+	for (const auto& [val, keys] : byVal_) {
 		for (const auto& key : keys) {
-			oss << key << ":" << val << " ";
-			if (++count == N)
+			if (emitted++)
+				oss << ' ';
+			oss << join(key) << '=' << val;
+			if (emitted == N)
 				return oss.str();
 		}
 	}
@@ -160,8 +167,8 @@ int64_t& ArenaStatTypes::getArenasActive() {
 	return x;
 }
 
-std::string& ArenaStatTypes::getCurrActor() {
-	static std::string x;
+std::vector<std::string>& ArenaStatTypes::getActorStack() {
+	static std::vector<std::string> x;
 	return x;
 }
 
@@ -170,7 +177,7 @@ TopMap& ArenaStatTypes::getActorMap() {
 	return x;
 }
 
-ArenaCounter::ArenaCounter() : actor() {
+ArenaCounter::ArenaCounter() : actorStack() {
 	inc();
 }
 ArenaCounter::ArenaCounter(const ArenaCounter&) {
@@ -186,14 +193,14 @@ ArenaCounter::~ArenaCounter() {
 void ArenaCounter::inc() {
 	++ArenaStatTypes::getArenasActive();
 	++ArenaStatTypes::getArenasCreated();
-	actor = ArenaStatTypes::getCurrActor();
-	ArenaStatTypes::getActorMap().inc(actor);
+	actorStack = ArenaStatTypes::getActorStack();
+	ArenaStatTypes::getActorMap().inc(actorStack);
 }
 
 void ArenaCounter::dec() {
 	--ArenaStatTypes::getArenasActive();
 	++ArenaStatTypes::getArenasDestroyed();
-	ArenaStatTypes::getActorMap().dec(actor);
+	ArenaStatTypes::getActorMap().dec(actorStack);
 }
 
 Arena::Arena() : impl(nullptr) {}

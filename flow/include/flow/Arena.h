@@ -103,14 +103,37 @@ struct WipeAfterUse {};
 
 class TopMap {
 private:
-	std::unordered_map<std::string, int> kv;
-	std::map<int, std::set<std::string>, std::greater<>> by_val;
+	struct VecHash {
+		std::size_t operator()(const std::vector<std::string>& v) const noexcept {
+			std::size_t h = 0;
+			for (const auto& s : v) {
+				h ^= std::hash<std::string>{}(s) + 0x9e3779b9 + (h << 6) + (h >> 2);
+			}
+			return h;
+		}
+	};
+	struct VecLess { // lexicographic order (needed by std::set)
+		bool operator()(const std::vector<std::string>& a, const std::vector<std::string>& b) const noexcept {
+			return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end());
+		}
+	};
+
+	std::unordered_map<std::vector<std::string>, int, VecHash> kv_;
+	std::map<int, std::set<std::vector<std::string>, VecLess>, std::greater<>> byVal_;
+
+	static std::string join(const std::vector<std::string>& v, const char* sep = "->") {
+		std::ostringstream oss;
+		for (std::size_t i = 0; i < v.size(); ++i) {
+			if (i)
+				oss << sep;
+			oss << v[i];
+		}
+		return oss.str();
+	}
 
 public:
-	void inc(const std::string& key);
-
-	void dec(const std::string& key);
-
+	void inc(const std::vector<std::string>& key);
+	void dec(const std::vector<std::string>& key);
 	std::string topN(int N) const;
 };
 
@@ -120,7 +143,7 @@ struct ArenaStatTypes {
 	static int64_t& getArenasCreated();
 	static int64_t& getArenasDestroyed();
 	static int64_t& getArenasActive();
-	static std::string& getCurrActor();
+	static std::vector<std::string>& getActorStack();
 	static TopMap& getActorMap();
 };
 
@@ -139,7 +162,7 @@ private:
 	void inc();
 	void dec();
 
-	std::string actor;
+	std::vector<std::string> actorStack;
 };
 
 // An Arena is a custom allocator that consists of a set of ArenaBlocks.  Allocation is performed by bumping a pointer
