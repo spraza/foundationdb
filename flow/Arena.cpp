@@ -30,12 +30,6 @@ extern "C" const char* __lsan_default_options(void) {
 	return "use_unaligned=1";
 }
 
-extern int64_t g_arenasCreated;
-extern int64_t g_arenasDestroyed;
-extern int64_t g_arenasActive;
-extern std::string g_currActor;
-TopMap g_actorMap;
-
 #ifdef ADDRESS_SANITIZER
 #include <sanitizer/asan_interface.h>
 #endif
@@ -113,7 +107,70 @@ void makeUndefined(void*, size_t) {}
 #endif
 } // namespace
 
-ArenaCounter::ArenaCounter() {
+void TopMap::inc(const std::string& key) {
+	int old_val = kv[key];
+	if (old_val > 0) {
+		by_val[old_val].erase(key);
+		if (by_val[old_val].empty())
+			by_val.erase(old_val);
+	}
+	int new_val = ++kv[key];
+	by_val[new_val].insert(key);
+}
+
+void TopMap::dec(const std::string& key) {
+	assert(kv.count(key));
+	int old_val = kv[key];
+	by_val[old_val].erase(key);
+	if (by_val[old_val].empty())
+		by_val.erase(old_val);
+
+	if (--kv[key] == 0) {
+		kv.erase(key);
+	} else {
+		by_val[kv[key]].insert(key);
+	}
+}
+
+std::string TopMap::topN(int N) const {
+	std::ostringstream oss;
+	int count = 0;
+	for (const auto& [val, keys] : by_val) {
+		for (const auto& key : keys) {
+			oss << key << ":" << val << " ";
+			if (++count == N)
+				return oss.str();
+		}
+	}
+	return oss.str();
+}
+
+int64_t& ArenaStatTypes::getArenasCreated() {
+	static int64_t x;
+	return x;
+}
+
+int64_t& ArenaStatTypes::getArenasDestroyed() {
+	static int64_t x;
+	return x;
+}
+
+int64_t& ArenaStatTypes::getArenasActive() {
+	static int64_t x;
+	return x;
+}
+
+std::string& ArenaStatTypes::getCurrActor() {
+	static std::string x;
+	return x;
+}
+
+TopMap& ArenaStatTypes::getActorMap() {
+	static TopMap x;
+	return x;
+}
+
+ArenaCounter::ArenaCounter() : actor() {
 	inc();
 }
 ArenaCounter::ArenaCounter(const ArenaCounter&) {
@@ -127,15 +184,16 @@ ArenaCounter::~ArenaCounter() {
 }
 
 void ArenaCounter::inc() {
-	++g_arenasActive;
-	++g_arenasCreated;
-	g_actorMap.inc(g_currActor);
+	++ArenaStatTypes::getArenasActive();
+	++ArenaStatTypes::getArenasCreated();
+	actor = ArenaStatTypes::getCurrActor();
+	ArenaStatTypes::getActorMap().inc(actor);
 }
 
 void ArenaCounter::dec() {
-	--g_arenasActive;
-	++g_arenasDestroyed;
-	g_actorMap.dec(g_currActor);
+	--ArenaStatTypes::getArenasActive();
+	++ArenaStatTypes::getArenasDestroyed();
+	ArenaStatTypes::getActorMap().dec(actor);
 }
 
 Arena::Arena() : impl(nullptr) {}
@@ -147,6 +205,7 @@ Arena::Arena(size_t reservedSize) : impl(0) {
 		disallowAccess(impl.getPtr());
 	}
 }
+
 // Arena::Arena(const Arena& r) = default;
 // Arena::Arena(Arena&& r) noexcept = default;
 // Arena& Arena::operator=(const Arena& r) = default;

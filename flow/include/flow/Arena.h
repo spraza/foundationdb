@@ -107,43 +107,21 @@ private:
 	std::map<int, std::set<std::string>, std::greater<>> by_val;
 
 public:
-	void inc(const std::string& key) {
-		int old_val = kv[key];
-		if (old_val > 0) {
-			by_val[old_val].erase(key);
-			if (by_val[old_val].empty())
-				by_val.erase(old_val);
-		}
-		int new_val = ++kv[key];
-		by_val[new_val].insert(key);
-	}
+	void inc(const std::string& key);
 
-	void dec(const std::string& key) {
-		assert(kv.count(key));
-		int old_val = kv[key];
-		by_val[old_val].erase(key);
-		if (by_val[old_val].empty())
-			by_val.erase(old_val);
+	void dec(const std::string& key);
 
-		if (--kv[key] == 0) {
-			kv.erase(key);
-		} else {
-			by_val[kv[key]].insert(key);
-		}
-	}
+	std::string topN(int N) const;
+};
 
-	std::string topN(int N) const {
-		std::ostringstream oss;
-		int count = 0;
-		for (const auto& [val, keys] : by_val) {
-			for (const auto& key : keys) {
-				oss << key << ":" << val << " ";
-				if (++count == N)
-					return oss.str();
-			}
-		}
-		return oss.str();
-	}
+// TU initialize global/statics in undefined order
+// To overcome, centralize access in a lazy construction way
+struct ArenaStatTypes {
+	static int64_t& getArenasCreated();
+	static int64_t& getArenasDestroyed();
+	static int64_t& getArenasActive();
+	static std::string& getCurrActor();
+	static TopMap& getActorMap();
 };
 
 struct ArenaCounter {
@@ -160,7 +138,10 @@ struct ArenaCounter {
 private:
 	void inc();
 	void dec();
+
+	std::string actor;
 };
+
 // An Arena is a custom allocator that consists of a set of ArenaBlocks.  Allocation is performed by bumping a pointer
 // on the most recent ArenaBlock until the block is unable to service the next allocation request.  When the current
 // ArenaBlock is full, a new (larger) one is added to the Arena.  Deallocation is not directly supported.  Instead,
