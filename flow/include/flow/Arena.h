@@ -101,6 +101,51 @@ FDB_BOOLEAN_PARAM(FastInaccurateEstimate);
 // Tag struct to indicate that the block containing allocated memory needs to be zero-ed out after use
 struct WipeAfterUse {};
 
+class TopMap {
+private:
+	std::unordered_map<std::string, int> kv;
+	std::map<int, std::set<std::string>, std::greater<>> by_val;
+
+public:
+	void inc(const std::string& key) {
+		int old_val = kv[key];
+		if (old_val > 0) {
+			by_val[old_val].erase(key);
+			if (by_val[old_val].empty())
+				by_val.erase(old_val);
+		}
+		int new_val = ++kv[key];
+		by_val[new_val].insert(key);
+	}
+
+	void dec(const std::string& key) {
+		assert(kv.count(key));
+		int old_val = kv[key];
+		by_val[old_val].erase(key);
+		if (by_val[old_val].empty())
+			by_val.erase(old_val);
+
+		if (--kv[key] == 0) {
+			kv.erase(key);
+		} else {
+			by_val[kv[key]].insert(key);
+		}
+	}
+
+	std::string topN(int N) const {
+		std::ostringstream oss;
+		int count = 0;
+		for (const auto& [val, keys] : by_val) {
+			for (const auto& key : keys) {
+				oss << key << ":" << val << " ";
+				if (++count == N)
+					return oss.str();
+			}
+		}
+		return oss.str();
+	}
+};
+
 struct ArenaCounter {
 	ArenaCounter();
 

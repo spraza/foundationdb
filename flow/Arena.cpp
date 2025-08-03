@@ -33,6 +33,8 @@ extern "C" const char* __lsan_default_options(void) {
 extern int64_t g_arenasCreated;
 extern int64_t g_arenasDestroyed;
 extern int64_t g_arenasActive;
+extern std::string g_currActor;
+TopMap g_actorMap;
 
 #ifdef ADDRESS_SANITIZER
 #include <sanitizer/asan_interface.h>
@@ -127,11 +129,13 @@ ArenaCounter::~ArenaCounter() {
 void ArenaCounter::inc() {
 	++g_arenasActive;
 	++g_arenasCreated;
+	g_actorMap.inc(g_currActor);
 }
 
 void ArenaCounter::dec() {
 	--g_arenasActive;
 	++g_arenasDestroyed;
+	g_actorMap.dec(g_currActor);
 }
 
 Arena::Arena() : impl(nullptr) {}

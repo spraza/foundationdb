@@ -188,6 +188,7 @@ static_assert(std::is_same<boost::asio::ip::address_v6::bytes_type, std::array<u
 extern int64_t g_arenasCreated;
 extern int64_t g_arenasDestroyed;
 extern int64_t g_arenasActive;
+extern TopMap g_actorMap;
 
 #include "flow/actorcompiler.h" // This must be the last #include.
 
@@ -834,7 +835,8 @@ void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 	TraceEvent("NewMemoryStats")
 	    .detail("ArenasCreated", g_arenasCreated)
 	    .detail("ArenasDestroyed", g_arenasDestroyed)
-	    .detail("ArenasActive", g_arenasActive);
+	    .detail("ArenasActive", g_arenasActive)
+	    .detail("TopActorsAlloc", g_actorMap.topN(5));
 }
 
 void getDiskStatistics(std::string const& directory,
