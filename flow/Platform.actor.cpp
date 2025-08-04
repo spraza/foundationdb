@@ -826,12 +826,6 @@ void getMachineLoad(uint64_t& idleTime, uint64_t& totalTime, bool logDetails) {
 		    .detail("SoftIRQ", t_softirq)
 		    .detail("Steal", t_steal)
 		    .detail("Guest", t_guest);
-
-	TraceEvent("NewMemoryStats")
-	    .detail("ArenasCreated", ArenaStatTypes::getArenasCreated())
-	    .detail("ArenasDestroyed", ArenaStatTypes::getArenasDestroyed())
-	    .detail("ArenasActive", ArenaStatTypes::getArenasActive())
-	    .detail("TopActorsAlloc", ArenaStatTypes::getActorMap().topN(5));
 }
 
 void getDiskStatistics(std::string const& directory,

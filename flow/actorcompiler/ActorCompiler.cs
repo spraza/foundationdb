@@ -535,7 +535,7 @@ namespace actorcompiler
                 fun.WriteLine("fdb_probe_actor_enter(\"{0}\", {1}, {2});", name, thisAddress, index);
             }
             //fun.WriteLine("std::cout << \"entered actor {0}\" << std::endl;", name);
-            var fileName = Path.GetFileName(sourceFile);          // "SimKmsConnector.actor.cpp"            
+            var fileName = Path.GetFileName(sourceFile);          // "SimKmsConnector.actor.cpp"
             fun.WriteLine($"ArenaStatTypes::getActorStack().push_back(\"{fileName}:{name}\");"); // no :line, just file + actor name
             var blockIdentifier = GetUidFromString(fun.name);
             fun.WriteLine("#ifdef WITH_ACAC");
