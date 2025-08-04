@@ -127,7 +127,7 @@ private:
 	std::unordered_map<std::vector<std::string>, int, VecHash> kv_;
 	std::map<int, std::set<std::vector<std::string>, VecLess>, std::greater<>> byVal_;
 
-	static std::string join(const std::vector<std::string>& v, const char* sep = "->") {
+	static std::string join(const std::vector<std::string>& v, const char* sep = "--") {
 		std::ostringstream oss;
 		for (std::size_t i = 0; i < v.size(); ++i) {
 			if (i)
