@@ -102,6 +102,12 @@ FDB_BOOLEAN_PARAM(FastInaccurateEstimate);
 struct WipeAfterUse {};
 
 class TopMap {
+
+public:
+	void inc(const std::vector<std::string>& key);
+	void dec(const std::vector<std::string>& key);
+	std::string topN(int N) const;
+
 private:
 	struct VecHash {
 		std::size_t operator()(const std::vector<std::string>& v) const noexcept {
@@ -130,11 +136,6 @@ private:
 		}
 		return oss.str();
 	}
-
-public:
-	void inc(const std::vector<std::string>& key);
-	void dec(const std::vector<std::string>& key);
-	std::string topN(int N) const;
 };
 
 // TU initialize global/statics in undefined order

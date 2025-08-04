@@ -153,17 +153,17 @@ std::string TopMap::topN(int N) const {
 }
 
 int64_t& ArenaStatTypes::getArenasCreated() {
-	static int64_t x;
+	static int64_t x = 0;
 	return x;
 }
 
 int64_t& ArenaStatTypes::getArenasDestroyed() {
-	static int64_t x;
+	static int64_t x = 0;
 	return x;
 }
 
 int64_t& ArenaStatTypes::getArenasActive() {
-	static int64_t x;
+	static int64_t x = 0;
 	return x;
 }
 
