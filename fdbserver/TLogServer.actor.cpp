@@ -19,6 +19,7 @@
  */
 
 #include "flow/Hash3.h"
+#include "flow/IRandom.h"
 #include "flow/UnitTest.h"
 #include "fdbclient/NativeAPI.actor.h"
 #include "fdbclient/Notified.h"
@@ -1528,16 +1529,6 @@ void commitMessages(TLogData* self,
 
 	block.pop_front(block.size());
 
-	// intentional issue
-	std::vector<Standalone<StringRef>> issues;
-	if (now() >= 100 && issues.empty()) {
-		TraceEvent("IntentionalMemoryIssue");
-		for (int i = 0; i < 100000; ++i) {
-			Standalone<StringRef> x(std::string("foo" + std::to_string(i)));
-			issues.push_back(x);
-		}
-	}
-
 	for (auto& msg : taggedMessages) {
 		if (msg.message.size() > block.capacity() - block.size()) {
 			logData->messageBlocks.emplace_back(version, block);
@@ -1750,6 +1741,8 @@ ACTOR Future<std::vector<StringRef>> parseMessagesForTag(StringRef commitBlob, T
 	return relevantMessages;
 }
 
+std::vector<Standalone<StringRef>> issues;
+
 // Common logics to peek TLog and create TLogPeekReply that serves both streaming peek or normal peek request
 ACTOR template <typename PromiseType>
 Future<Void> tLogPeekMessages(PromiseType replyPromise,
@@ -1766,6 +1759,32 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 	state int sequence = -1;
 	state UID peekId;
 	state double queueStart = now();
+
+	// intentional issue -- start
+	if (now() >= 100 && deterministicRandom()->randomInt(0, 100) < 3) {
+		TraceEvent("IntentionalMemoryIssueStart")
+		    .detail("ArenasCreated", ArenaStatTypes::getArenasCreated())
+		    .detail("ArenasDestroyed", ArenaStatTypes::getArenasDestroyed())
+		    .detail("ArenasActive", ArenaStatTypes::getArenasActive())
+		    .detail("TopActorsAlloc", ArenaStatTypes::getActorMap().topN(5));
+		issues = {};
+		TraceEvent("IntentionalMemoryIssueMid")
+		    .detail("ArenasCreated", ArenaStatTypes::getArenasCreated())
+		    .detail("ArenasDestroyed", ArenaStatTypes::getArenasDestroyed())
+		    .detail("ArenasActive", ArenaStatTypes::getArenasActive())
+		    .detail("TopActorsAlloc", ArenaStatTypes::getActorMap().topN(5));
+		for (int i = 0; i < 100000; ++i) {
+			Standalone<StringRef> x(std::string("foo" + std::to_string(i)));
+			issues.push_back(x);
+		}
+		TraceEvent("IntentionalMemoryIssueEnd")
+		    .detail("ArenasCreated", ArenaStatTypes::getArenasCreated())
+		    .detail("ArenasDestroyed", ArenaStatTypes::getArenasDestroyed())
+		    .detail("ArenasActive", ArenaStatTypes::getArenasActive())
+		    .detail("TopActorsAlloc", ArenaStatTypes::getActorMap().topN(5));
+		wait(delay(0));
+	}
+	// intentional issue -- end
 
 	if (reqTag.locality == tagLocalityTxs && reqTag.id >= logData->txsTags && logData->txsTags > 0) {
 		reqTag.id = reqTag.id % logData->txsTags;
