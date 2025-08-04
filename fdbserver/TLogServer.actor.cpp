@@ -1528,6 +1528,16 @@ void commitMessages(TLogData* self,
 
 	block.pop_front(block.size());
 
+	// intentional issue
+	std::vector<Standalone<StringRef>> issues;
+	if (now() >= 100 && issues.empty()) {
+		TraceEvent("IntentionalMemoryIssue");
+		for (int i = 0; i < 100000; ++i) {
+			Standalone<StringRef> x(std::string("foo" + std::to_string(i)));
+			issues.push_back(x);
+		}
+	}
+
 	for (auto& msg : taggedMessages) {
 		if (msg.message.size() > block.capacity() - block.size()) {
 			logData->messageBlocks.emplace_back(version, block);
