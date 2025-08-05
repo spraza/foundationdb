@@ -183,6 +183,16 @@ TopMap& ArenaStatTypes::getActorByteLastTMap() {
 	return x;
 }
 
+TopMap& ArenaStatTypes::getActorAllocLastTMap() {
+	static TopMap x;
+	return x;
+}
+
+TopMap& ArenaStatTypes::getActor96AllocLastTMap() {
+	static TopMap x;
+	return x;
+}
+
 ArenaCounter::ArenaCounter() : actorStack() {
 	inc();
 }

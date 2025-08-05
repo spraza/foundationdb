@@ -147,6 +147,8 @@ struct ArenaStatTypes {
 	static std::vector<std::string>& getActorStack();
 	static TopMap& getActorMap(); // num of arena object constructions
 	static TopMap& getActorByteLastTMap(); // same as getActorMap, but for bytes at arenablock level
+	static TopMap& getActorAllocLastTMap();
+	static TopMap& getActor96AllocLastTMap();
 };
 
 struct ArenaCounter {

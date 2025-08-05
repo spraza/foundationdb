@@ -4266,9 +4266,13 @@ ACTOR Future<Void> memoryProfiler() {
 		    .detail("ArenasCreated", ArenaStatTypes::getArenasCreated())
 		    .detail("ArenasDestroyed", ArenaStatTypes::getArenasDestroyed())
 		    .detail("ArenasActive", ArenaStatTypes::getArenasActive())
-		    .detail("TopActorsAlloc", ArenaStatTypes::getActorMap().topN(5))
-		    .detail("TopActorsBytes", ArenaStatTypes::getActorByteLastTMap().topN(5));
+		    .detail("TopActorsByArena", ArenaStatTypes::getActorMap().topN(5))
+		    .detail("TopActorsByBytes", ArenaStatTypes::getActorByteLastTMap().topN(5))
+		    .detail("TopActorsByAlloc", ArenaStatTypes::getActorAllocLastTMap().topN(5))
+		    .detail("TopActorsByAlloc96", ArenaStatTypes::getActor96AllocLastTMap().topN(5));
 		ArenaStatTypes::getActorByteLastTMap() = TopMap(); // reset everytime, that's why we have "last T"
+		ArenaStatTypes::getActorAllocLastTMap() = TopMap(); // reset everytime, that's why we have "last "T
+		ArenaStatTypes::getActor96AllocLastTMap() = TopMap();
 		wait(delay(15));
 	}
 }
