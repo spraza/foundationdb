@@ -341,11 +341,6 @@ public:
 	static void operator delete(void*, void*) {}
 };
 
-// if (size <= 96) {
-// 	ArenaStatTypes::getActor96AllocLastTMap().inc(ArenaStatTypes::getActorStack(), 96);
-// 	return FastAllocator<96>::allocate();
-// }
-
 [[nodiscard]] inline void* allocateFast(int size) {
 	if (size <= 16)
 		return FastAllocator<16>::allocate();
@@ -353,8 +348,10 @@ public:
 		return FastAllocator<32>::allocate();
 	if (size <= 64)
 		return FastAllocator<64>::allocate();
-	if (size <= 96)
+	if (size <= 96) {
+		ArenaStatTypes::getActor96AllocLastTMap().inc(ArenaStatTypes::getActorStack(), 96);
 		return FastAllocator<96>::allocate();
+	}
 	if (size <= 128)
 		return FastAllocator<128>::allocate();
 	if (size <= 256)
