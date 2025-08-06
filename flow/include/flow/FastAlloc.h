@@ -54,6 +54,7 @@ bool valgrindPrecise();
 #include <cstdlib>
 #include <cstdio>
 #include <unordered_map>
+#include <mutex>
 
 #if defined(ALLOC_INSTRUMENTATION) && defined(__linux__)
 #include <execinfo.h>
@@ -212,6 +213,7 @@ private:
 	};
 
 	std::unique_ptr<Data> data = std::make_unique<Data>();
+	mutable std::mutex mu;
 };
 
 // TU initialize global/statics in undefined order

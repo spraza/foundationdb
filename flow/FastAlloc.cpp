@@ -305,6 +305,8 @@ static int64_t getSizeCode(int i) {
 #endif
 
 void TopMap::inc(const Key& key, const int delta) {
+	std::lock_guard<std::mutex> lock(mu);
+
 	int old_val = data->kv[key];
 	int new_val = old_val + delta;
 
@@ -320,10 +322,12 @@ void TopMap::inc(const Key& key, const int delta) {
 }
 
 void TopMap::clear() {
+	std::lock_guard<std::mutex> lock(mu);
 	data = std::make_unique<Data>();
 }
 
 std::string TopMap::topN(int N) const {
+	std::lock_guard<std::mutex> lock(mu);
 	std::string result;
 	int count_so_far = 0;
 
