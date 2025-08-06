@@ -462,9 +462,9 @@ std::vector<std::pair<const uint8_t*, int>> const& getWipedAreaSet() {
 template <int Size>
 void* FastAllocator<Size>::allocate() {
 	// ArenaStatTypes::getActorAllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
-	// if (Size == 96) {
-	// 	ArenaStatTypes::getActor96AllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
-	// }
+	if (Size == 96) {
+		ArenaStatTypes::getActor96AllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
+	}
 
 	if (keepalive_allocator::isActive()) [[unlikely]]
 		return keepalive_allocator::allocate(Size);
