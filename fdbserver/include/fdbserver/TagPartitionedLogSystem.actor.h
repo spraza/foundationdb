@@ -66,7 +66,6 @@ struct OldLogData {
 };
 
 struct IdToInterf : ReferenceCounted<IdToInterf> {
-	Optional<Version> recoverAt = Optional<Version>();
 	std::map<UID, TLogInterface> lockInterf;
 };
 
@@ -256,12 +255,7 @@ struct TagPartitionedLogSystem final : ILogSystem, ReferenceCounted<TagPartition
 	// Specifically, the epoch is determined by looking up "dbgid" in tlog sets of generations.
 	// The returned cursor can peek data at the "tag" from the given "begin" version to that epoch's end version or
 	// the recovery version for the latest old epoch. For the current epoch, the cursor has no end version.
-	// For the old epoch, the cursor is provided an end version.
-	Reference<IPeekCursor> peekLogRouter(UID dbgid,
-	                                     Version begin,
-	                                     Tag tag,
-	                                     bool useSatellite,
-	                                     Optional<Version> end) final;
+	Reference<IPeekCursor> peekLogRouter(UID dbgid, Version begin, Tag tag, bool useSatellite) final;
 
 	Version getKnownCommittedVersion() final;
 
@@ -416,7 +410,10 @@ struct TagPartitionedLogSystem final : ILogSystem, ReferenceCounted<TagPartition
 	    std::vector<Reference<AsyncVar<OptionalInterface<TLogInterface>>>> tlogs,
 	    Reference<AsyncVar<Version>> recoveredVersion);
 
-	ACTOR static Future<TLogLockResult> lockTLog(UID myID, Reference<AsyncVar<OptionalInterface<TLogInterface>>> tlog);
+	ACTOR static Future<TLogLockResult> lockTLog(
+	    UID myID,
+	    Reference<AsyncVar<OptionalInterface<TLogInterface>>> tlog,
+	    Optional<Reference<IdToInterf>> lockInterf = Optional<Reference<IdToInterf>>());
 	template <class T>
 	static std::vector<T> getReadyNonError(std::vector<Future<T>> const& futures);
 };
