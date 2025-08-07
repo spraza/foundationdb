@@ -201,7 +201,7 @@ class TopMap {
 public:
 	using Key = std::vector<std::string>;
 
-	void inc(const Key key, const int delta = 1);
+	void inc(const Key& key, const int delta = 1);
 	void clear();
 	std::string topN(int N) const;
 
@@ -213,7 +213,6 @@ private:
 	};
 
 	std::unique_ptr<Data> data = std::make_unique<Data>();
-	mutable std::mutex mu;
 };
 
 // TU initialize global/statics in undefined order

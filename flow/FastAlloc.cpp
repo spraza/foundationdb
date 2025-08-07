@@ -304,9 +304,7 @@ static int64_t getSizeCode(int i) {
 }
 #endif
 
-void TopMap::inc(const Key key, const int delta) {
-	std::lock_guard<std::mutex> lock(mu);
-
+void TopMap::inc(const Key& key, const int delta) {
 	int old_val = data->kv[key];
 	int new_val = old_val + delta;
 
@@ -322,12 +320,10 @@ void TopMap::inc(const Key key, const int delta) {
 }
 
 void TopMap::clear() {
-	std::lock_guard<std::mutex> lock(mu);
 	data = std::make_unique<Data>();
 }
 
 std::string TopMap::topN(int N) const {
-	std::lock_guard<std::mutex> lock(mu);
 	std::string result;
 	int count_so_far = 0;
 
@@ -462,9 +458,9 @@ std::vector<std::pair<const uint8_t*, int>> const& getWipedAreaSet() {
 template <int Size>
 void* FastAllocator<Size>::allocate() {
 	// ArenaStatTypes::getActorAllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
-	if (Size == 96) {
-		ArenaStatTypes::getActor96AllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
-	}
+	// if (Size == 96) {
+	// 	ArenaStatTypes::getActor96AllocLastTMap().inc(ArenaStatTypes::getActorStack(), Size);
+	// }
 
 	if (keepalive_allocator::isActive()) [[unlikely]]
 		return keepalive_allocator::allocate(Size);
