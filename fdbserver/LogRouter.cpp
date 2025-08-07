@@ -92,7 +92,6 @@ struct LogRouterData {
 	double maxGetMoreTime = 0; // The max wait time LR spent in a pull-data-request to satellite tLog.
 	int64_t generation = -1;
 	Reference<Histogram> peekLatencyDist;
-	Optional<Version> recoverAt = Optional<Version>();
 
 	struct PeekTrackerData {
 		std::map<int, Promise<std::pair<Version, bool>>> sequence_version;
@@ -138,8 +137,6 @@ struct LogRouterData {
 		logSet.tLogPolicy = req.tLogPolicy;
 		logSet.locality = req.locality;
 		logSet.updateLocalitySet(req.tLogLocalities);
-
-		recoverAt = req.recoverAt;
 
 		for (int i = 0; i < req.tLogLocalities.size(); i++) {
 			Tag tag(tagLocalityRemoteLog, i);
@@ -390,8 +387,7 @@ Future<Reference<ILogSystem::IPeekCursor>> LogRouterData::getPeekCursorData(Refe
 		    .When(logSystemChanged,
 		          [&](const Void&) {
 			          if (logSystem->get()) {
-				          result =
-				              logSystem->get()->peekLogRouter(dbgid, beginVersion, routerTag, useSatellite, recoverAt);
+				          result = logSystem->get()->peekLogRouter(dbgid, beginVersion, routerTag, useSatellite);
 				          primaryPeekLocation = result->getPrimaryPeekLocation();
 				          TraceEvent("LogRouterPeekLocation", dbgid)
 				              .detail("LogID", result->getPrimaryPeekLocation())
@@ -407,7 +403,7 @@ Future<Reference<ILogSystem::IPeekCursor>> LogRouterData::getPeekCursorData(Refe
 			          CODE_PROBE(true, "Detect log router slow peeks");
 			          TraceEvent(SevWarnAlways, "LogRouterSlowPeek", dbgid).detail("NextTrySatellite", !useSatellite);
 			          useSatellite = !useSatellite;
-			          result = logSystem->get()->peekLogRouter(dbgid, beginVersion, routerTag, useSatellite, recoverAt);
+			          result = logSystem->get()->peekLogRouter(dbgid, beginVersion, routerTag, useSatellite);
 			          primaryPeekLocation = result->getPrimaryPeekLocation();
 			          TraceEvent("LogRouterPeekLocation", dbgid)
 			              .detail("LogID", result->getPrimaryPeekLocation())
