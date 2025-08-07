@@ -304,7 +304,7 @@ static int64_t getSizeCode(int i) {
 }
 #endif
 
-void TopMap::inc(const Key& key, const int delta) {
+void TopMap::inc(const Key key, const int delta) {
 	std::lock_guard<std::mutex> lock(mu);
 
 	int old_val = data->kv[key];

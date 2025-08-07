@@ -201,7 +201,7 @@ class TopMap {
 public:
 	using Key = std::vector<std::string>;
 
-	void inc(const Key& key, const int delta = 1);
+	void inc(const Key key, const int delta = 1);
 	void clear();
 	std::string topN(int N) const;
 
