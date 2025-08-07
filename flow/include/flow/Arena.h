@@ -105,7 +105,7 @@ class TopMap {
 
 public:
 	void inc(const std::vector<std::string>& key, const int weight = 1);
-	void dec(const std::vector<std::string>& key);
+	// void dec(const std::vector<std::string>& key);
 	std::string topN(int N) const;
 
 private:
@@ -145,7 +145,7 @@ struct ArenaStatTypes {
 	static int64_t& getArenasDestroyed();
 	static int64_t& getArenasActive();
 	static std::vector<std::string>& getActorStack();
-	static TopMap& getActorMap(); // num of arena object constructions
+	// static TopMap& getActorMap(); // num of arena object constructions
 	static TopMap& getActorByteLastTMap(); // same as getActorMap, but for bytes at arenablock level
 };
 

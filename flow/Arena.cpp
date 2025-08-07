@@ -120,21 +120,21 @@ void TopMap::inc(const std::vector<std::string>& key, const int weight) {
 	byVal_[newVal].insert(key);
 }
 
-void TopMap::dec(const std::vector<std::string>& key) {
-	assert(kv_.count(key));
-	int oldVal = kv_[key];
-	{
-		auto& bucket = byVal_[oldVal];
-		bucket.erase(key);
-		if (bucket.empty())
-			byVal_.erase(oldVal);
-	}
-	if (--kv_[key] == 0) {
-		kv_.erase(key);
-	} else {
-		byVal_[kv_[key]].insert(key);
-	}
-}
+// void TopMap::dec(const std::vector<std::string>& key) {
+// 	assert(kv_.count(key));
+// 	int oldVal = kv_[key];
+// 	{
+// 		auto& bucket = byVal_[oldVal];
+// 		bucket.erase(key);
+// 		if (bucket.empty())
+// 			byVal_.erase(oldVal);
+// 	}
+// 	if (--kv_[key] == 0) {
+// 		kv_.erase(key);
+// 	} else {
+// 		byVal_[kv_[key]].insert(key);
+// 	}
+// }
 
 std::string TopMap::topN(int N) const {
 	if (N <= 0)
@@ -173,10 +173,10 @@ std::vector<std::string>& ArenaStatTypes::getActorStack() {
 	return x;
 }
 
-TopMap& ArenaStatTypes::getActorMap() {
-	static TopMap x;
-	return x;
-}
+// TopMap& ArenaStatTypes::getActorMap() {
+// 	static TopMap x;
+// 	return x;
+// }
 
 TopMap& ArenaStatTypes::getActorByteLastTMap() {
 	static TopMap x;
@@ -199,14 +199,14 @@ ArenaCounter::~ArenaCounter() {
 void ArenaCounter::inc() {
 	++ArenaStatTypes::getArenasActive();
 	++ArenaStatTypes::getArenasCreated();
-	actorStack = ArenaStatTypes::getActorStack();
-	ArenaStatTypes::getActorMap().inc(actorStack);
+	// actorStack = ArenaStatTypes::getActorStack();
+	// ArenaStatTypes::getActorMap().inc(actorStack);
 }
 
 void ArenaCounter::dec() {
 	--ArenaStatTypes::getArenasActive();
 	++ArenaStatTypes::getArenasDestroyed();
-	ArenaStatTypes::getActorMap().dec(actorStack);
+	// ArenaStatTypes::getActorMap().dec(actorStack);
 }
 
 Arena::Arena() : impl(nullptr) {}

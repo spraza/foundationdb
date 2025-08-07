@@ -4266,7 +4266,7 @@ ACTOR Future<Void> memoryProfiler() {
 		    .detail("ArenasCreated", ArenaStatTypes::getArenasCreated())
 		    .detail("ArenasDestroyed", ArenaStatTypes::getArenasDestroyed())
 		    .detail("ArenasActive", ArenaStatTypes::getArenasActive())
-		    .detail("TopActorsAlloc", ArenaStatTypes::getActorMap().topN(5))
+		    //.detail("TopActorsAlloc", ArenaStatTypes::getActorMap().topN(5))
 		    .detail("TopActorsBytes", ArenaStatTypes::getActorByteLastTMap().topN(5));
 		ArenaStatTypes::getActorByteLastTMap() = TopMap(); // reset everytime, that's why we have "last T"
 		wait(delay(15));
