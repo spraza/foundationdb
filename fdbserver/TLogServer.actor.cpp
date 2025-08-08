@@ -2859,11 +2859,6 @@ ACTOR Future<Void> serveTLogInterface(TLogData* self,
 		when(TLogEnablePopRequest enablePopReq = waitNext(tli.enablePopRequest.getFuture())) {
 			logData->addActor.send(tLogEnablePopReq(enablePopReq, self, logData));
 		}
-		when(setClusterRecoveryVersionRequest req = waitNext(tli.setClusterRecoveryVersion.getFuture())) {
-			ASSERT(logData->stopped());
-			self->clusterRecoveryVersion = req.recoveryVersion;
-			req.reply.send(Void());
-		}
 	}
 }
 
