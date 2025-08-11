@@ -317,6 +317,11 @@ struct TLogData : NonCopyable {
 	                                // interface should work without directly accessing rawPersistentQueue
 	TLogQueue* persistentQueue; // Logical queue the log operates on and persist its data.
 
+	// For each version above knownCommittedVersion, track:
+	// <Version, PrevVersion (that the sequencer provided), TLogs that the version has been sent to (the tLogs
+	//  are represented by their corresponding positions in "TagPartitionedLogSystem::tLogs")>
+	std::deque<UnknownCommittedVersions> unknownCommittedVersions;
+
 	int64_t diskQueueCommitBytes;
 	AsyncVar<bool>
 	    largeDiskQueueCommitBytes; // becomes true when diskQueueCommitBytes is greater than MAX_QUEUE_COMMIT_BYTES
@@ -522,11 +527,6 @@ struct LogData : NonCopyable, public ReferenceCounted<LogData> {
 	Version queuePoppedVersion; // The disk queue has been popped up until the location which represents this version.
 	Version minPoppedTagVersion;
 	Tag minPoppedTag; // The tag that makes tLog hold its data and cause tLog's disk queue increasing.
-
-	// For each version above knownCommittedVersion, track:
-	// <Version, PrevVersion (that the sequencer provided), TLogs that the version has been sent to (the tLogs
-	//  are represented by their corresponding positions in "TagPartitionedLogSystem::tLogs")>
-	std::deque<UnknownCommittedVersions> unknownCommittedVersions;
 
 	Deque<std::pair<Version, Standalone<VectorRef<uint8_t>>>> messageBlocks;
 	std::vector<std::vector<Reference<TagData>>> tag_data; // tag.locality | tag.id
@@ -854,7 +854,7 @@ ACTOR Future<Void> tLogLock(TLogData* self, ReplyPromise<TLogLockResult> reply, 
 	result.knownCommittedVersion = logData->knownCommittedVersion;
 	result.id = self->dbgid;
 	result.logId = logData->logId;
-	result.unknownCommittedVersions = logData->unknownCommittedVersions;
+	result.unknownCommittedVersions = self->unknownCommittedVersions;
 
 	TraceEvent("TLogStop2", self->dbgid)
 	    .detail("LogId", logData->logId)
@@ -2440,10 +2440,10 @@ ACTOR Future<Void> tLogCommit(TLogData* self,
 		// Notifies the commitQueue actor to commit persistentQueue, and also unblocks tLogPeekMessages actors
 		logData->version.set(req.version);
 		if (SERVER_KNOBS->ENABLE_VERSION_VECTOR_TLOG_UNICAST) {
-			logData->unknownCommittedVersions.emplace_front(req.version, req.seqPrevVersion, req.tLogLocIds);
-			while (!logData->unknownCommittedVersions.empty() &&
-			       logData->unknownCommittedVersions.back().version <= req.knownCommittedVersion) {
-				logData->unknownCommittedVersions.pop_back();
+			self->unknownCommittedVersions.emplace_front(req.version, req.seqPrevVersion, req.tLogLocIds);
+			while (!self->unknownCommittedVersions.empty() &&
+			       self->unknownCommittedVersions.back().version <= req.knownCommittedVersion) {
+				self->unknownCommittedVersions.pop_back();
 			}
 		} else {
 			ASSERT(req.prevVersion == req.seqPrevVersion); // @todo remove this assert later
