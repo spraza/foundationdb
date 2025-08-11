@@ -292,8 +292,7 @@ ACTOR Future<Void> serverPeekParallelGetMore(ILogSystem::ServerPeekCursor* self,
 					                        self->tag,
 					                        self->returnIfBlocked,
 					                        self->onlySpilled,
-					                        std::make_pair(self->randomID, self->sequence++),
-					                        self->end.version),
+					                        std::make_pair(self->randomID, self->sequence++)),
 					        taskID)));
 				}
 				if (self->sequence == std::numeric_limits<decltype(self->sequence)>::max()) {
@@ -449,9 +448,7 @@ ACTOR Future<Void> serverPeekGetMore(ILogSystem::ServerPeekCursor* self, TaskPri
 				                        TLogPeekRequest(self->messageVersion.version,
 				                                        self->tag,
 				                                        self->returnIfBlocked,
-				                                        self->onlySpilled,
-				                                        Optional<std::pair<UID, int>>(),
-				                                        self->end.version),
+				                                        self->onlySpilled),
 				                        taskID))
 				                  : Never())) {
 					updateCursorWithReply(self, res);
