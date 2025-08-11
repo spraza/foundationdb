@@ -261,20 +261,15 @@ struct TLogPeekStreamRequest {
 	Tag tag;
 	bool returnIfBlocked;
 	int limitBytes;
-	Optional<Version> end; // when set is exclusive to the desired range
 	ReplyPromiseStream<TLogPeekStreamReply> reply;
 
 	TLogPeekStreamRequest() {}
-	TLogPeekStreamRequest(Version version,
-	                      Tag tag,
-	                      bool returnIfBlocked,
-	                      int limitBytes,
-	                      Optional<Version> end = Optional<Version>())
-	  : begin(version), tag(tag), returnIfBlocked(returnIfBlocked), limitBytes(limitBytes), end(end) {}
+	TLogPeekStreamRequest(Version version, Tag tag, bool returnIfBlocked, int limitBytes)
+	  : begin(version), tag(tag), returnIfBlocked(returnIfBlocked), limitBytes(limitBytes) {}
 
 	template <class Ar>
 	void serialize(Ar& ar) {
-		serializer(ar, begin, tag, returnIfBlocked, limitBytes, reply, end);
+		serializer(ar, begin, tag, returnIfBlocked, limitBytes, reply);
 	}
 };
 
