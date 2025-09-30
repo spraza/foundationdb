@@ -1907,11 +1907,12 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 			// TODO (version vector) all tags may be too many, instead,  standard deviation?
 			wait(waitForMessagesForTag(logData, reqTag, reqBegin, SERVER_KNOBS->BLOCKING_PEEK_TIMEOUT));
 			double latency = now() - startTime;
-			auto [it, _] = logData->blockingPeekLatencies.try_emplace(reqTag,
-			                                                          "BlockingPeekLatencies-" + reqTag.toString(),
-			                                                          nondeterministicRandom()->randomUniqueID(),
-			                                                          SERVER_KNOBS->LATENCY_METRICS_LOGGING_INTERVAL,
-			                                                          SERVER_KNOBS->LATENCY_SKETCH_ACCURACY);
+			auto [it, inserted] =
+			    logData->blockingPeekLatencies.try_emplace(reqTag,
+			                                               "BlockingPeekLatencies-" + reqTag.toString(),
+			                                               nondeterministicRandom()->randomUniqueID(),
+			                                               SERVER_KNOBS->LATENCY_METRICS_LOGGING_INTERVAL,
+			                                               SERVER_KNOBS->LATENCY_SKETCH_ACCURACY);
 			LatencySample& sample = it->second;
 			sample.addMeasurement(latency);
 			poppedVer = poppedVersion(logData, reqTag);
