@@ -125,7 +125,7 @@ void ClientKnobs::initialize(Randomize randomize) {
 	init( WATCH_TIMEOUT,                          30.0 ); if( randomize && BUGGIFY ) WATCH_TIMEOUT = 20.0;
 
 	// Core
-	init( CORE_VERSIONSPERSECOND,		           1e6 );
+	
 	init( LOG_RANGE_BLOCK_SIZE, CORE_VERSIONSPERSECOND );
 	init( MUTATION_BLOCK_SIZE,	            	  10000);
 	init( MAX_VERSION_CACHE_LAG,                    0.1 );
@@ -134,6 +134,11 @@ void ClientKnobs::initialize(Randomize randomize) {
 	init( FORCE_GRV_CACHE_OFF,                    false );
 	init( GRV_CACHE_RK_COOLDOWN,                   60.0 );
 	init( GRV_SUSTAINED_THROTTLING_THRESHOLD,       0.1 );
+
+	// Version knobs related to "5s" timeout
+	init( CORE_VERSIONSPERSECOND,		           1e6 );
+	init( VERSIONS_PER_SECOND,                     1e6 ); // Must be the same as SERVER_KNOBS->VERSIONS_PER_SECOND
+	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS, 5 * VERSIONS_PER_SECOND);  // Must be the same as SERVER_KNOBS->MAX_WRITE_TRANSACTION_LIFE_VERSIONS
 
 	// TaskBucket
 	init( TASKBUCKET_LOGGING_DELAY,                5.0 );
@@ -175,9 +180,7 @@ void ClientKnobs::initialize(Randomize randomize) {
 	init( COPY_LOG_READ_AHEAD_BYTES,        BACKUP_LOCK_BYTES / COPY_LOG_PREFETCH_BLOCKS); // each task will use up to COPY_LOG_PREFETCH_BLOCKS * COPY_LOG_READ_AHEAD_BYTES memory
 	init( COPY_LOG_TASK_DURATION_NANOS,	      1e10 ); // 10 seconds
 	init( BACKUP_TASKS_PER_AGENT,                   10 );
-	init( BACKUP_POLL_PROGRESS_SECONDS,             10 );
-	init( VERSIONS_PER_SECOND,                     1e6 ); // Must be the same as SERVER_KNOBS->VERSIONS_PER_SECOND
-	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS, 5 * VERSIONS_PER_SECOND);  // Must be the same as SERVER_KNOBS->MAX_WRITE_TRANSACTION_LIFE_VERSIONS
+	init( BACKUP_POLL_PROGRESS_SECONDS,             10 );	
 	init( SIM_BACKUP_TASKS_PER_AGENT,               10 );
 	init( BACKUP_RANGEFILE_BLOCK_SIZE,      1024 * 1024);
 	init( BACKUP_LOGFILE_BLOCK_SIZE,        1024 * 1024);

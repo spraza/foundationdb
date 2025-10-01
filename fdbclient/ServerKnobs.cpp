@@ -42,14 +42,16 @@ void ServerKnobs::initialize(Randomize randomize, ClientKnobs* clientKnobs, IsSi
 	init( ENABLE_VERSION_VECTOR_HA_OPTIMIZATION,               false );
 	init( ENABLE_VERSION_VECTOR_REPLY_RECOVERY,                false );
 
-	bool buggifyShortReadWindow = randomize && BUGGIFY && !ENABLE_VERSION_VECTOR;
-	init( MAX_READ_TRANSACTION_LIFE_VERSIONS,      5 * VERSIONS_PER_SECOND ); if (randomize && BUGGIFY) MAX_READ_TRANSACTION_LIFE_VERSIONS = VERSIONS_PER_SECOND; else if (buggifyShortReadWindow) MAX_READ_TRANSACTION_LIFE_VERSIONS = std::max<int>(1, 0.1 * VERSIONS_PER_SECOND); else if( randomize && BUGGIFY ) MAX_READ_TRANSACTION_LIFE_VERSIONS = 10 * VERSIONS_PER_SECOND;
-	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS,     5 * VERSIONS_PER_SECOND ); if (randomize && BUGGIFY) MAX_WRITE_TRANSACTION_LIFE_VERSIONS=std::max<int>(1, 1 * VERSIONS_PER_SECOND);
 	init( MAX_COMMIT_BATCH_INTERVAL,                             2.0 ); if( randomize && BUGGIFY ) MAX_COMMIT_BATCH_INTERVAL = 0.5; // Each commit proxy generates a CommitTransactionBatchRequest at least this often, so that versions always advance smoothly
 	MAX_COMMIT_BATCH_INTERVAL = std::min(MAX_COMMIT_BATCH_INTERVAL, MAX_READ_TRANSACTION_LIFE_VERSIONS/double(2*VERSIONS_PER_SECOND)); // Ensure that the proxy commits 2 times every MAX_READ_TRANSACTION_LIFE_VERSIONS, otherwise the master will not give out versions fast enough
 	MAX_COMMIT_BATCH_INTERVAL = std::min(MAX_COMMIT_BATCH_INTERVAL, MAX_WRITE_TRANSACTION_LIFE_VERSIONS/double(2*VERSIONS_PER_SECOND)); // Ensure that the proxy commits 2 times every MAX_WRITE_TRANSACTION_LIFE_VERSIONS, otherwise the master will not give out versions fast enough
 	init( MAX_VERSION_RATE_MODIFIER,                             0.1 );
 	init( MAX_VERSION_RATE_OFFSET,               VERSIONS_PER_SECOND ); // If the calculated version is more than this amount away from the expected version, it will be clamped to this value. This prevents huge version jumps.
+
+	// Version knobs related to "5s" timeout
+	init( MAX_READ_TRANSACTION_LIFE_VERSIONS,      5 * VERSIONS_PER_SECOND ); if (isSimulated) MAX_READ_TRANSACTION_LIFE_VERSIONS = deterministicRandom()->randomInt(1, 10 + 1); // [1, 10]
+	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS,     5 * VERSIONS_PER_SECOND ); if (isSimulated) MAX_WRITE_TRANSACTION_LIFE_VERSIONS = deterministicRandom()->randomInt(1, 10 + 1); // [1, 10]
+	init( BEHIND_CHECK_VERSIONS,             5 * VERSIONS_PER_SECOND );
 
 	// TLogs
 	init( TLOG_TIMEOUT,                                          0.4 ); //cannot buggify because of availability
@@ -1083,8 +1085,7 @@ void ServerKnobs::initialize(Randomize randomize, ClientKnobs* clientKnobs, IsSi
 	init( BYTE_SAMPLE_LOAD_DELAY,                                0.0 ); if( randomize && BUGGIFY ) BYTE_SAMPLE_LOAD_DELAY = 0.1;
 	init( BYTE_SAMPLE_START_DELAY,                               1.0 ); if( randomize && BUGGIFY ) BYTE_SAMPLE_START_DELAY = 0.0;
 	init( BEHIND_CHECK_DELAY,                                    2.0 );
-	init( BEHIND_CHECK_COUNT,                                      2 );
-	init( BEHIND_CHECK_VERSIONS,             5 * VERSIONS_PER_SECOND );
+	init( BEHIND_CHECK_COUNT,                                      2 );	
 	init( WAIT_METRICS_WRONG_SHARD_CHANCE,   isSimulated ? 1.0 : 0.1 );
 	init( MIN_TAG_READ_PAGES_RATE,                               100 ); if( randomize && BUGGIFY ) MIN_TAG_READ_PAGES_RATE = 0;
 	init( MIN_TAG_WRITE_PAGES_RATE,                              100 ); if( randomize && BUGGIFY ) MIN_TAG_WRITE_PAGES_RATE = 0;

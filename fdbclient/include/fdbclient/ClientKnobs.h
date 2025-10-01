@@ -125,7 +125,6 @@ public:
 	double IS_ACCEPTABLE_DELAY;
 
 	// Core
-	int64_t CORE_VERSIONSPERSECOND; // This is defined within the server but used for knobs based on server value
 	int LOG_RANGE_BLOCK_SIZE;
 	int MUTATION_BLOCK_SIZE;
 	double MAX_VERSION_CACHE_LAG; // The upper bound in seconds for OK amount of staleness when using a cached RV
@@ -135,6 +134,14 @@ public:
 	double GRV_CACHE_RK_COOLDOWN; // Required number of seconds to pass after throttling to re-allow cache use
 	double GRV_SUSTAINED_THROTTLING_THRESHOLD; // If ALL GRV requests have been throttled in the last number of seconds
 	                                           // specified here, ratekeeper is throttling and not a false positive
+
+	// Version knobs related to "5s" timeout
+	int64_t CORE_VERSIONSPERSECOND; // This is defined within the server but used for knobs based on server value
+	                                // Used in: lot of places
+	int64_t VERSIONS_PER_SECOND; // Copy of SERVER_KNOBS, as we can't link with it.
+	                             // Used in: fdbcli (versionepochcommand), fdbclient (backup agvent, special key space,
+	                             // tenant management)
+	int64_t MAX_WRITE_TRANSACTION_LIFE_VERSIONS; // Copy of SERVER_KNOBS, as we can't link with it.
 
 	// Taskbucket
 	double TASKBUCKET_LOGGING_DELAY;
@@ -175,8 +182,6 @@ public:
 	double COPY_LOG_TASK_DURATION_NANOS;
 	int BACKUP_TASKS_PER_AGENT;
 	int BACKUP_POLL_PROGRESS_SECONDS;
-	int64_t VERSIONS_PER_SECOND; // Copy of SERVER_KNOBS, as we can't link with it.
-	int64_t MAX_WRITE_TRANSACTION_LIFE_VERSIONS; // Copy of SERVER_KNOBS, as we can't link with it.
 	int SIM_BACKUP_TASKS_PER_AGENT;
 	int BACKUP_RANGEFILE_BLOCK_SIZE;
 	int BACKUP_LOGFILE_BLOCK_SIZE;

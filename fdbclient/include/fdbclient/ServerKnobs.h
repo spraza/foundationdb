@@ -37,8 +37,6 @@ public:
 	int64_t VERSIONS_PER_SECOND;
 	int64_t MAX_VERSIONS_IN_FLIGHT;
 	int64_t MAX_VERSIONS_IN_FLIGHT_FORCED;
-	int64_t MAX_READ_TRANSACTION_LIFE_VERSIONS;
-	int64_t MAX_WRITE_TRANSACTION_LIFE_VERSIONS;
 	bool ENABLE_VERSION_VECTOR;
 	bool ENABLE_VERSION_VECTOR_TLOG_UNICAST;
 	bool ENABLE_VERSION_VECTOR_REPLY_RECOVERY;
@@ -47,6 +45,12 @@ public:
 	double MAX_VERSION_RATE_MODIFIER;
 	int64_t MAX_VERSION_RATE_OFFSET;
 	bool ENABLE_VERSION_VECTOR_HA_OPTIMIZATION;
+
+	// Version knobs related to "5s" timeout
+	int64_t MAX_READ_TRANSACTION_LIFE_VERSIONS; // Used in: SS, CP
+	int64_t MAX_WRITE_TRANSACTION_LIFE_VERSIONS; // Used in: Resolver, CP, DD, LR, RK, MS/Sequencer, SC (storage cache),
+	                                             // Blob*,
+	int64_t BEHIND_CHECK_VERSIONS; // Used in: SS
 
 	// TLogs
 	bool PEEK_USING_STREAMING;
@@ -1120,7 +1124,6 @@ public:
 	double BYTE_SAMPLE_START_DELAY;
 	double BEHIND_CHECK_DELAY;
 	int BEHIND_CHECK_COUNT;
-	int64_t BEHIND_CHECK_VERSIONS;
 	double WAIT_METRICS_WRONG_SHARD_CHANCE;
 	// Minimum read throughput (in pages/second) that a tag must register
 	// on a storage server in order for tag throughput statistics to be
