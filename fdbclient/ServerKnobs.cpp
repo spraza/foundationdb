@@ -49,8 +49,8 @@ void ServerKnobs::initialize(Randomize randomize, ClientKnobs* clientKnobs, IsSi
 	init( MAX_VERSION_RATE_OFFSET,               VERSIONS_PER_SECOND ); // If the calculated version is more than this amount away from the expected version, it will be clamped to this value. This prevents huge version jumps.
 
 	// Version knobs related to "5s" timeout
-	init( MAX_READ_TRANSACTION_LIFE_VERSIONS,      1 * VERSIONS_PER_SECOND ); if (isSimulated) MAX_READ_TRANSACTION_LIFE_VERSIONS = deterministicRandom()->randomInt(1, 10 + 1); // [1, 10]
-	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS,     1 * VERSIONS_PER_SECOND ); if (isSimulated) MAX_WRITE_TRANSACTION_LIFE_VERSIONS = deterministicRandom()->randomInt(1, 10 + 1); // [1, 10]
+	init( MAX_READ_TRANSACTION_LIFE_VERSIONS,      4 * VERSIONS_PER_SECOND ); if (isSimulated) MAX_READ_TRANSACTION_LIFE_VERSIONS = deterministicRandom()->randomInt(1, 10 + 1); // [1, 10]
+	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS,     4 * VERSIONS_PER_SECOND ); if (isSimulated) MAX_WRITE_TRANSACTION_LIFE_VERSIONS = deterministicRandom()->randomInt(1, 10 + 1); // [1, 10]
 	init( BEHIND_CHECK_VERSIONS,             5 * VERSIONS_PER_SECOND );
 
 	// TLogs
