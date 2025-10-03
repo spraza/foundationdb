@@ -48,7 +48,9 @@ Optional<KnobValue> ServerKnobCollection::tryParseKnobValue(std::string const& k
 }
 
 bool ServerKnobCollection::trySetKnob(std::string const& knobName, KnobValueRef const& knobValue) {
-	return clientKnobCollection.trySetKnob(knobName, knobValue) || knobValue.visitSetKnob(knobName, serverKnobs);
+	bool x = clientKnobCollection.trySetKnob(knobName, knobValue);
+	bool y = knobValue.visitSetKnob(knobName, serverKnobs);
+	return x || y;
 }
 
 bool ServerKnobCollection::isAtomic(std::string const& knobName) const {
