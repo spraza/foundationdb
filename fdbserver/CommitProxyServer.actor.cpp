@@ -909,7 +909,7 @@ CommitBatchContext::CommitBatchContext(ProxyCommitData* const pProxyCommitData_,
 	}
 
 	// since we are using just the former to limit the number of versions actually in flight!
-	ASSERT(SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS <= SERVER_KNOBS->MAX_VERSIONS_IN_FLIGHT);
+	ASSERT(SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_CP <= SERVER_KNOBS->MAX_VERSIONS_IN_FLIGHT);
 }
 
 void CommitBatchContext::setupTraceBatch() {
@@ -983,7 +983,8 @@ ACTOR Future<Void> preresolutionProcessing(CommitBatchContext* self) {
 	double queuingDelay = g_network->timer_monotonic() - startTime;
 	pProxyCommitData->stats.computeLatency.addMeasurement(queuingDelay);
 	pProxyCommitData->stats.commitBatchQueuingDist->sampleSeconds(queuingDelay);
-	if ((queuingDelay > (double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS / SERVER_KNOBS->VERSIONS_PER_SECOND ||
+	if ((queuingDelay >
+	         (double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_CP / SERVER_KNOBS->VERSIONS_PER_SECOND ||
 	     (g_network->isSimulated() && BUGGIFY_WITH_PROB(0.01))) &&
 	    SERVER_KNOBS->PROXY_REJECT_BATCH_QUEUED_TOO_LONG && canReject(trs)) {
 		// Disabled for the recovery transaction. otherwise, recovery can't finish and keeps doing more recoveries.
@@ -2474,11 +2475,11 @@ ACTOR Future<Void> postResolution(CommitBatchContext* self) {
 	// to roll back) We prevent this by limiting the number of versions which are semi-committed but not fully
 	// committed to be less than the MVCC window
 	if (pProxyCommitData->committedVersion.get() <
-	    self->commitVersion - SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS) {
+	    self->commitVersion - SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_CP) {
 		self->computeDuration += g_network->timer_monotonic() - self->computeStart;
 		state Span waitVersionSpan;
 		while (pProxyCommitData->committedVersion.get() <
-		       self->commitVersion - SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS) {
+		       self->commitVersion - SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_CP) {
 			// This should be *extremely* rare in the real world, but knob buggification should make it happen in
 			// simulation
 			CODE_PROBE(true, "Semi-committed pipeline limited by MVCC window");
@@ -2486,7 +2487,7 @@ ACTOR Future<Void> postResolution(CommitBatchContext* self) {
 			waitVersionSpan = Span("MP:overMaxReadTransactionLifeVersions"_loc, span.context);
 			choose {
 				when(wait(pProxyCommitData->committedVersion.whenAtLeast(
-				    self->commitVersion - SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS))) {
+				    self->commitVersion - SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_CP))) {
 					wait(yield());
 					break;
 				}
@@ -2504,7 +2505,7 @@ ACTOR Future<Void> postResolution(CommitBatchContext* self) {
 					}
 
 					if (pProxyCommitData->committedVersion.get() <
-					    self->commitVersion - SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS)
+					    self->commitVersion - SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_CP)
 						wait(delay(SERVER_KNOBS->PROXY_SPIN_DELAY));
 				}
 			}

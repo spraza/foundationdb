@@ -180,7 +180,7 @@ void ClientKnobs::initialize(Randomize randomize, IsSimulated isSimulated) {
 	
 	init( VERSIONS_PER_SECOND,                     1e6 ); // Must be the same as SERVER_KNOBS->VERSIONS_PER_SECOND
 	// Must be the same as SERVER_KNOBS->MAX_WRITE_TRANSACTION_LIFE_VERSIONS. This is ensured by using this value on server side as well
-	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS, 5 * VERSIONS_PER_SECOND);  if (isSimulated) MAX_WRITE_TRANSACTION_LIFE_VERSIONS = deterministicRandom()->randomInt(1, 11); 
+	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS, 5 * VERSIONS_PER_SECOND);
 	
 	init( SIM_BACKUP_TASKS_PER_AGENT,               10 );
 	init( BACKUP_RANGEFILE_BLOCK_SIZE,      1024 * 1024);
