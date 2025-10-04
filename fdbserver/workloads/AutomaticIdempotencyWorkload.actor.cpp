@@ -18,6 +18,8 @@
  * limitations under the License.
  */
 
+#include "fdbclient/Knobs.h"
+#include "fdbserver/Knobs.h"
 #include "fdbserver/TesterInterface.actor.h"
 #include "fdbclient/ReadYourWrites.h"
 #include "fdbclient/RunRYWTransaction.actor.h"
@@ -209,6 +211,10 @@ struct AutomaticIdempotencyWorkload : TestWorkload {
 		if (ids.size() != self->clientCount * self->numTransactions) {
 			self->ok = false;
 		}
+
+		TraceEvent("Foo")
+		    .detail("Foo1", std::to_string(SERVER_KNOBS->MAX_WRITE_TRANSACTION_LIFE_VERSIONS))
+		    .detail("Foo2", std::to_string(CLIENT_KNOBS->MAX_WRITE_TRANSACTION_LIFE_VERSIONS));
 		ASSERT_EQ(ids.size(), self->clientCount * self->numTransactions);
 		return Void();
 	}
