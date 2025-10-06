@@ -507,21 +507,21 @@ public:
 		TraceEvent("RkTLogQueueSizeParameters", rkInterf.id())
 		    .detail("Target", SERVER_KNOBS->TARGET_BYTES_PER_TLOG)
 		    .detail("Spring", SERVER_KNOBS->SPRING_BYTES_TLOG)
-		    .detail(
-		        "Rate",
-		        (SERVER_KNOBS->TARGET_BYTES_PER_TLOG - SERVER_KNOBS->SPRING_BYTES_TLOG) /
-		            ((((double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS) / SERVER_KNOBS->VERSIONS_PER_SECOND) +
-		             2.0));
+		    .detail("Rate",
+		            (SERVER_KNOBS->TARGET_BYTES_PER_TLOG - SERVER_KNOBS->SPRING_BYTES_TLOG) /
+		                ((((double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_RK) /
+		                  SERVER_KNOBS->VERSIONS_PER_SECOND) +
+		                 2.0));
 
 		TraceEvent("RkStorageServerQueueSizeParameters", rkInterf.id())
 		    .detail("Target", SERVER_KNOBS->TARGET_BYTES_PER_STORAGE_SERVER)
 		    .detail("Spring", SERVER_KNOBS->SPRING_BYTES_STORAGE_SERVER)
 		    .detail("EBrake", SERVER_KNOBS->STORAGE_HARD_LIMIT_BYTES)
-		    .detail(
-		        "Rate",
-		        (SERVER_KNOBS->TARGET_BYTES_PER_STORAGE_SERVER - SERVER_KNOBS->SPRING_BYTES_STORAGE_SERVER) /
-		            ((((double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS) / SERVER_KNOBS->VERSIONS_PER_SECOND) +
-		             2.0));
+		    .detail("Rate",
+		            (SERVER_KNOBS->TARGET_BYTES_PER_STORAGE_SERVER - SERVER_KNOBS->SPRING_BYTES_STORAGE_SERVER) /
+		                ((((double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_RK) /
+		                  SERVER_KNOBS->VERSIONS_PER_SECOND) +
+		                 2.0));
 
 		tlogInterfs = dbInfo->get().logSystemConfig.allLocalLogs();
 		tlogTrackers.reserve(tlogInterfs.size());
@@ -929,7 +929,7 @@ void Ratekeeper::updateRate(RatekeeperLimits* limits) {
 		// Don't let any storage server use up its target bytes faster than its MVCC window!
 		double maxBytesPerSecond =
 		    (targetBytes - springBytes) /
-		    ((((double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS) / SERVER_KNOBS->VERSIONS_PER_SECOND) + 2.0);
+		    ((((double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_RK) / SERVER_KNOBS->VERSIONS_PER_SECOND) + 2.0);
 		double limitTps = std::min(actualTps * maxBytesPerSecond / std::max(1.0e-8, inputRate),
 		                           maxBytesPerSecond * SERVER_KNOBS->MAX_TRANSACTIONS_PER_BYTE);
 		if (ssLimitReason == limitReason_t::unlimited)
@@ -1337,7 +1337,7 @@ void Ratekeeper::updateRate(RatekeeperLimits* limits) {
 			// Don't let any tlogs use up its target bytes faster than its MVCC window!
 			double x =
 			    ((targetBytes - springBytes) /
-			     ((((double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS) / SERVER_KNOBS->VERSIONS_PER_SECOND) +
+			     ((((double)SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_RK) / SERVER_KNOBS->VERSIONS_PER_SECOND) +
 			      2.0)) /
 			    inputRate;
 			double lim = actualTps * x;
@@ -1615,8 +1615,8 @@ RatekeeperLimits::RatekeeperLimits(TransactionPriority priority,
     storageSpringBytes(storageSpringBytes), logTargetBytes(logTargetBytes), logSpringBytes(logSpringBytes),
     maxVersionDifference(maxVersionDifference),
     durabilityLagTargetVersions(durabilityLagTargetVersions +
-                                SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS), // The read transaction life versions
-                                                                                   // are expected to not
+                                SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_RK), // The read transaction life
+                                                                                      // versions are expected to not
     // be durable on the storage servers
     lastDurabilityLag(0), durabilityLagLimit(std::numeric_limits<double>::infinity()), bwLagTarget(bwLagTarget),
     priority(priority), context(context),
