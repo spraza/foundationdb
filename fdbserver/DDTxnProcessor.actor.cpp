@@ -689,7 +689,7 @@ class DDTxnProcessorImpl {
 
 				// we cannot remove a server immediately after adding it, because a perfectly timed cluster recovery
 				// could cause us to not store the mutations sent to the short lived storage server.
-				if (ver > addedVersion + SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS) {
+				if (ver > addedVersion + SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_DD) {
 					bool canRemove = wait(canRemoveStorageServer(tr, serverID));
 					auto shards = shardsAffectedByTeamFailure->getNumberOfShards(serverID);
 					TraceEvent(SevVerbose, "WaitForAllDataRemoved")
