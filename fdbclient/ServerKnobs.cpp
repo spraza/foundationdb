@@ -44,7 +44,7 @@ void ServerKnobs::initialize(Randomize randomize, ClientKnobs* clientKnobs, IsSi
 	init( ENABLE_VERSION_VECTOR_HA_OPTIMIZATION,               false );
 	init( ENABLE_VERSION_VECTOR_REPLY_RECOVERY,                false );
 	
-	init( MAX_READ_TRANSACTION_LIFE_VERSIONS_DD,      5 * VERSIONS_PER_SECOND );
+	init( MAX_READ_TRANSACTION_LIFE_VERSIONS_SEQ,      5 * VERSIONS_PER_SECOND );
 	init( MAX_READ_TRANSACTION_LIFE_VERSIONS,      3 * VERSIONS_PER_SECOND );
 	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS,     5 * VERSIONS_PER_SECOND ); if (isSimulated) MAX_WRITE_TRANSACTION_LIFE_VERSIONS = clientKnobs->MAX_WRITE_TRANSACTION_LIFE_VERSIONS * VERSIONS_PER_SECOND;
 	init( MAX_COMMIT_BATCH_INTERVAL,                             2.0 ); if( randomize && BUGGIFY ) MAX_COMMIT_BATCH_INTERVAL = 0.5; // Each commit proxy generates a CommitTransactionBatchRequest at least this often, so that versions always advance smoothly

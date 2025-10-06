@@ -175,7 +175,7 @@ ACTOR Future<Void> getVersionCxx(Reference<MasterData> self, GetCommitVersionReq
 
 			Version toAdd =
 			    std::max<Version>(1,
-			                      std::min<Version>(SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS,
+			                      std::min<Version>(SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_SEQ,
 			                                        SERVER_KNOBS->VERSIONS_PER_SECOND * (t1 - self->lastVersionTime)));
 
 			rep.prevVersion = self->version;
@@ -193,7 +193,8 @@ ACTOR Future<Void> getVersionCxx(Reference<MasterData> self, GetCommitVersionReq
 
 			CODE_PROBE(self->version - rep.prevVersion == 1, "Minimum possible version gap");
 
-			bool maxVersionGap = self->version - rep.prevVersion == SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS;
+			bool maxVersionGap =
+			    self->version - rep.prevVersion == SERVER_KNOBS->MAX_READ_TRANSACTION_LIFE_VERSIONS_SEQ;
 			CODE_PROBE(maxVersionGap, "Maximum possible version gap");
 			self->lastVersionTime = t1;
 
