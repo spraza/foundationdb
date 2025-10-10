@@ -27,6 +27,8 @@
 #include "flow/UnitTest.h"
 #include "flow/flow.h"
 
+extern int randomTxnTimeoutSeconds();
+
 #define init(...) KNOB_FN(__VA_ARGS__, INIT_ATOMIC_KNOB, INIT_KNOB)(__VA_ARGS__)
 
 ClientKnobs::ClientKnobs(Randomize randomize, IsSimulated isSimulated) {
@@ -126,8 +128,8 @@ void ClientKnobs::initialize(Randomize randomize, IsSimulated isSimulated) {
 	init( WATCH_TIMEOUT,                          30.0 ); if( randomize && BUGGIFY ) WATCH_TIMEOUT = 20.0;
 
 	// Versions -- knobs that control 5s timeout
-	init( VERSIONS_PER_SECOND,                     1e6 ); // Must be the same as SERVER_KNOBS->VERSIONS_PER_SECOND	
-	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS, 5 * VERSIONS_PER_SECOND);  if (isSimulated) MAX_WRITE_TRANSACTION_LIFE_VERSIONS = deterministicRandom()->randomInt(1, 11); 
+	init( VERSIONS_PER_SECOND,                     1e6 ); // Must be the same as SERVER_KNOBS->VERSIONS_PER_SECOND
+	init( MAX_WRITE_TRANSACTION_LIFE_VERSIONS,     5 * VERSIONS_PER_SECOND);  if (isSimulated) MAX_WRITE_TRANSACTION_LIFE_VERSIONS = randomTxnTimeoutSeconds() * VERSIONS_PER_SECOND;
 
 	// Core
 	init( CORE_VERSIONSPERSECOND,		           1e6 );
