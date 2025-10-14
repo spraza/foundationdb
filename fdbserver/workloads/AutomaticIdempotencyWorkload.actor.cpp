@@ -209,6 +209,7 @@ struct AutomaticIdempotencyWorkload : TestWorkload {
 		if (ids.size() != self->clientCount * self->numTransactions) {
 			self->ok = false;
 		}
+
 		ASSERT_EQ(ids.size(), self->clientCount * self->numTransactions);
 		return Void();
 	}
