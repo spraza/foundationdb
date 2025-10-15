@@ -1,0 +1,18 @@
+# TODO: remove txn timeout override, only use for testing
+[[knobs]]
+max_read_transaction_life_versions = 5000000
+max_write_transaction_life_versions = 5000000
+
+[[test]]
+testTitle = "TxnTimeout"
+
+    [[test.workload]]
+    testName = 'TxnTimeout'
+    testDuration = 360.0
+
+    [[test.workload]]
+    testName = 'Cycle'
+    nodeCount = 30
+    transactionsPerSecond = 250.0
+    testDuration = 360.0
+    expectedRate = 0
