@@ -38,7 +38,7 @@ NetworkAddress serverAddress;
 
 enum TutorialWellKnownEndpoints {
 	WLTOKEN_SIMPLE_KV_SERVER = WLTOKEN_FIRST_AVAILABLE,
-	WLTOKEN_ECHO_SERVER,
+	WLTOKEN_PLAY_SERVER,
 	WLTOKEN_COUNT_IN_TUTORIAL
 };
 
@@ -171,7 +171,7 @@ uint64_t tokenCounter = 1;
 
 Future<Void> echoServer() {
 	EchoServerInterface echoServer;
-	echoServer.getInterface.makeWellKnownEndpoint(WLTOKEN_ECHO_SERVER, TaskPriority::DefaultEndpoint);
+	echoServer.getInterface.makeWellKnownEndpoint(WLTOKEN_PLAY_SERVER, TaskPriority::DefaultEndpoint);
 	ActorCollection requests;
 	loop {
 		try {
@@ -216,7 +216,7 @@ Future<Void> echoServer() {
 Future<Void> echoClient() {
 	EchoServerInterface server;
 	server.getInterface =
-	    RequestStream<GetInterfaceRequest>(Endpoint::wellKnown({ serverAddress }, WLTOKEN_ECHO_SERVER));
+	    RequestStream<GetInterfaceRequest>(Endpoint::wellKnown({ serverAddress }, WLTOKEN_PLAY_SERVER));
 	server = co_await server.getInterface.getReply(GetInterfaceRequest());
 	EchoRequest echoRequest;
 	echoRequest.message = "Hello World";
