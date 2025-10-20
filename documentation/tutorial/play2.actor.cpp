@@ -38,10 +38,11 @@ struct PlayServerInterface {
 	constexpr static FileIdentifier file_identifier = 3152015;
 	RequestStream<struct GetInterfaceRequest> getInterface;
 	RequestStream<struct PlayRequest> play;
+	RequestStream<ReplyPromise<Void>> waitFailure;
 
 	template <class Ar>
 	void serialize(Ar& ar) {
-		serializer(ar, play);
+		serializer(ar, play, waitFailure);
 	}
 };
 
@@ -120,9 +121,30 @@ ACTOR Future<Void> playClient() {
 	return Void();
 }
 
+// wait failure client test
+ACTOR Future<Void> playClient2() {
+	// Setup
+	state PlayServerInterface server;
+	server.getInterface =
+	    RequestStream<GetInterfaceRequest>(Endpoint::wellKnown({ serverAddress }, WLTOKEN_PLAY_SERVER));
+	PlayServerInterface s = wait(server.getInterface.getReply(GetInterfaceRequest()));
+	server = s;
+
+	ErrorOr<Void> x = wait(server.waitFailure.getReplyUnlessFailedFor(
+	    ReplyPromise<Void>(), 0.4, -(0.4) / (8 * 3600), TaskPriority::DefaultEndpoint));
+	if (!x.present()) {
+		std::cout << "wait passed - x is not present" << std::endl;
+	} else {
+		std::cout << "wait passed - x is present" << std::endl;
+	}
+
+	return Void();
+}
+
 std::unordered_map<std::string, std::function<Future<Void>()>> actors = {
 	{ "playServer", &playServer }, // ./play2 -s 6666 playServer
 	{ "playClient", &playClient }, // ./play2 -c 127.0.0.1:6666 playClient
+	{ "playClient2", &playClient2 }, // ./play2 -c 127.0.0.1:6666 playClient2
 };
 
 int main(int argc, char* argv[]) {
