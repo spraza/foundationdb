@@ -44,10 +44,11 @@ struct PlayServerInterface {
 	constexpr static FileIdentifier file_identifier = 3152015;
 	RequestStream<struct GetInterfaceRequest> getInterface;
 	RequestStream<struct PlayRequest> play;
+	RequestStream<ReplyPromise<Void>> waitFailure;
 
 	template <class Ar>
 	void serialize(Ar& ar) {
-		serializer(ar, play);
+		serializer(ar, play, waitFailure);
 	}
 };
 
@@ -126,9 +127,30 @@ ACTOR Future<Void> client() {
 	return Void();
 }
 
+ACTOR Future<Void> waitFailureClient() {
+	// Setup
+	state PlayServerInterface server;
+	server.getInterface =
+	    RequestStream<GetInterfaceRequest>(Endpoint::wellKnown({ serverAddress }, WLTOKEN_PLAY_SERVER));
+	PlayServerInterface s = wait(server.getInterface.getReply(GetInterfaceRequest()));
+	server = s;
+
+	ErrorOr<Void> x = wait(server.waitFailure.getReplyUnlessFailedFor(
+	    ReplyPromise<Void>(), 0.4, -(0.4) / (8 * 3600), TaskPriority::DefaultEndpoint));
+	if (!x.present()) {
+		std::cout << "passed wait - x is not present" << std::endl;
+		std::cout << "error: " << x.getError().name() << ", " << x.getError().what() << std::endl;
+	} else {
+		std::cout << "passed wait - x is present" << std::endl;
+	}
+
+	return Void();
+}
+
 std::unordered_map<std::string, std::function<Future<Void>()>> actors = {
 	{ "serverActor", &server }, // ./play_network -s 6666 serverActor
 	{ "clientActor", &client }, // ./play_network -c 127.0.0.1:6666 clientActor
+	{ "waitFailureClient", &waitFailureClient } // ./play_network -c 127.0.0.1:6666 waitFailureClient
 };
 
 int main(int argc, char* argv[]) {
