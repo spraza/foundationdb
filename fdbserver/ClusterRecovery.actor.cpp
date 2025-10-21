@@ -1571,8 +1571,6 @@ ACTOR Future<Void> clusterRecoveryCore(Reference<ClusterRecoveryData> self) {
 	state TraceInterval recoveryInterval("ClusterRecovery");
 	state double recoverStartTime = now();
 
-	self->addActor.send(waitFailureServer(self->masterInterface.waitFailure.getFuture()));
-
 	TraceEvent(recoveryInterval.begin(), self->dbgid).log();
 
 	self->recoveryState = RecoveryState::READING_CSTATE;
