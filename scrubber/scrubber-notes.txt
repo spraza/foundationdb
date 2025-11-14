@@ -1,0 +1,141 @@
+FDB Trace Scrubber - Development Notes
+======================================
+
+Overview:
+---------
+A TUI-based tool for scrubbing through FDB simulation trace files (XML format).
+Allows forward/backward navigation through simulation time to visualize cluster state.
+
+Language: Go with Bubbletea TUI framework
+Location: foundationdb/scrubber/
+
+Initial Setup Commands (Run on Linux host):
+--------------------------------------------
+No manual setup needed! The CMake build handles everything automatically.
+
+Build Instructions:
+-------------------
+# From build directory:
+cmake --build . --target scrubber
+
+# Or directly with Go:
+cd foundationdb/scrubber
+go build -o ../../build/bin/scrubber
+
+Running:
+--------
+bin/scrubber path/to/trace.xml
+
+# Press 'q' to quit
+
+Files Created:
+--------------
+- go.mod              : Go module definition
+- go.sum              : Dependency checksums (auto-generated)
+- main.go             : Entry point, argument parsing, initialization
+- trace.go            : XML trace event parsing, time-indexed data structures
+- cluster.go          : Cluster state tracking (workers and roles)
+- ui.go               : Bubbletea TUI with time scrubbing and topology view
+- CMakeLists.txt      : CMake build integration
+- scrubber-notes.txt  : This file
+
+Current Functionality (v0.9):
+-----------------------------
+- Accepts single XML trace file path as argument
+- Parses XML trace file into TraceEvent structs and DB configurations
+- Time-based scrubbing with less-style keybindings:
+  - Ctrl+N: Step forward in time (100ms)
+  - Ctrl+P: Step backward in time (100ms)
+  - Left/Right: Fast scrub (1 second)
+  - Up/Down: Scroll topology pane (DC 0 always visible)
+  - g: Jump to start (t=0)
+  - G: Jump to end of trace
+  - t: Open time jump popup (enter time in seconds)
+  - r: Jump backward to previous recovery (StatusCode=0)
+  - R: Jump forward to next recovery (StatusCode=0)
+  - c: Show full DB config JSON (press q or c to close)
+  - q/Q: Quit
+- Time jump popup:
+  - Press 't' to open popup
+  - Enter time in seconds (e.g., 123.456)
+  - Real-time validation with visual feedback:
+    - Green checkmark (✓) for valid times
+    - Red X (✗) for invalid times with error message
+    - Shows valid range at bottom of popup
+  - Press Enter to jump (only if time is valid)
+  - Press Esc, q, or t to cancel
+  - Invalid times prevent jumping and keep popup open for correction
+- Database Configuration Display:
+  - Shows latest DB config at or before current time
+  - Extracted from MasterRecoveryState events
+  - Compact summary with exact field names for easy code mapping:
+    - redundancy_mode, usable_regions, logs, log_routers, remote_logs
+    - storage_engine, log_engine
+  - Shown at bottom above time scrubber with timestamp
+  - Press 'c' to view full pretty-printed JSON config
+  - Full config view shows all fields with timestamp
+  - Press q or c to close config view
+- Recovery State Display:
+  - Shows latest MasterRecoveryState at or before current time
+  - Displayed below DB config with timestamp
+  - Format: StatusCode=X | Status=Y
+  - Example: StatusCode=14 | Status=fully_recovered
+  - Allows tracking cluster recovery progress over time
+  - Press 'r' to jump backward to previous recovery start (StatusCode=0)
+  - Press 'R' to jump forward to next recovery start (StatusCode=0)
+- Displays cluster topology with:
+  - Workers grouped by DC (Data Center) ID
+    - "DC 0", "DC 1", etc. sections for main machines (2:...)
+    - Each DC shown separately with underlined header (compact, no extra spacing)
+    - Workers sorted by address within each DC
+  - Testers shown in separate section (3:... addresses)
+    - Testers sorted by address
+  - Gray dots (●) for workers without assigned roles (available candidates)
+  - Green dots (●) for workers with assigned roles (SS, TLog, Coordinator, etc.)
+  - Machine addresses for each worker
+  - Role names shown on separate indented lines below worker address
+  - "Worker" role is filtered out (base state, not operational role)
+- Address parsing:
+  - Format 1: [abcd::X:Y:Z:W]:Port
+  - Format 2: X.Y.Z.W:Port
+  - X=2 for main machines, X=3 for testers
+  - Y=DC ID (0, 1, 2, etc.)
+- Time scrubber at bottom showing current time and max time
+- Shows <NO_CLUSTER_YET> at t=0 or when no workers exist
+- Workers tracked when they appear (even if only "Worker" role)
+- All workers visible in topology showing candidates vs assigned
+- Consistent worker ordering (sorted by address, no random reordering)
+
+Next Steps:
+-----------
+[ ] Display list of trace events in TUI
+[ ] Add time-based navigation (scrubbing)
+[ ] Add filtering by severity/type/machine
+[ ] Split pane view (event list + details)
+[ ] Cluster state visualization
+[ ] Live file watching
+
+Dependencies:
+-------------
+- github.com/charmbracelet/bubbletea : TUI framework
+- github.com/charmbracelet/bubbles  : TUI components (textinput)
+- github.com/charmbracelet/lipgloss  : Styling library
+- encoding/xml                        : Standard library XML parser
+- regexp                              : Standard library regex for address parsing
+
+Architecture Notes:
+-------------------
+- TraceEvent struct: Represents a single trace event with all attributes
+- parseTraceFile(): Streams XML events, builds slice of TraceEvent
+- model struct: Bubbletea model holding events and UI state
+- Init/Update/View: Standard Bubbletea lifecycle methods
+
+XML Trace Format:
+-----------------
+Events are in format:
+<Event Severity="10" Time="0.000000" DateTime="..." Type="ProgramStart"
+       Machine="..." ID="..." />
+
+Attributes vary by event type but common ones include:
+- Severity, Time, DateTime, Type, Machine, ID
+- Event-specific attributes (transition, from, to, etc.)
