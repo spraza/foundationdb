@@ -1,0 +1,164 @@
+FDB Trace Scrubber - Development Notes
+======================================
+
+Overview:
+---------
+A TUI-based tool for scrubbing through FDB simulation trace files (XML format).
+Allows forward/backward navigation through simulation time to visualize cluster state.
+
+Language: Go with Bubbletea TUI framework
+Location: foundationdb/scrubber/
+
+Initial Setup Commands (Run on Linux host):
+--------------------------------------------
+No manual setup needed! The CMake build handles everything automatically.
+
+Build Instructions:
+-------------------
+# From build directory:
+cmake --build . --target scrubber
+
+# Or directly with Go:
+cd foundationdb/scrubber
+go build -o ../../build/bin/scrubber
+
+Running:
+--------
+bin/scrubber path/to/trace.xml
+
+# Press 'q' to quit
+
+Files Created:
+--------------
+- go.mod              : Go module definition
+- go.sum              : Dependency checksums (auto-generated)
+- main.go             : Entry point, argument parsing, initialization
+- trace.go            : XML trace event parsing, time-indexed data structures
+- cluster.go          : Cluster state tracking (workers and roles)
+- ui.go               : Bubbletea TUI with time scrubbing and topology view
+- CMakeLists.txt      : CMake build integration
+- scrubber-notes.txt  : This file
+
+Current Functionality (v1.0):
+-----------------------------
+- Accepts single XML trace file path as argument
+- Parses XML trace file into TraceEvent structs and DB configurations
+- Split pane layout:
+  - Left pane: Cluster topology view
+  - Right pane: Trace events around current time (synchronized with time navigation)
+  - Bottom section: DB config, recovery state, time scrubber, help text
+- Time-based scrubbing with less-style keybindings:
+  - Ctrl+N: Jump to next trace event (one event forward)
+  - Ctrl+P: Jump to previous trace event (one event backward)
+  - Left/Right: Fast scrub (±1 second) - updates both topology and event list
+  - Up/Down: Scroll topology pane (DC 0 always starts at top)
+  - g: Jump to start (t=0)
+  - G: Jump to end of trace
+  - t: Open time jump popup (enter time in seconds)
+  - r: Jump backward to previous recovery (StatusCode=0)
+  - R: Jump forward to next recovery (StatusCode=0)
+  - e: Jump backward to previous MasterRecoveryState (any StatusCode)
+  - E: Jump forward to next MasterRecoveryState (any StatusCode)
+  - c: Show full DB config JSON (press q or c to close)
+  - h: Show help popup with all commands
+  - q/Q: Quit
+- Trace event list (right pane):
+  - Shows events in a window centered around current event
+  - Current event highlighted with dark yellow background
+  - Events displayed with specific field ordering: Time, Type, Severity, then other attrs (sorted)
+  - Machine, ID, and Roles fields NOT shown (visible in topology pane)
+  - Field names in dim gray, field values in green/colors
+  - All events shown (no filtering) for consistent navigation
+  - Automatically scrolls to keep current event visible and centered
+  - Long event lines wrap to fit pane width
+  - Navigation (Ctrl+N/P) moves one event at a time, updating topology and footer in sync
+- Database Configuration Display:
+  - Shows latest DB config at or before current time
+  - Extracted from MasterRecoveryState events
+  - Compact summary with exact field names for easy code mapping:
+    - redundancy_mode, usable_regions, logs, log_routers, remote_logs
+    - proxies, grv_proxies, backup_worker_enabled
+    - storage_engine
+  - Shown at bottom above time scrubber with timestamp
+  - Press 'c' to view full pretty-printed JSON config
+  - If no config available yet (e.g., at t=0), shows message "No configuration available yet"
+  - Full config view shows all fields with timestamp
+  - Config popup is vertically scrollable with up/down arrow keys
+  - Scroll indicators show when more content above/below
+  - Press q or c to close config view
+- Recovery State Display:
+  - Shows latest MasterRecoveryState at or before current event (index-based, not time-based)
+  - Displayed below DB config with timestamp
+  - Format: StatusCode=X | Status=Y
+  - Color coded by StatusCode:
+    - Red (< 11): Early recovery states
+    - Blue (11 <= code < 14): Mid-recovery states
+    - Green (= 14): Fully recovered
+    - Gray (> 14): Post-recovery states
+  - Example: StatusCode=14 | Status=fully_recovered
+  - Allows tracking cluster recovery progress over time
+  - Press 'r' to jump backward to previous recovery start (StatusCode=0) - jumps to exact MasterRecoveryState event
+  - Press 'R' to jump forward to next recovery start (StatusCode=0) - jumps to exact MasterRecoveryState event
+  - Press 'e' to jump backward to previous MasterRecoveryState (any StatusCode)
+  - Press 'E' to jump forward to next MasterRecoveryState (any StatusCode)
+  - Recovery jumps and display are event-index aware to handle multiple events at same timestamp
+- Help Popup:
+  - Press 'h' to show comprehensive help popup with all available commands
+  - Help organized into sections: Navigation, Recovery Navigation, Views, General
+  - Shows both basic commands (from footer) and advanced commands (e/E)
+  - Press 'q' or 'h' to close help popup
+  - Help popup overlays main view and centers on screen
+- Displays cluster topology (left pane) with:
+  - Workers grouped by DC (Data Center) ID
+    - "DC 0", "DC 1", etc. sections for main machines (2:...)
+    - Each DC shown separately with underlined header (compact, no extra spacing)
+    - Workers sorted by address within each DC
+  - Testers shown in separate section (3:... addresses)
+    - Testers sorted by address
+  - Columnar layout: fills one column vertically, then starts new column to the right
+  - Machines and their roles kept together (never split across columns)
+  - No vertical scrolling needed - all workers visible across multiple columns
+  - Machine address at top level: "● 2.0.1.0:1"
+  - Roles indented below machine, including "Worker" role
+  - Gray dots (●) for machines without any roles OR only "Worker" role
+  - Green dots (●) for machines with non-Worker roles (SS, TLog, Coordinator, etc.)
+  - Cyan with arrow (→ ●) for machine when Machine field matches but no role ID matches
+  - Role IDs shown in brackets after role name: e.g., "Worker [6e8c2f97ccc25b2b]", "StorageServer [f5f3670ef3675364]"
+  - When event ID matches a specific role ID (including Worker), that role is highlighted: "  → RoleName [ID]" in cyan
+  - Machine shown normally (green/gray based on non-Worker roles) when role ID matches - indentation makes relationship clear
+  - Precise role-level highlighting: machine match + ID match pinpoints exact role emitting the event
+- Address parsing:
+  - Format 1: [abcd::X:Y:Z:W]:Port
+  - Format 2: X.Y.Z.W:Port
+  - X=2 for main machines, X=3 for testers
+  - Y=DC ID (0, 1, 2, etc.)
+- Time scrubber at bottom showing current time
+- Shows <NO_CLUSTER_YET> at t=0 or when no workers exist
+- Workers tracked when they appear (even if only "Worker" role)
+- All workers visible in topology showing candidates vs assigned
+- Consistent worker ordering (sorted by address, no random reordering)
+
+Dependencies:
+-------------
+- github.com/charmbracelet/bubbletea : TUI framework
+- github.com/charmbracelet/bubbles  : TUI components (textinput)
+- github.com/charmbracelet/lipgloss  : Styling library
+- encoding/xml                        : Standard library XML parser
+- regexp                              : Standard library regex for address parsing
+
+Architecture Notes:
+-------------------
+- TraceEvent struct: Represents a single trace event with all attributes
+- parseTraceFile(): Streams XML events, builds slice of TraceEvent
+- model struct: Bubbletea model holding events and UI state
+- Init/Update/View: Standard Bubbletea lifecycle methods
+
+XML Trace Format:
+-----------------
+Events are in format:
+<Event Severity="10" Time="0.000000" DateTime="..." Type="ProgramStart"
+       Machine="..." ID="..." />
+
+Attributes vary by event type but common ones include:
+- Severity, Time, DateTime, Type, Machine, ID
+- Event-specific attributes (transition, from, to, etc.)
