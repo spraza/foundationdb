@@ -392,24 +392,76 @@ func formatTraceEvent(event *TraceEvent, isCurrent bool, searchPattern string) s
 			return text
 		}
 
-		// Find all matches
-		matches := searchRe.FindAllStringIndex(text, -1)
-		if len(matches) == 0 {
+		// Extract literal parts from the search pattern (between wildcards)
+		literals := extractLiterals(searchPattern)
+		if len(literals) == 0 {
 			return text
+		}
+
+		// Collect all match positions for all literals
+		type matchPos struct {
+			start int
+			end   int
+		}
+		var allMatches []matchPos
+
+		for _, literal := range literals {
+			if literal == "" {
+				continue
+			}
+			// Create a regex for this literal (case-sensitive, escaped)
+			literalPattern := regexp.QuoteMeta(literal)
+			literalRe, err := regexp.Compile(literalPattern)
+			if err != nil {
+				continue
+			}
+
+			// Find all occurrences of this literal
+			matches := literalRe.FindAllStringIndex(text, -1)
+			for _, match := range matches {
+				allMatches = append(allMatches, matchPos{start: match[0], end: match[1]})
+			}
+		}
+
+		if len(allMatches) == 0 {
+			return text
+		}
+
+		// Sort matches by start position
+		sort.Slice(allMatches, func(i, j int) bool {
+			return allMatches[i].start < allMatches[j].start
+		})
+
+		// Merge overlapping matches
+		var merged []matchPos
+		for _, match := range allMatches {
+			if len(merged) == 0 {
+				merged = append(merged, match)
+			} else {
+				last := &merged[len(merged)-1]
+				if match.start <= last.end {
+					// Overlapping or adjacent, merge them
+					if match.end > last.end {
+						last.end = match.end
+					}
+				} else {
+					// Non-overlapping, add as new
+					merged = append(merged, match)
+				}
+			}
 		}
 
 		// Build highlighted string
 		var result strings.Builder
 		lastEnd := 0
-		for _, match := range matches {
-			start, end := match[0], match[1]
+		for _, match := range merged {
 			// Add text before match
-			if start > lastEnd {
-				result.WriteString(text[lastEnd:start])
+			if match.start > lastEnd {
+				result.WriteString(text[lastEnd:match.start])
 			}
 			// Add highlighted match
-			result.WriteString(searchHighlightStyle.Render(text[start:end]))
-			lastEnd = end
+			result.WriteString(searchHighlightStyle.Render(text[match.start:match.end]))
+			lastEnd = match.end
 		}
 		// Add remaining text
 		if lastEnd < len(text) {
@@ -485,7 +537,7 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int, searchPatt
 	lineCount := 0
 	for i := currentIdx - 1; i >= 0 && lineCount < targetLinesAbove; i-- {
 		event := &m.traceData.Events[i]
-		eventLine := formatTraceEvent(event, false, searchPattern)
+		eventLine := formatTraceEvent(event, false, "") // No highlighting for non-current events
 		wrappedLines := wrapText(eventLine, paneWidth)
 
 		// Check if adding this event would exceed our target
@@ -519,7 +571,7 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int, searchPatt
 	lineCount = len(linesAbove) + currentEventLineCount
 	for i := currentIdx + 1; i < len(m.traceData.Events) && lineCount < availableHeight; i++ {
 		event := &m.traceData.Events[i]
-		eventLine := formatTraceEvent(event, false, searchPattern)
+		eventLine := formatTraceEvent(event, false, "") // No highlighting for non-current events
 		wrappedLines := wrapText(eventLine, paneWidth)
 
 		// Check if adding this event would exceed available height
@@ -1396,6 +1448,20 @@ func convertWildcardToRegex(pattern string) string {
 		}
 	}
 	return result.String()
+}
+
+// extractLiterals extracts the non-wildcard literal parts from a search pattern
+// For example: "*Recovery*State*" -> ["Recovery", "State"]
+func extractLiterals(pattern string) []string {
+	// Split by * to get literal parts
+	parts := strings.Split(pattern, "*")
+	var literals []string
+	for _, part := range parts {
+		if part != "" {
+			literals = append(literals, part)
+		}
+	}
+	return literals
 }
 
 // getEventFullText builds a full text representation of an event including ALL fields
