@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 )
 
 func main() {
@@ -13,15 +15,32 @@ func main() {
 }
 
 func run() error {
-	// Check command-line arguments
-	if len(os.Args) != 2 {
-		return fmt.Errorf("usage: %s <trace-file.xml>", os.Args[0])
+	var traceFile string
+
+	// Check for help flag
+	if len(os.Args) == 2 && (os.Args[1] == "-h" || os.Args[1] == "--help") {
+		printHelp()
+		return nil
 	}
 
-	traceFile := os.Args[1]
+	// Check command-line arguments
+	if len(os.Args) == 2 {
+		// Explicit file provided
+		traceFile = os.Args[1]
+		fmt.Fprintf(os.Stderr, "Loading trace file: %s\n", traceFile)
+	} else if len(os.Args) == 1 {
+		// No argument - find latest trace*.xml in current directory
+		latestFile, err := findLatestTraceFile()
+		if err != nil {
+			return fmt.Errorf("no trace file specified and failed to find latest trace*.xml: %w", err)
+		}
+		traceFile = latestFile
+		fmt.Fprintf(os.Stderr, "Loading latest trace file: %s\n", traceFile)
+	} else {
+		return fmt.Errorf("usage: %s [trace-file.xml]", os.Args[0])
+	}
 
 	// Parse the trace file
-	fmt.Fprintf(os.Stderr, "Loading trace file: %s\n", traceFile)
 	traceData, err := parseTraceFile(traceFile)
 	if err != nil {
 		return fmt.Errorf("failed to parse trace file: %w", err)
@@ -34,4 +53,64 @@ func run() error {
 
 	// Start the TUI
 	return runUI(traceData)
+}
+
+// printHelp prints usage and help information
+func printHelp() {
+	fmt.Fprintf(os.Stderr, `FDB Trace Scrubber - Interactive TUI for scrubbing through FDB simulation trace files
+
+Usage:
+  scrubber [trace-file.xml]
+  scrubber -h | --help
+
+Arguments:
+  trace-file.xml    Path to FDB trace XML file (optional)
+                    If not provided, uses the most recently modified trace*.xml
+                    file in the current directory
+
+Options:
+  -h, --help        Show this help message
+
+Examples:
+  scrubber trace.xml              # Load specific trace file
+  scrubber                        # Auto-load latest trace*.xml in current directory
+
+Interactive Commands:
+  Press 'h' within the application to see all available navigation commands.
+`)
+}
+
+// findLatestTraceFile finds the most recently modified trace*.xml file in the current directory
+func findLatestTraceFile() (string, error) {
+	// Get all trace*.xml files in current directory
+	matches, err := filepath.Glob("trace*.xml")
+	if err != nil {
+		return "", err
+	}
+
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no trace*.xml files found in current directory")
+	}
+
+	// Find the most recently modified file
+	var latestFile string
+	var latestTime time.Time
+
+	for _, file := range matches {
+		info, err := os.Stat(file)
+		if err != nil {
+			continue // Skip files we can't stat
+		}
+
+		if latestFile == "" || info.ModTime().After(latestTime) {
+			latestFile = file
+			latestTime = info.ModTime()
+		}
+	}
+
+	if latestFile == "" {
+		return "", fmt.Errorf("no accessible trace*.xml files found")
+	}
+
+	return latestFile, nil
 }
