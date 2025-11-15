@@ -23,6 +23,7 @@ type model struct {
 	timeInputMode     bool
 	timeInput         textinput.Model
 	configViewMode    bool
+	configScrollOffset int // Vertical scroll offset for config popup
 	scrollOffset      int // Vertical scroll offset for topology pane
 }
 
@@ -34,14 +35,15 @@ func newModel(traceData *TraceData) model {
 	ti.Width = 40
 
 	return model{
-		traceData:         traceData,
-		currentTime:       0.0,
-		currentEventIndex: 0,
-		clusterState:      NewClusterState(),
-		timeInputMode:     false,
-		timeInput:         ti,
-		configViewMode:    false,
-		scrollOffset:      0,
+		traceData:          traceData,
+		currentTime:        0.0,
+		currentEventIndex:  0,
+		clusterState:       NewClusterState(),
+		timeInputMode:      false,
+		timeInput:          ti,
+		configViewMode:     false,
+		configScrollOffset: 0,
+		scrollOffset:       0,
 	}
 }
 
@@ -62,6 +64,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "c", "ctrl+c":
 				// Exit config view mode
 				m.configViewMode = false
+				m.configScrollOffset = 0 // Reset scroll when exiting
+				return m, nil
+			case "up":
+				// Scroll up in config view
+				if m.configScrollOffset > 0 {
+					m.configScrollOffset--
+				}
+				return m, nil
+			case "down":
+				// Scroll down in config view
+				m.configScrollOffset++
+				// Will be clamped in renderConfigPopup
 				return m, nil
 			}
 		}
@@ -320,10 +334,16 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int) []string {
 	// Add lines above
 	lines = append(lines, linesAbove...)
 
-	// Add current event with highlight
+	// Add current event with highlight (only first line)
 	highlightStyle := lipgloss.NewStyle().Background(lipgloss.Color("58"))
-	for _, line := range currentWrappedLines {
-		lines = append(lines, highlightStyle.Render(line))
+	for i, line := range currentWrappedLines {
+		if i == 0 {
+			// Highlight only the first line (where Time= appears)
+			lines = append(lines, highlightStyle.Render(line))
+		} else {
+			// Subsequent wrapped lines are not highlighted
+			lines = append(lines, line)
+		}
 	}
 
 	// Build lines going forwards from current event
@@ -734,8 +754,11 @@ func (m model) renderConfigPopup(baseView string, config *DBConfig) string {
 		MarginTop(1)
 
 	jsonStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")).
-		MarginTop(1)
+		Foreground(lipgloss.Color("252"))
+
+	scrollIndicatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Italic(true)
 
 	// Pretty-print the JSON
 	jsonBytes, err := json.MarshalIndent(config.RawJSON, "", "  ")
@@ -746,10 +769,64 @@ func (m model) renderConfigPopup(baseView string, config *DBConfig) string {
 		jsonContent = string(jsonBytes)
 	}
 
+	// Split JSON into lines
+	jsonLines := strings.Split(jsonContent, "\n")
+	totalLines := len(jsonLines)
+
+	// Calculate available height for JSON content
+	// Account for: title (1 line) + top margin (1) + help text (1) + bottom margin (1) + padding (2) + border (2) = 8 lines
+	maxContentHeight := m.height - 12
+	if maxContentHeight < 5 {
+		maxContentHeight = 5 // Minimum visible lines
+	}
+
+	// Clamp scroll offset
+	maxScrollOffset := totalLines - maxContentHeight
+	if maxScrollOffset < 0 {
+		maxScrollOffset = 0
+	}
+
+	displayScrollOffset := m.configScrollOffset
+	if displayScrollOffset < 0 {
+		displayScrollOffset = 0
+	}
+	if displayScrollOffset > maxScrollOffset {
+		displayScrollOffset = maxScrollOffset
+	}
+
+	// Determine if we have more content above/below
+	hasMoreAbove := displayScrollOffset > 0
+	hasMoreBelow := displayScrollOffset < maxScrollOffset
+
+	// Calculate visible window
+	visibleLines := jsonLines
+	if totalLines > maxContentHeight {
+		endIdx := displayScrollOffset + maxContentHeight
+		if endIdx > totalLines {
+			endIdx = totalLines
+		}
+		visibleLines = jsonLines[displayScrollOffset:endIdx]
+	}
+
+	// Build JSON content with scroll indicators
+	var jsonContentBuilder strings.Builder
+
+	if hasMoreAbove {
+		jsonContentBuilder.WriteString(scrollIndicatorStyle.Render("↑ more above"))
+		jsonContentBuilder.WriteString("\n")
+	}
+
+	jsonContentBuilder.WriteString(jsonStyle.Render(strings.Join(visibleLines, "\n")))
+
+	if hasMoreBelow {
+		jsonContentBuilder.WriteString("\n")
+		jsonContentBuilder.WriteString(scrollIndicatorStyle.Render("↓ more below"))
+	}
+
 	// Build popup content
-	popupContent := titleStyle.Render(fmt.Sprintf("DB Config (t=%.2fs)", config.Time)) + "\n" +
-		jsonStyle.Render(jsonContent) + "\n" +
-		helpStyle.Render("Press q or c to close")
+	popupContent := titleStyle.Render(fmt.Sprintf("DB Config (t=%.2fs)", config.Time)) + "\n\n" +
+		jsonContentBuilder.String() + "\n\n" +
+		helpStyle.Render("Press q or c to close | Up/Down to scroll")
 
 	popup := popupStyle.Render(popupContent)
 

@@ -77,6 +77,8 @@ Current Functionality (v1.0):
   - Shown at bottom above time scrubber with timestamp
   - Press 'c' to view full pretty-printed JSON config
   - Full config view shows all fields with timestamp
+  - Config popup is vertically scrollable with up/down arrow keys
+  - Scroll indicators show when more content above/below
   - Press q or c to close config view
 - Recovery State Display:
   - Shows latest MasterRecoveryState at or before current time
