@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,11 @@ type model struct {
 	configViewMode    bool
 	configScrollOffset int // Vertical scroll offset for config popup
 	helpViewMode      bool // Help popup mode
+	searchMode        bool // Search input mode
+	searchDirection   string // "forward" or "backward"
+	searchInput       textinput.Model
+	searchPattern     string // Current search pattern
+	searchActive      bool // Whether search highlighting is active
 }
 
 // newModel creates a new model with the given trace data
@@ -33,6 +39,11 @@ func newModel(traceData *TraceData) model {
 	ti.Placeholder = "Enter time in seconds (e.g., 123.456)"
 	ti.CharLimit = 20
 	ti.Width = 40
+
+	si := textinput.New()
+	si.Placeholder = "Enter search pattern (use * for wildcard)"
+	si.CharLimit = 100
+	si.Width = 60
 
 	return model{
 		traceData:          traceData,
@@ -44,6 +55,11 @@ func newModel(traceData *TraceData) model {
 		configViewMode:     false,
 		configScrollOffset: 0,
 		helpViewMode:       false,
+		searchMode:         false,
+		searchDirection:    "",
+		searchInput:        si,
+		searchPattern:      "",
+		searchActive:       false,
 	}
 }
 
@@ -131,6 +147,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update the text input
 		m.timeInput, cmd = m.timeInput.Update(msg)
+		return m, cmd
+	}
+
+	// Handle search mode separately
+	if m.searchMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "enter":
+				// Perform search with the entered pattern
+				if searchText := m.searchInput.Value(); searchText != "" {
+					m.searchPattern = searchText
+					m.searchActive = true
+
+					// Search for match
+					var matchIndex int
+					if m.searchDirection == "forward" {
+						matchIndex = m.searchForward(m.currentEventIndex + 1, m.searchPattern)
+					} else {
+						matchIndex = m.searchBackward(m.currentEventIndex - 1, m.searchPattern)
+					}
+
+					if matchIndex >= 0 {
+						m.currentEventIndex = matchIndex
+						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
+						m.updateClusterState()
+					}
+				}
+				// Exit search input mode but keep search active
+				m.searchMode = false
+				m.searchInput.Blur()
+				return m, nil
+
+			case "esc", "ctrl+c":
+				// Cancel search input
+				m.searchMode = false
+				m.searchInput.Reset()
+				m.searchInput.Blur()
+				return m, nil
+			}
+		}
+
+		// Update the search input
+		m.searchInput, cmd = m.searchInput.Update(msg)
 		return m, cmd
 	}
 
@@ -234,6 +294,62 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentTime = recovery.Time
 				m.updateClusterState()
 			}
+
+		case "/":
+			// Always enter forward search mode (start new search)
+			m.searchMode = true
+			m.searchDirection = "forward"
+			m.searchInput.Focus()
+			return m, textinput.Blink
+
+		case "?":
+			// Always enter backward search mode (start new search)
+			m.searchMode = true
+			m.searchDirection = "backward"
+			m.searchInput.Focus()
+			return m, textinput.Blink
+
+		case "n":
+			// Go to next match in the original search direction
+			if m.searchActive && m.searchPattern != "" {
+				var matchIndex int
+				if m.searchDirection == "forward" {
+					matchIndex = m.searchForward(m.currentEventIndex + 1, m.searchPattern)
+				} else {
+					matchIndex = m.searchBackward(m.currentEventIndex - 1, m.searchPattern)
+				}
+				if matchIndex >= 0 {
+					m.currentEventIndex = matchIndex
+					m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
+					m.updateClusterState()
+				}
+			}
+
+		case "N", "shift+n":
+			// Go to previous match (opposite of original search direction)
+			if m.searchActive && m.searchPattern != "" {
+				var matchIndex int
+				if m.searchDirection == "forward" {
+					// Original was forward, so N goes backward
+					matchIndex = m.searchBackward(m.currentEventIndex - 1, m.searchPattern)
+				} else {
+					// Original was backward, so N goes forward
+					matchIndex = m.searchForward(m.currentEventIndex + 1, m.searchPattern)
+				}
+				if matchIndex >= 0 {
+					m.currentEventIndex = matchIndex
+					m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
+					m.updateClusterState()
+				}
+			}
+
+		case "esc":
+			// Clear search highlighting
+			if m.searchActive {
+				m.searchActive = false
+				m.searchPattern = ""
+				return m, nil
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -245,7 +361,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // formatTraceEvent formats a trace event for display with config.fish field ordering and colors
-func formatTraceEvent(event *TraceEvent, isCurrent bool) string {
+func formatTraceEvent(event *TraceEvent, isCurrent bool, searchPattern string) string {
 	// Skip fields as per config.fish and fields shown in topology
 	skipFields := map[string]bool{
 		"DateTime":         true,
@@ -259,18 +375,58 @@ func formatTraceEvent(event *TraceEvent, isCurrent bool) string {
 	fieldNameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Dim
 	fieldValueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("46"))  // Green
 	currentLineStyle := lipgloss.NewStyle().Background(lipgloss.Color("58")) // Dark yellowish highlight
+	searchHighlightStyle := lipgloss.NewStyle().Background(lipgloss.Color("58")) // Same as current line highlight
 
 	var parts []string
 
+	// Compile regex for search if pattern provided
+	var searchRe *regexp.Regexp
+	if searchPattern != "" {
+		regexPattern := convertWildcardToRegex(searchPattern)
+		searchRe, _ = regexp.Compile(regexPattern)
+	}
+
+	// Helper function to apply search highlighting to a field
+	applySearchHighlight := func(text string) string {
+		if searchRe == nil {
+			return text
+		}
+
+		// Find all matches
+		matches := searchRe.FindAllStringIndex(text, -1)
+		if len(matches) == 0 {
+			return text
+		}
+
+		// Build highlighted string
+		var result strings.Builder
+		lastEnd := 0
+		for _, match := range matches {
+			start, end := match[0], match[1]
+			// Add text before match
+			if start > lastEnd {
+				result.WriteString(text[lastEnd:start])
+			}
+			// Add highlighted match
+			result.WriteString(searchHighlightStyle.Render(text[start:end]))
+			lastEnd = end
+		}
+		// Add remaining text
+		if lastEnd < len(text) {
+			result.WriteString(text[lastEnd:])
+		}
+		return result.String()
+	}
+
 	// Add fields in specific order: Time, Type, Severity (skip Machine, Roles, ID - shown in topology), then other attributes
 	if event.Time != "" {
-		parts = append(parts, fieldNameStyle.Render("Time=")+fieldValueStyle.Render(event.Time))
+		parts = append(parts, fieldNameStyle.Render("Time=")+fieldValueStyle.Render(applySearchHighlight(event.Time)))
 	}
 	if event.Type != "" {
-		parts = append(parts, fieldNameStyle.Render("Type=")+fieldValueStyle.Render(event.Type))
+		parts = append(parts, fieldNameStyle.Render("Type=")+fieldValueStyle.Render(applySearchHighlight(event.Type)))
 	}
 	if event.Severity != "" {
-		parts = append(parts, fieldNameStyle.Render("Severity=")+fieldValueStyle.Render(event.Severity))
+		parts = append(parts, fieldNameStyle.Render("Severity=")+fieldValueStyle.Render(applySearchHighlight(event.Severity)))
 	}
 	// Skip Machine - shown in topology
 	// Skip Roles - shown in topology
@@ -292,7 +448,7 @@ func formatTraceEvent(event *TraceEvent, isCurrent bool) string {
 
 	for _, key := range attrKeys {
 		value := event.Attrs[key]
-		parts = append(parts, fieldNameStyle.Render(key+"=")+lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(value))
+		parts = append(parts, fieldNameStyle.Render(key+"=")+lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(applySearchHighlight(value)))
 	}
 
 	line := strings.Join(parts, " ")
@@ -310,14 +466,14 @@ func (m *model) updateClusterState() {
 }
 
 // buildEventListPane builds the event list pane showing events around current time
-func (m model) buildEventListPane(availableHeight int, paneWidth int) []string {
+func (m model) buildEventListPane(availableHeight int, paneWidth int, searchPattern string) []string {
 	var lines []string
 	currentIdx := m.currentEventIndex
 
 	// We need to center based on LINE count, not event count
 	// First, render the current event to see how many lines it takes
 	currentEvent := &m.traceData.Events[currentIdx]
-	currentEventLine := formatTraceEvent(currentEvent, false)
+	currentEventLine := formatTraceEvent(currentEvent, false, searchPattern)
 	currentWrappedLines := wrapText(currentEventLine, paneWidth)
 	currentEventLineCount := len(currentWrappedLines)
 
@@ -329,7 +485,7 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int) []string {
 	lineCount := 0
 	for i := currentIdx - 1; i >= 0 && lineCount < targetLinesAbove; i-- {
 		event := &m.traceData.Events[i]
-		eventLine := formatTraceEvent(event, false)
+		eventLine := formatTraceEvent(event, false, searchPattern)
 		wrappedLines := wrapText(eventLine, paneWidth)
 
 		// Check if adding this event would exceed our target
@@ -363,7 +519,7 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int) []string {
 	lineCount = len(linesAbove) + currentEventLineCount
 	for i := currentIdx + 1; i < len(m.traceData.Events) && lineCount < availableHeight; i++ {
 		event := &m.traceData.Events[i]
-		eventLine := formatTraceEvent(event, false)
+		eventLine := formatTraceEvent(event, false, searchPattern)
 		wrappedLines := wrapText(eventLine, paneWidth)
 
 		// Check if adding this event would exceed available height
@@ -748,7 +904,30 @@ func (m model) View() string {
 	}
 
 	// Build right pane (event list) content as array of lines
-	eventLines := m.buildEventListPane(availableHeight, rightPaneWidth)
+	// If in search mode, reserve 1 line for search bar
+	eventListHeight := availableHeight
+	if m.searchMode {
+		eventListHeight = availableHeight - 1
+	}
+
+	// Pass search pattern if search is active
+	searchPattern := ""
+	if m.searchActive {
+		searchPattern = m.searchPattern
+	}
+	eventLines := m.buildEventListPane(eventListHeight, rightPaneWidth, searchPattern)
+
+	// If in search mode, add search bar as last line
+	if m.searchMode {
+		searchBarStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		var searchBar string
+		if m.searchDirection == "forward" {
+			searchBar = "/" + m.searchInput.View()
+		} else {
+			searchBar = "?" + m.searchInput.View()
+		}
+		eventLines = append(eventLines, searchBarStyle.Render(searchBar))
+	}
 
 	// Pad columns to same height
 	maxLines := availableHeight
@@ -900,7 +1079,7 @@ func (m model) View() string {
 	bottomSection.WriteString("\n")
 
 	// Help text
-	help := helpStyle.Render("Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | r/R: recovery | c: config | h: help | q: quit")
+	help := helpStyle.Render("Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | /?: search | n/N: next/prev match | r/R: recovery | c: config | h: help | q: quit")
 	bottomSection.WriteString(help)
 
 	// Combine split view with bottom section
@@ -969,6 +1148,20 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString(commandStyle.Render("  g / G              Jump to start / end"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  t                  Jump to specific time"))
+	content.WriteString("\n\n")
+
+	// Search section
+	content.WriteString(sectionStyle.Render("Search:"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  /                  Search forward (use * for wildcard)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  ?                  Search backward (use * for wildcard)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  n                  Go to next match"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  N                  Go to previous match"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  Esc                Clear search highlighting"))
 	content.WriteString("\n\n")
 
 	// Recovery section
@@ -1184,6 +1377,115 @@ func (m model) renderTimeInputPopup(baseView string) string {
 	// Overlay the popup on top of the base view
 	// Place it roughly in the center
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
+}
+
+// convertWildcardToRegex converts a simple wildcard pattern to regex
+// * matches 0 or more characters
+func convertWildcardToRegex(pattern string) string {
+	// Escape regex special characters except *
+	var result strings.Builder
+	for _, ch := range pattern {
+		switch ch {
+		case '*':
+			result.WriteString(".*")
+		case '.', '+', '?', '^', '$', '(', ')', '[', ']', '{', '}', '|', '\\':
+			result.WriteRune('\\')
+			result.WriteRune(ch)
+		default:
+			result.WriteRune(ch)
+		}
+	}
+	return result.String()
+}
+
+// getEventFullText builds a full text representation of an event including ALL fields
+func getEventFullText(event *TraceEvent) string {
+	var parts []string
+
+	// Include all standard fields
+	if event.Time != "" {
+		parts = append(parts, "Time="+event.Time)
+	}
+	if event.Type != "" {
+		parts = append(parts, "Type="+event.Type)
+	}
+	if event.Severity != "" {
+		parts = append(parts, "Severity="+event.Severity)
+	}
+	if event.Machine != "" {
+		parts = append(parts, "Machine="+event.Machine)
+	}
+	if event.ID != "" {
+		parts = append(parts, "ID="+event.ID)
+	}
+
+	// Include all attributes (sorted for consistency)
+	var attrKeys []string
+	for key := range event.Attrs {
+		attrKeys = append(attrKeys, key)
+	}
+	sort.Strings(attrKeys)
+
+	for _, key := range attrKeys {
+		value := event.Attrs[key]
+		parts = append(parts, key+"="+value)
+	}
+
+	return strings.Join(parts, " ")
+}
+
+// searchForward searches for pattern starting from startIndex going forward
+// Returns the index of the first matching event, or -1 if not found
+func (m *model) searchForward(startIndex int, pattern string) int {
+	regexPattern := convertWildcardToRegex(pattern)
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		return -1
+	}
+
+	for i := startIndex; i < len(m.traceData.Events); i++ {
+		eventText := getEventFullText(&m.traceData.Events[i])
+		if re.MatchString(eventText) {
+			return i
+		}
+	}
+
+	// Wrap around to beginning
+	for i := 0; i < startIndex; i++ {
+		eventText := getEventFullText(&m.traceData.Events[i])
+		if re.MatchString(eventText) {
+			return i
+		}
+	}
+
+	return -1
+}
+
+// searchBackward searches for pattern starting from startIndex going backward
+// Returns the index of the first matching event, or -1 if not found
+func (m *model) searchBackward(startIndex int, pattern string) int {
+	regexPattern := convertWildcardToRegex(pattern)
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		return -1
+	}
+
+	for i := startIndex; i >= 0; i-- {
+		eventText := getEventFullText(&m.traceData.Events[i])
+		if re.MatchString(eventText) {
+			return i
+		}
+	}
+
+	// Wrap around to end
+	for i := len(m.traceData.Events) - 1; i > startIndex; i-- {
+		eventText := getEventFullText(&m.traceData.Events[i])
+		if re.MatchString(eventText) {
+			return i
+		}
+	}
+
+	return -1
 }
 
 // runUI starts the Bubbletea TUI program
