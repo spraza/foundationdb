@@ -186,16 +186,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "r":
 			// Jump backward to latest MasterRecoveryState with StatusCode="0"
-			if recovery := m.traceData.FindPreviousRecoveryWithStatusCode(m.currentTime, "0"); recovery != nil {
-				m.currentEventIndex = m.traceData.GetEventIndexAtTime(recovery.Time)
+			if recovery := m.traceData.FindPreviousRecoveryWithStatusCode(m.currentEventIndex, "0"); recovery != nil {
+				m.currentEventIndex = recovery.EventIndex
 				m.currentTime = recovery.Time
 				m.updateClusterState()
 			}
 
 		case "R", "shift+r":
 			// Jump forward to earliest MasterRecoveryState with StatusCode="0"
-			if recovery := m.traceData.FindNextRecoveryWithStatusCode(m.currentTime, "0"); recovery != nil {
-				m.currentEventIndex = m.traceData.GetEventIndexAtTime(recovery.Time)
+			if recovery := m.traceData.FindNextRecoveryWithStatusCode(m.currentEventIndex, "0"); recovery != nil {
+				m.currentEventIndex = recovery.EventIndex
 				m.currentTime = recovery.Time
 				m.updateClusterState()
 			}
@@ -685,7 +685,7 @@ func (m model) View() string {
 	}
 
 	// Recovery State section
-	recoveryState := m.traceData.GetLatestRecoveryStateAtTime(m.currentTime)
+	recoveryState := m.traceData.GetLatestRecoveryStateAtIndex(m.currentEventIndex)
 	if recoveryState != nil {
 		recoveryStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("243")).

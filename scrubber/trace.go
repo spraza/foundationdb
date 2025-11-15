@@ -50,6 +50,7 @@ type RecoveryState struct {
 	Time       float64
 	StatusCode string
 	Status     string
+	EventIndex int // Index of this event in the Events slice
 }
 
 // TraceData holds the parsed trace file and provides time-based access
@@ -73,7 +74,6 @@ func parseTraceFile(filepath string) (*TraceData, error) {
 	decoder := xml.NewDecoder(file)
 	var events []TraceEvent
 	var configs []DBConfig
-	var recoveryStates []RecoveryState
 	minTime := 0.0
 	maxTime := 0.0
 
@@ -130,16 +130,6 @@ func parseTraceFile(filepath string) (*TraceData, error) {
 							configs = append(configs, *config)
 						}
 					}
-					// Also capture recovery state
-					statusCode := event.Attrs["StatusCode"]
-					status := event.Attrs["Status"]
-					if statusCode != "" && status != "" {
-						recoveryStates = append(recoveryStates, RecoveryState{
-							Time:       event.TimeValue,
-							StatusCode: statusCode,
-							Status:     status,
-						})
-					}
 				}
 			}
 		}
@@ -155,10 +145,22 @@ func parseTraceFile(filepath string) (*TraceData, error) {
 		return configs[i].Time < configs[j].Time
 	})
 
-	// Sort recovery states by time
-	sort.Slice(recoveryStates, func(i, j int) bool {
-		return recoveryStates[i].Time < recoveryStates[j].Time
-	})
+	// Build RecoveryStates array from sorted events with correct indices
+	var recoveryStates []RecoveryState
+	for i, event := range events {
+		if event.Type == "MasterRecoveryState" {
+			statusCode := event.Attrs["StatusCode"]
+			status := event.Attrs["Status"]
+			if statusCode != "" && status != "" {
+				recoveryStates = append(recoveryStates, RecoveryState{
+					Time:       event.TimeValue,
+					StatusCode: statusCode,
+					Status:     status,
+					EventIndex: i,
+				})
+			}
+		}
+	}
 
 	// Calculate minimum time step from actual event intervals
 	timeStep := 0.1 // Default fallback
@@ -261,11 +263,11 @@ func (td *TraceData) GetLatestConfigAtTime(targetTime float64) *DBConfig {
 	return &td.Configs[idx-1]
 }
 
-// GetLatestRecoveryStateAtTime returns the latest recovery state at or before the given time
-func (td *TraceData) GetLatestRecoveryStateAtTime(targetTime float64) *RecoveryState {
-	// Binary search to find the latest recovery state <= targetTime
+// GetLatestRecoveryStateAtIndex returns the latest recovery state at or before the given event index
+func (td *TraceData) GetLatestRecoveryStateAtIndex(eventIndex int) *RecoveryState {
+	// Binary search to find the latest recovery state with EventIndex <= eventIndex
 	idx := sort.Search(len(td.RecoveryStates), func(i int) bool {
-		return td.RecoveryStates[i].Time > targetTime
+		return td.RecoveryStates[i].EventIndex > eventIndex
 	})
 
 	if idx == 0 {
@@ -275,15 +277,15 @@ func (td *TraceData) GetLatestRecoveryStateAtTime(targetTime float64) *RecoveryS
 	return &td.RecoveryStates[idx-1]
 }
 
-// FindPreviousRecoveryWithStatusCode finds the latest recovery state before targetTime with the given status code
-func (td *TraceData) FindPreviousRecoveryWithStatusCode(targetTime float64, statusCode string) *RecoveryState {
+// FindPreviousRecoveryWithStatusCode finds the latest recovery state before the given event index with the specified status code
+func (td *TraceData) FindPreviousRecoveryWithStatusCode(eventIndex int, statusCode string) *RecoveryState {
 	// Binary search to find where to start looking
 	idx := sort.Search(len(td.RecoveryStates), func(i int) bool {
-		return td.RecoveryStates[i].Time >= targetTime
+		return td.RecoveryStates[i].EventIndex >= eventIndex
 	})
 
 	// Walk backwards from idx-1 to find the first match
-	// Start from idx-1 to skip any recovery at exactly targetTime
+	// Start from idx-1 to skip any recovery at exactly eventIndex
 	for i := idx - 1; i >= 0; i-- {
 		if td.RecoveryStates[i].StatusCode == statusCode {
 			return &td.RecoveryStates[i]
@@ -293,12 +295,12 @@ func (td *TraceData) FindPreviousRecoveryWithStatusCode(targetTime float64, stat
 	return nil
 }
 
-// FindNextRecoveryWithStatusCode finds the earliest recovery state after targetTime with the given status code
-func (td *TraceData) FindNextRecoveryWithStatusCode(targetTime float64, statusCode string) *RecoveryState {
+// FindNextRecoveryWithStatusCode finds the earliest recovery state after the given event index with the specified status code
+func (td *TraceData) FindNextRecoveryWithStatusCode(eventIndex int, statusCode string) *RecoveryState {
 	// Binary search to find where to start looking
-	// Use > to skip the current time
+	// Use > to skip the current event index
 	idx := sort.Search(len(td.RecoveryStates), func(i int) bool {
-		return td.RecoveryStates[i].Time > targetTime
+		return td.RecoveryStates[i].EventIndex > eventIndex
 	})
 
 	// Walk forwards from idx to find the first match
@@ -339,17 +341,3 @@ func (td *TraceData) GetEventIndexAtTime(targetTime float64) int {
 
 	return idx
 }
-
-// ShouldSkipEvent returns true if the event should be skipped based on config.fish rules
-func (event *TraceEvent) ShouldSkipEvent() bool {
-	// Skip if Transition="Refresh"
-	if event.Attrs["Transition"] == "Refresh" {
-		return true
-	}
-	// Skip if TrackLatestType="Rolled"
-	if event.Attrs["TrackLatestType"] == "Rolled" {
-		return true
-	}
-	return false
-}
-

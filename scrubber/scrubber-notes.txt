@@ -81,13 +81,14 @@ Current Functionality (v1.0):
   - Scroll indicators show when more content above/below
   - Press q or c to close config view
 - Recovery State Display:
-  - Shows latest MasterRecoveryState at or before current time
+  - Shows latest MasterRecoveryState at or before current event (index-based, not time-based)
   - Displayed below DB config with timestamp
   - Format: StatusCode=X | Status=Y
   - Example: StatusCode=14 | Status=fully_recovered
   - Allows tracking cluster recovery progress over time
-  - Press 'r' to jump backward to previous recovery start (StatusCode=0)
-  - Press 'R' to jump forward to next recovery start (StatusCode=0)
+  - Press 'r' to jump backward to previous recovery start (StatusCode=0) - jumps to exact MasterRecoveryState event
+  - Press 'R' to jump forward to next recovery start (StatusCode=0) - jumps to exact MasterRecoveryState event
+  - Recovery jumps and display are event-index aware to handle multiple events at same timestamp
 - Displays cluster topology (left pane) with:
   - Workers grouped by DC (Data Center) ID
     - "DC 0", "DC 1", etc. sections for main machines (2:...)
