@@ -227,9 +227,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if targetTime, err := strconv.ParseFloat(timeStr, 64); err == nil {
 						// Only jump if within valid range
 						if targetTime >= m.traceData.MinTime && targetTime <= m.traceData.MaxTime {
-							m.currentEventIndex = m.traceData.GetEventIndexAtTime(targetTime)
-							m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
-							m.updateClusterState()
+							targetIdx := m.traceData.GetEventIndexAtTime(targetTime)
+							// Find nearest visible event from target (search forward first, then backward)
+							found := false
+							// Try forward
+							for i := targetIdx; i < len(m.traceData.Events); i++ {
+								if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+									m.currentEventIndex = i
+									m.currentTime = m.traceData.Events[i].TimeValue
+									m.updateClusterState()
+									found = true
+									break
+								}
+							}
+							// If not found forward, try backward
+							if !found {
+								for i := targetIdx - 1; i >= 0; i-- {
+									if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+										m.currentEventIndex = i
+										m.currentTime = m.traceData.Events[i].TimeValue
+										m.updateClusterState()
+										break
+									}
+								}
+							}
 							// Exit time input mode
 							m.timeInputMode = false
 							m.timeInput.Reset()
@@ -346,50 +367,86 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "ctrl+n":
-			// Move forward to next event
+			// Move forward to next visible (non-filtered) event
 			if m.currentEventIndex < len(m.traceData.Events)-1 {
-				m.currentEventIndex++
-				m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
-				m.updateClusterState()
+				// Find next event that matches filters
+				for i := m.currentEventIndex + 1; i < len(m.traceData.Events); i++ {
+					if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+						m.currentEventIndex = i
+						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
+						m.updateClusterState()
+						break
+					}
+				}
 			}
 
 		case "ctrl+p":
-			// Move backward to previous event
+			// Move backward to previous visible (non-filtered) event
 			if m.currentEventIndex > 0 {
-				m.currentEventIndex--
-				m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
-				m.updateClusterState()
+				// Find previous event that matches filters
+				for i := m.currentEventIndex - 1; i >= 0; i-- {
+					if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+						m.currentEventIndex = i
+						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
+						m.updateClusterState()
+						break
+					}
+				}
 			}
 
 		case "right":
-			// Fast forward (1 second)
+			// Fast forward (1 second) to next visible event
 			newTime := m.currentTime + 1.0
 			if newTime <= m.traceData.MaxTime {
-				m.currentEventIndex = m.traceData.GetEventIndexAtTime(newTime)
-				m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
-				m.updateClusterState()
+				targetIdx := m.traceData.GetEventIndexAtTime(newTime)
+				// Find next visible event from target
+				for i := targetIdx; i < len(m.traceData.Events); i++ {
+					if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+						m.currentEventIndex = i
+						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
+						m.updateClusterState()
+						break
+					}
+				}
 			}
 
 		case "left":
-			// Fast backward (1 second)
+			// Fast backward (1 second) to previous visible event
 			newTime := m.currentTime - 1.0
 			if newTime >= m.traceData.MinTime {
-				m.currentEventIndex = m.traceData.GetEventIndexAtTime(newTime)
-				m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
-				m.updateClusterState()
+				targetIdx := m.traceData.GetEventIndexAtTime(newTime)
+				// Find previous visible event from target
+				for i := targetIdx; i >= 0; i-- {
+					if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+						m.currentEventIndex = i
+						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
+						m.updateClusterState()
+						break
+					}
+				}
 			}
 
 		case "g":
-			// Jump to start (like less)
-			m.currentEventIndex = 0
-			m.currentTime = m.traceData.MinTime
-			m.updateClusterState()
+			// Jump to start - first visible event
+			for i := 0; i < len(m.traceData.Events); i++ {
+				if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+					m.currentEventIndex = i
+					m.currentTime = m.traceData.Events[i].TimeValue
+					m.updateClusterState()
+					break
+				}
+			}
 
 		case "G", "shift+g":
-			// Jump to end (like less)
-			m.currentEventIndex = len(m.traceData.Events) - 1
-			m.currentTime = m.traceData.MaxTime
-			m.updateClusterState()
+			// Jump to end - last visible event
+			for i := len(m.traceData.Events) - 1; i >= 0; i-- {
+				if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+					m.currentEventIndex = i
+					m.currentTime = m.traceData.Events[i].TimeValue
+					m.updateClusterState()
+					break
+				}
+			}
 
 		case "r":
 			// Jump backward to latest MasterRecoveryState with StatusCode="0"
@@ -1446,6 +1503,12 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString(commandStyle.Render("  N                  Go to previous match"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  Esc                Clear search highlighting"))
+	content.WriteString("\n\n")
+
+	// Filter section
+	content.WriteString(sectionStyle.Render("Filter:"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  f                  Configure event filters (toggle All, add/remove filters)"))
 	content.WriteString("\n\n")
 
 	// Recovery section
