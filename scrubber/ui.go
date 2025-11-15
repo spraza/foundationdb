@@ -31,6 +31,13 @@ type model struct {
 	searchInput       textinput.Model
 	searchPattern     string // Current search pattern
 	searchActive      bool // Whether search highlighting is active
+	// Filter state
+	filterViewMode       bool // Filter popup mode
+	filterShowAll        bool // Whether "All" is checked (default true)
+	filterList           []string // List of inclusive filter patterns
+	filterInput          textinput.Model // Input for new filter
+	filterSelectedIndex  int // Selected filter index (for navigation/deletion)
+	filterInputActive    bool // Whether input field is active
 }
 
 // newModel creates a new model with the given trace data
@@ -44,6 +51,11 @@ func newModel(traceData *TraceData) model {
 	si.Placeholder = "Enter search pattern (use * for wildcard)"
 	si.CharLimit = 100
 	si.Width = 60
+
+	fi := textinput.New()
+	fi.Placeholder = "Enter filter pattern (e.g., Type=WorkerHealthMonitor or Role*TL)"
+	fi.CharLimit = 100
+	fi.Width = 70
 
 	return model{
 		traceData:          traceData,
@@ -60,6 +72,13 @@ func newModel(traceData *TraceData) model {
 		searchInput:        si,
 		searchPattern:      "",
 		searchActive:       false,
+		// Filter initialization
+		filterViewMode:      false,
+		filterShowAll:       true, // Default: show all events
+		filterList:          []string{},
+		filterInput:         fi,
+		filterSelectedIndex: -1, // -1 means input field is selected
+		filterInputActive:   false,
 	}
 }
 
@@ -71,6 +90,91 @@ func (m model) Init() tea.Cmd {
 // Update handles messages and updates the model (required by Bubbletea)
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	// Handle filter view mode
+	if m.filterViewMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			// If in input mode, handle input field first for most keys
+			if m.filterInputActive {
+				switch msg.String() {
+				case "enter":
+					// Add new filter from input
+					if filterText := m.filterInput.Value(); filterText != "" {
+						m.filterList = append(m.filterList, filterText)
+						m.filterInput.Reset()
+						m.filterInput.Blur()
+						m.filterInputActive = false
+						m.filterSelectedIndex = len(m.filterList) - 1 // Select the newly added filter
+					}
+					return m, nil
+				case "esc", "ctrl+c":
+					// Cancel input mode
+					m.filterInput.Reset()
+					m.filterInput.Blur()
+					m.filterInputActive = false
+					return m, nil
+				default:
+					// Pass all other keys (including backspace and space) to input field
+					m.filterInput, cmd = m.filterInput.Update(msg)
+					return m, cmd
+				}
+			}
+
+			// Handle keys when NOT in input mode
+			switch msg.String() {
+			case "q", "f", "esc", "ctrl+c":
+				// Exit filter view mode
+				m.filterViewMode = false
+				m.filterInput.Reset()
+				return m, nil
+
+			case "space", " ":
+				// Toggle "All" checkbox (handle both "space" and " ")
+				m.filterShowAll = !m.filterShowAll
+				return m, nil
+
+			case "i":
+				// Activate input field for new filter
+				m.filterInputActive = true
+				m.filterInput.Focus()
+				return m, textinput.Blink
+
+			case "ctrl+n":
+				// Navigate to next filter in list
+				if len(m.filterList) > 0 {
+					m.filterSelectedIndex++
+					if m.filterSelectedIndex >= len(m.filterList) {
+						m.filterSelectedIndex = 0
+					}
+				}
+				return m, nil
+
+			case "ctrl+p":
+				// Navigate to previous filter in list
+				if len(m.filterList) > 0 {
+					m.filterSelectedIndex--
+					if m.filterSelectedIndex < 0 {
+						m.filterSelectedIndex = len(m.filterList) - 1
+					}
+				}
+				return m, nil
+
+			case "backspace":
+				// Delete selected filter
+				if m.filterSelectedIndex >= 0 && m.filterSelectedIndex < len(m.filterList) {
+					// Remove filter at selected index
+					m.filterList = append(m.filterList[:m.filterSelectedIndex], m.filterList[m.filterSelectedIndex+1:]...)
+					// Adjust selection
+					if m.filterSelectedIndex >= len(m.filterList) {
+						m.filterSelectedIndex = len(m.filterList) - 1
+					}
+				}
+				return m, nil
+			}
+		}
+		return m, nil
+	}
 
 	// Handle help view mode
 	if m.helpViewMode {
@@ -215,6 +319,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "h":
 			// Enter help view mode
 			m.helpViewMode = true
+			return m, nil
+
+		case "f":
+			// Enter filter view mode
+			m.filterViewMode = true
+			m.filterInputActive = false
+			m.filterSelectedIndex = -1
+			m.filterInput.Blur() // Ensure input field is not focused
 			return m, nil
 
 		case "e":
@@ -537,6 +649,12 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int, searchPatt
 	lineCount := 0
 	for i := currentIdx - 1; i >= 0 && lineCount < targetLinesAbove; i-- {
 		event := &m.traceData.Events[i]
+
+		// Skip filtered events
+		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+			continue
+		}
+
 		eventLine := formatTraceEvent(event, false, "") // No highlighting for non-current events
 		wrappedLines := wrapText(eventLine, paneWidth)
 
@@ -571,6 +689,12 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int, searchPatt
 	lineCount = len(linesAbove) + currentEventLineCount
 	for i := currentIdx + 1; i < len(m.traceData.Events) && lineCount < availableHeight; i++ {
 		event := &m.traceData.Events[i]
+
+		// Skip filtered events
+		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+			continue
+		}
+
 		eventLine := formatTraceEvent(event, false, "") // No highlighting for non-current events
 		wrappedLines := wrapText(eventLine, paneWidth)
 
@@ -1131,11 +1255,16 @@ func (m model) View() string {
 	bottomSection.WriteString("\n")
 
 	// Help text
-	help := helpStyle.Render("Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | /?: search | n/N: next/prev match | r/R: recovery | c: config | h: help | q: quit")
+	help := helpStyle.Render("Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | /?: search | n/N: next/prev match | f: filter | r/R: recovery | c: config | h: help | q: quit")
 	bottomSection.WriteString(help)
 
 	// Combine split view with bottom section
 	fullView := splitContent.String() + bottomSection.String()
+
+	// If in filter view mode, show filter popup overlay
+	if m.filterViewMode {
+		return m.renderFilterPopup(fullView)
+	}
 
 	// If in help view mode, show help popup overlay
 	if m.helpViewMode {
@@ -1159,6 +1288,109 @@ func (m model) View() string {
 	}
 
 	return fullView
+}
+
+// renderFilterPopup renders the filter configuration popup overlay
+func (m model) renderFilterPopup(baseView string) string {
+	popupStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 2).
+		Width(80)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39")).
+		Underline(true)
+
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("46")).
+		MarginTop(1)
+
+	normalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("226")).
+		Bold(true)
+
+	var content strings.Builder
+	content.WriteString(titleStyle.Render("Filter Configuration"))
+	content.WriteString("\n\n")
+
+	// Show "All" checkbox
+	checkboxStyle := normalStyle
+	checkbox := "[ ]"
+	if m.filterShowAll {
+		checkbox = "[x]"
+	}
+	content.WriteString(checkboxStyle.Render(fmt.Sprintf("%s All (space to toggle)", checkbox)))
+	content.WriteString("\n")
+
+	// INCLUSIVE filters section
+	content.WriteString(sectionStyle.Render("INCLUSIVE Filters (OR):"))
+	content.WriteString("\n")
+
+	if len(m.filterList) == 0 {
+		content.WriteString(normalStyle.Render("  (no filters)"))
+		content.WriteString("\n")
+	} else {
+		for i, filter := range m.filterList {
+			filterStyle := normalStyle
+			prefix := "  "
+			if i == m.filterSelectedIndex && !m.filterInputActive {
+				filterStyle = selectedStyle
+				prefix = "→ "
+			}
+			content.WriteString(filterStyle.Render(fmt.Sprintf("%s%s", prefix, filter)))
+			content.WriteString("\n")
+		}
+	}
+
+	content.WriteString("\n")
+
+	// Input field for new filter
+	if m.filterInputActive {
+		content.WriteString(selectedStyle.Render("New filter: "))
+		content.WriteString(m.filterInput.View())
+	} else {
+		content.WriteString(normalStyle.Render("Press 'i' to add new filter"))
+	}
+
+	content.WriteString("\n\n")
+	content.WriteString(normalStyle.Render("Ctrl+N/P: navigate | Backspace: delete | Enter: add | Space: toggle All | q/f/Esc: close"))
+
+	popup := popupStyle.Render(content.String())
+
+	// Center the popup
+	lines := strings.Split(baseView, "\n")
+	popupLines := strings.Split(popup, "\n")
+
+	// Calculate centering
+	baseHeight := len(lines)
+	popupHeight := len(popupLines)
+	startLine := (baseHeight - popupHeight) / 2
+	if startLine < 0 {
+		startLine = 0
+	}
+
+	// Overlay the popup
+	for i, popupLine := range popupLines {
+		lineIdx := startLine + i
+		if lineIdx < len(lines) {
+			// Center horizontally
+			baseWidth := m.width
+			popupWidth := lipgloss.Width(popupLine)
+			leftPadding := (baseWidth - popupWidth) / 2
+			if leftPadding < 0 {
+				leftPadding = 0
+			}
+			lines[lineIdx] = strings.Repeat(" ", leftPadding) + popupLine
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // renderHelpPopup renders the help information popup overlay
@@ -1502,6 +1734,7 @@ func getEventFullText(event *TraceEvent) string {
 
 // searchForward searches for pattern starting from startIndex going forward
 // Returns the index of the first matching event, or -1 if not found
+// Respects active filters - only searches visible (non-filtered) events
 func (m *model) searchForward(startIndex int, pattern string) int {
 	regexPattern := convertWildcardToRegex(pattern)
 	re, err := regexp.Compile(regexPattern)
@@ -1510,7 +1743,14 @@ func (m *model) searchForward(startIndex int, pattern string) int {
 	}
 
 	for i := startIndex; i < len(m.traceData.Events); i++ {
-		eventText := getEventFullText(&m.traceData.Events[i])
+		event := &m.traceData.Events[i]
+
+		// Skip filtered events
+		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+			continue
+		}
+
+		eventText := getEventFullText(event)
 		if re.MatchString(eventText) {
 			return i
 		}
@@ -1518,7 +1758,14 @@ func (m *model) searchForward(startIndex int, pattern string) int {
 
 	// Wrap around to beginning
 	for i := 0; i < startIndex; i++ {
-		eventText := getEventFullText(&m.traceData.Events[i])
+		event := &m.traceData.Events[i]
+
+		// Skip filtered events
+		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+			continue
+		}
+
+		eventText := getEventFullText(event)
 		if re.MatchString(eventText) {
 			return i
 		}
@@ -1529,6 +1776,7 @@ func (m *model) searchForward(startIndex int, pattern string) int {
 
 // searchBackward searches for pattern starting from startIndex going backward
 // Returns the index of the first matching event, or -1 if not found
+// Respects active filters - only searches visible (non-filtered) events
 func (m *model) searchBackward(startIndex int, pattern string) int {
 	regexPattern := convertWildcardToRegex(pattern)
 	re, err := regexp.Compile(regexPattern)
@@ -1537,7 +1785,14 @@ func (m *model) searchBackward(startIndex int, pattern string) int {
 	}
 
 	for i := startIndex; i >= 0; i-- {
-		eventText := getEventFullText(&m.traceData.Events[i])
+		event := &m.traceData.Events[i]
+
+		// Skip filtered events
+		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+			continue
+		}
+
+		eventText := getEventFullText(event)
 		if re.MatchString(eventText) {
 			return i
 		}
@@ -1545,13 +1800,49 @@ func (m *model) searchBackward(startIndex int, pattern string) int {
 
 	// Wrap around to end
 	for i := len(m.traceData.Events) - 1; i > startIndex; i-- {
-		eventText := getEventFullText(&m.traceData.Events[i])
+		event := &m.traceData.Events[i]
+
+		// Skip filtered events
+		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+			continue
+		}
+
+		eventText := getEventFullText(event)
 		if re.MatchString(eventText) {
 			return i
 		}
 	}
 
 	return -1
+}
+
+// eventMatchesFilters checks if an event matches any of the filter patterns (OR logic)
+// Returns true if:
+// - showAll is true, OR
+// - filterList is empty, OR
+// - event matches at least one filter pattern
+func eventMatchesFilters(event *TraceEvent, showAll bool, filterList []string) bool {
+	// If "All" is checked or no filters, show everything
+	if showAll || len(filterList) == 0 {
+		return true
+	}
+
+	// Get full event text for matching
+	eventText := getEventFullText(event)
+
+	// Check if event matches any filter (OR logic)
+	for _, filter := range filterList {
+		regexPattern := convertWildcardToRegex(filter)
+		re, err := regexp.Compile(regexPattern)
+		if err != nil {
+			continue // Skip invalid patterns
+		}
+		if re.MatchString(eventText) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // runUI starts the Bubbletea TUI program
