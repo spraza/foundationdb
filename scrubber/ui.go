@@ -388,6 +388,12 @@ func (m model) View() string {
 	// Build the topology pane (left) first to calculate its width
 	var topologyLines []string
 
+	// Get current event's machine for highlighting in topology
+	var currentMachine string
+	if m.currentEventIndex >= 0 && m.currentEventIndex < len(m.traceData.Events) {
+		currentMachine = m.traceData.Events[m.currentEventIndex].Machine
+	}
+
 	// Styles
 	dcHeaderStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -411,6 +417,12 @@ func (m model) View() string {
 		Foreground(lipgloss.Color("46")).
 		Bold(true).
 		PaddingLeft(2)
+
+	// Style for current machine (event source) - cyan with arrow
+	workerStyleCurrent := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("51")).
+		Bold(true).
+		PaddingLeft(0)
 
 	roleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252")) // Normal gray color
@@ -452,8 +464,20 @@ func (m model) View() string {
 				topologyLines = append(topologyLines, dcHeaderStyle.Render(fmt.Sprintf("DC %s", dcID)))
 
 				for _, worker := range workers {
+					// Check if this worker is the current event source
+					isCurrentMachine := worker.Machine == currentMachine
+
 					// Display worker
-					if worker.HasRoles() {
+					if isCurrentMachine {
+						// Cyan with arrow indicator for current machine
+						workerLine := fmt.Sprintf("→ ● %s", worker.Machine)
+						topologyLines = append(topologyLines, workerStyleCurrent.Render(workerLine))
+
+						// Show each role on a separate indented line
+						for _, role := range worker.Roles {
+							topologyLines = append(topologyLines, roleStyle.Render("      "+role))
+						}
+					} else if worker.HasRoles() {
 						// Green dot for workers with roles
 						workerLine := fmt.Sprintf("● %s", worker.Machine)
 						topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
@@ -476,8 +500,20 @@ func (m model) View() string {
 			topologyLines = append(topologyLines, testerHeaderStyle.Render("Testers"))
 
 			for _, worker := range testers {
+				// Check if this tester is the current event source
+				isCurrentMachine := worker.Machine == currentMachine
+
 				// Display tester
-				if worker.HasRoles() {
+				if isCurrentMachine {
+					// Cyan with arrow indicator for current machine
+					workerLine := fmt.Sprintf("→ ● %s", worker.Machine)
+					topologyLines = append(topologyLines, workerStyleCurrent.Render(workerLine))
+
+					// Show each role on a separate indented line
+					for _, role := range worker.Roles {
+						topologyLines = append(topologyLines, roleStyle.Render("      "+role))
+					}
+				} else if worker.HasRoles() {
 					// Green dot for testers with roles
 					workerLine := fmt.Sprintf("● %s", worker.Machine)
 					topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))

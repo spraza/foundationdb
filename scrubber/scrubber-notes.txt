@@ -98,9 +98,11 @@ Current Functionality (v1.0):
     - Testers sorted by address
   - Gray dots (●) for workers without assigned roles (available candidates)
   - Green dots (●) for workers with assigned roles (SS, TLog, Coordinator, etc.)
+  - Cyan with arrow (→ ●) for the worker that produced the current highlighted trace event
   - Machine addresses for each worker
   - Role names shown on separate indented lines below worker address
   - "Worker" role is filtered out (base state, not operational role)
+  - Current event source machine is highlighted in bright cyan to show which worker the event came from
 - Address parsing:
   - Format 1: [abcd::X:Y:Z:W]:Port
   - Format 2: X.Y.Z.W:Port
