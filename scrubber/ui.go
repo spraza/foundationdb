@@ -464,6 +464,54 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateClusterState()
 			}
 
+		case "3":
+			// Jump forward to next Severity=30 event
+			for i := m.currentEventIndex + 1; i < len(m.traceData.Events); i++ {
+				event := &m.traceData.Events[i]
+				if event.Severity == "30" && eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+					m.currentEventIndex = i
+					m.currentTime = event.TimeValue
+					m.updateClusterState()
+					break
+				}
+			}
+
+		case "#", "shift+3":
+			// Jump backward to previous Severity=30 event
+			for i := m.currentEventIndex - 1; i >= 0; i-- {
+				event := &m.traceData.Events[i]
+				if event.Severity == "30" && eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+					m.currentEventIndex = i
+					m.currentTime = event.TimeValue
+					m.updateClusterState()
+					break
+				}
+			}
+
+		case "4":
+			// Jump forward to next Severity=40 event
+			for i := m.currentEventIndex + 1; i < len(m.traceData.Events); i++ {
+				event := &m.traceData.Events[i]
+				if event.Severity == "40" && eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+					m.currentEventIndex = i
+					m.currentTime = event.TimeValue
+					m.updateClusterState()
+					break
+				}
+			}
+
+		case "$", "shift+4":
+			// Jump backward to previous Severity=40 event
+			for i := m.currentEventIndex - 1; i >= 0; i-- {
+				event := &m.traceData.Events[i]
+				if event.Severity == "40" && eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+					m.currentEventIndex = i
+					m.currentTime = event.TimeValue
+					m.updateClusterState()
+					break
+				}
+			}
+
 		case "/":
 			// Always enter forward search mode (start new search)
 			m.searchMode = true
@@ -1517,6 +1565,14 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString(commandStyle.Render("  r / R              Jump to prev / next recovery start (StatusCode=0)"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  e / E              Jump to prev / next MasterRecoveryState (any)"))
+	content.WriteString("\n\n")
+
+	// Severity Navigation section
+	content.WriteString(sectionStyle.Render("Severity Navigation:"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  3 / Shift+3        Jump to next / prev Severity=30 event"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  4 / Shift+4        Jump to next / prev Severity=40 event"))
 	content.WriteString("\n\n")
 
 	// View section
