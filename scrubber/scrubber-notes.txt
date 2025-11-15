@@ -57,8 +57,8 @@ Current Functionality (v1.0):
   - t: Open time jump popup (enter time in seconds)
   - r: Jump backward to previous recovery (StatusCode=0)
   - R: Jump forward to next recovery (StatusCode=0)
-  - Ctrl+r: Jump backward to previous MasterRecoveryState (any StatusCode)
-  - Ctrl+R: Jump forward to next MasterRecoveryState (any StatusCode)
+  - e: Jump backward to previous MasterRecoveryState (any StatusCode)
+  - E: Jump forward to next MasterRecoveryState (any StatusCode)
   - c: Show full DB config JSON (press q or c to close)
   - h: Show help popup with all commands
   - q/Q: Quit
@@ -99,13 +99,13 @@ Current Functionality (v1.0):
   - Allows tracking cluster recovery progress over time
   - Press 'r' to jump backward to previous recovery start (StatusCode=0) - jumps to exact MasterRecoveryState event
   - Press 'R' to jump forward to next recovery start (StatusCode=0) - jumps to exact MasterRecoveryState event
-  - Press 'Ctrl+r' to jump backward to previous MasterRecoveryState (any StatusCode)
-  - Press 'Ctrl+R' to jump forward to next MasterRecoveryState (any StatusCode)
+  - Press 'e' to jump backward to previous MasterRecoveryState (any StatusCode)
+  - Press 'E' to jump forward to next MasterRecoveryState (any StatusCode)
   - Recovery jumps and display are event-index aware to handle multiple events at same timestamp
 - Help Popup:
   - Press 'h' to show comprehensive help popup with all available commands
   - Help organized into sections: Navigation, Recovery Navigation, Views, General
-  - Shows both basic commands (from footer) and advanced commands (ctrl+r/ctrl+R)
+  - Shows both basic commands (from footer) and advanced commands (e/E)
   - Press 'q' or 'h' to close help popup
   - Help popup overlays main view and centers on screen
 - Displays cluster topology (left pane) with:

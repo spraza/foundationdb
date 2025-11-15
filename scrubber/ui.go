@@ -157,7 +157,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpViewMode = true
 			return m, nil
 
-		case "ctrl+r":
+		case "e":
 			// Jump backward to previous MasterRecoveryState (any)
 			if recovery := m.traceData.FindPreviousRecovery(m.currentEventIndex); recovery != nil {
 				m.currentEventIndex = recovery.EventIndex
@@ -165,7 +165,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateClusterState()
 			}
 
-		case "ctrl+R":
+		case "E", "shift+e":
 			// Jump forward to next MasterRecoveryState (any)
 			if recovery := m.traceData.FindNextRecovery(m.currentEventIndex); recovery != nil {
 				m.currentEventIndex = recovery.EventIndex
@@ -976,7 +976,7 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  r / R              Jump to prev / next recovery start (StatusCode=0)"))
 	content.WriteString("\n")
-	content.WriteString(commandStyle.Render("  Ctrl+r / Ctrl+R    Jump to prev / next MasterRecoveryState (any)"))
+	content.WriteString(commandStyle.Render("  e / E              Jump to prev / next MasterRecoveryState (any)"))
 	content.WriteString("\n\n")
 
 	// View section
