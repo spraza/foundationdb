@@ -1524,7 +1524,22 @@ func (m model) renderHelpPopup(baseView string) string {
 		MarginTop(1)
 
 	var content strings.Builder
-	content.WriteString(titleStyle.Render("FDB Trace Scrubber - Help"))
+
+	// ASCII Art Header
+	asciiArt := `┌─────────────────┐
+│  ╔═══════════╗  │
+│  ║ FDB  TRIC ║  │
+│  ║═══════════║  │
+│  ║ ▓▓▓▓▓▓▓▓▓ ║  │
+│  ║ ▓▓▓▓▓▓▓▓▓ ║  │
+│  ║ ▓▓▓▓▓▓▓▓▓ ║  │
+│  ╚═══════════╝  │
+│  [■] [■] [■]    │
+│  ○ ○ ○ ○ ○ ○    │
+└─────────────────┘
+   Scan the Timeline`
+
+	content.WriteString(titleStyle.Render(asciiArt))
 	content.WriteString("\n\n")
 
 	// Navigation section
