@@ -97,6 +97,8 @@ Current Functionality (v1.0):
     - Workers sorted by address within each DC
   - Testers shown in separate section (3:... addresses)
     - Testers sorted by address
+  - Columnar layout: fills one column vertically, then starts new column to the right
+  - No vertical scrolling needed - all workers visible across multiple columns
   - Machine address at top level: "● 2.0.1.0:1"
   - Roles indented below machine, including "Worker" role
   - Gray dots (●) for machines without any roles OR only "Worker" role

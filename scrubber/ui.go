@@ -24,7 +24,6 @@ type model struct {
 	timeInput         textinput.Model
 	configViewMode    bool
 	configScrollOffset int // Vertical scroll offset for config popup
-	scrollOffset      int // Vertical scroll offset for topology pane
 }
 
 // newModel creates a new model with the given trace data
@@ -43,7 +42,6 @@ func newModel(traceData *TraceData) model {
 		timeInput:          ti,
 		configViewMode:     false,
 		configScrollOffset: 0,
-		scrollOffset:       0,
 	}
 }
 
@@ -199,21 +197,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currentTime = recovery.Time
 				m.updateClusterState()
 			}
-
-		case "up":
-			// Scroll up in topology pane
-			if m.scrollOffset > 0 {
-				m.scrollOffset--
-			}
-
-		case "down":
-			// Scroll down in topology pane
-			m.scrollOffset++
-			// Clamp to reasonable max (will be display-clamped in View)
-			// We use height as rough estimate - actual max is computed in View
-			if m.scrollOffset > m.height*10 {
-				m.scrollOffset = m.height * 10
-			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -292,8 +275,6 @@ func (m *model) updateClusterState() {
 	// Get events up to and including the current event index
 	events := m.traceData.Events[:m.currentEventIndex+1]
 	m.clusterState = BuildClusterState(events)
-	// Reset scroll to top when time changes
-	m.scrollOffset = 0
 }
 
 // buildEventListPane builds the event list pane showing events around current time
@@ -385,15 +366,24 @@ func wrapText(text string, width int) []string {
 
 // View renders the UI (required by Bubbletea)
 func (m model) View() string {
-	// Build the topology pane (left) first to calculate its width
-	var topologyLines []string
-
 	// Get current event's machine and ID for highlighting in topology
 	var currentMachine string
 	var currentID string
 	if m.currentEventIndex >= 0 && m.currentEventIndex < len(m.traceData.Events) {
 		currentMachine = m.traceData.Events[m.currentEventIndex].Machine
 		currentID = m.traceData.Events[m.currentEventIndex].ID
+	}
+
+	// Calculate available height for topology (reserve space for config, recovery, scrubber, help)
+	// Bottom section (with borders and padding):
+	//   - configStyle border + padding + content = 3 lines
+	//   - recovery line = 1 line
+	//   - scrubberStyle border + padding + content = 3 lines
+	//   - help line = 1 line
+	//   Total bottom = 8 lines
+	availableHeight := m.height - 8
+	if availableHeight < 1 {
+		availableHeight = 1 // Minimum 1 line
 	}
 
 	// Styles
@@ -445,9 +435,12 @@ func (m model) View() string {
 	dcWorkers := m.clusterState.GetWorkersByDC()
 	testers := m.clusterState.GetTesters()
 
+	// Build all topology lines first (before packing into columns)
+	var allTopologyLines []string
+
 	if len(dcWorkers) == 0 && len(testers) == 0 {
-		topologyLines = append(topologyLines, "")
-		topologyLines = append(topologyLines, "  <NO_CLUSTER_YET>")
+		allTopologyLines = append(allTopologyLines, "")
+		allTopologyLines = append(allTopologyLines, "  <NO_CLUSTER_YET>")
 	} else {
 		// Display main machines grouped by DC
 		if len(dcWorkers) > 0 {
@@ -468,7 +461,7 @@ func (m model) View() string {
 			// Display each DC
 			for _, dcID := range dcIDs {
 				workers := dcWorkers[dcID]
-				topologyLines = append(topologyLines, dcHeaderStyle.Render(fmt.Sprintf("DC %s", dcID)))
+				allTopologyLines = append(allTopologyLines, dcHeaderStyle.Render(fmt.Sprintf("DC %s", dcID)))
 
 				for _, worker := range workers {
 					// Check if this worker's machine matches current event
@@ -490,10 +483,10 @@ func (m model) View() string {
 						// Role ID matches - show machine normally, will highlight role below
 						if worker.HasNonWorkerRoles() {
 							workerLine := fmt.Sprintf("● %s", worker.Machine)
-							topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
+							allTopologyLines = append(allTopologyLines, workerStyleGreen.Render(workerLine))
 						} else {
 							workerLine := fmt.Sprintf("● %s", worker.Machine)
-							topologyLines = append(topologyLines, workerStyleGray.Render(workerLine))
+							allTopologyLines = append(allTopologyLines, workerStyleGray.Render(workerLine))
 						}
 
 						// Show each role, highlighting the one with matching ID
@@ -504,15 +497,15 @@ func (m model) View() string {
 							}
 							if role.ID == currentID {
 								// Highlight this specific role
-								topologyLines = append(topologyLines, roleStyleCurrent.Render("    → "+roleLabel))
+								allTopologyLines = append(allTopologyLines, roleStyleCurrent.Render("    → "+roleLabel))
 							} else {
-								topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+								allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 							}
 						}
 					} else if isCurrentMachine {
 						// Machine matches but no role ID match - highlight machine
 						workerLine := fmt.Sprintf("→ ● %s", worker.Machine)
-						topologyLines = append(topologyLines, workerStyleCurrent.Render(workerLine))
+						allTopologyLines = append(allTopologyLines, workerStyleCurrent.Render(workerLine))
 
 						// Show all roles normally
 						for _, role := range worker.Roles {
@@ -520,24 +513,24 @@ func (m model) View() string {
 							if role.ID != "" {
 								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
 							}
-							topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					} else if worker.HasNonWorkerRoles() {
 						// Normal worker with roles (no match)
 						workerLine := fmt.Sprintf("● %s", worker.Machine)
-						topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
+						allTopologyLines = append(allTopologyLines, workerStyleGreen.Render(workerLine))
 
 						for _, role := range worker.Roles {
 							roleLabel := role.Name
 							if role.ID != "" {
 								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
 							}
-							topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					} else {
 						// Worker without roles OR only Worker role (no match)
 						workerLine := fmt.Sprintf("● %s", worker.Machine)
-						topologyLines = append(topologyLines, workerStyleGray.Render(workerLine))
+						allTopologyLines = append(allTopologyLines, workerStyleGray.Render(workerLine))
 
 						// Show all roles (including Worker if present)
 						for _, role := range worker.Roles {
@@ -545,7 +538,7 @@ func (m model) View() string {
 							if role.ID != "" {
 								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
 							}
-							topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					}
 				}
@@ -554,7 +547,7 @@ func (m model) View() string {
 
 		// Display testers in a separate section
 		if len(testers) > 0 {
-			topologyLines = append(topologyLines, testerHeaderStyle.Render("Testers"))
+			allTopologyLines = append(allTopologyLines, testerHeaderStyle.Render("Testers"))
 
 			for _, worker := range testers {
 				// Check if this tester's machine matches current event
@@ -576,10 +569,10 @@ func (m model) View() string {
 					// Role ID matches - show machine normally, will highlight role below
 					if worker.HasNonWorkerRoles() {
 						workerLine := fmt.Sprintf("● %s", worker.Machine)
-						topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
+						allTopologyLines = append(allTopologyLines, workerStyleGreen.Render(workerLine))
 					} else {
 						workerLine := fmt.Sprintf("● %s", worker.Machine)
-						topologyLines = append(topologyLines, workerStyleGray.Render(workerLine))
+						allTopologyLines = append(allTopologyLines, workerStyleGray.Render(workerLine))
 					}
 
 					// Show each role, highlighting the one with matching ID
@@ -590,15 +583,15 @@ func (m model) View() string {
 						}
 						if role.ID == currentID {
 							// Highlight this specific role
-							topologyLines = append(topologyLines, roleStyleCurrent.Render("    → "+roleLabel))
+							allTopologyLines = append(allTopologyLines, roleStyleCurrent.Render("    → "+roleLabel))
 						} else {
-							topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					}
 				} else if isCurrentMachine {
 					// Machine matches but no role ID match - highlight machine
 					workerLine := fmt.Sprintf("→ ● %s", worker.Machine)
-					topologyLines = append(topologyLines, workerStyleCurrent.Render(workerLine))
+					allTopologyLines = append(allTopologyLines, workerStyleCurrent.Render(workerLine))
 
 					// Show all roles normally
 					for _, role := range worker.Roles {
@@ -606,24 +599,24 @@ func (m model) View() string {
 						if role.ID != "" {
 							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
 						}
-						topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				} else if worker.HasNonWorkerRoles() {
 					// Normal tester with roles (no match)
 					workerLine := fmt.Sprintf("● %s", worker.Machine)
-					topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
+					allTopologyLines = append(allTopologyLines, workerStyleGreen.Render(workerLine))
 
 					for _, role := range worker.Roles {
 						roleLabel := role.Name
 						if role.ID != "" {
 							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
 						}
-						topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				} else {
 					// Tester without roles OR only Worker role (no match)
 					workerLine := fmt.Sprintf("● %s", worker.Machine)
-					topologyLines = append(topologyLines, workerStyleGray.Render(workerLine))
+					allTopologyLines = append(allTopologyLines, workerStyleGray.Render(workerLine))
 
 					// Show all roles (including Worker if present)
 					for _, role := range worker.Roles {
@@ -631,94 +624,54 @@ func (m model) View() string {
 						if role.ID != "" {
 							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
 						}
-						topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				}
 			}
 		}
 	}
 
-	// Calculate available height for topology (reserve space for config, recovery, scrubber, help)
-	// Bottom section (with borders and padding):
-	//   - configStyle border + padding + content = 3 lines
-	//   - recovery line = 1 line
-	//   - scrubberStyle border + padding + content = 3 lines
-	//   - help line = 1 line
-	//   Total bottom = 8 lines
-	availableHeight := m.height - 8
-	if availableHeight < 1 {
-		availableHeight = 1 // Minimum 1 line
-	}
-
-	// Apply scroll offset
-	totalLines := len(topologyLines)
-	visibleLines := topologyLines
-
-	// Calculate max scroll
-	maxScrollOffset := totalLines - availableHeight
-	if maxScrollOffset < 0 {
-		maxScrollOffset = 0
-	}
-
-	// Clamp the display scroll offset (doesn't modify model, just for display)
-	displayScrollOffset := m.scrollOffset
-	if displayScrollOffset < 0 {
-		displayScrollOffset = 0
-	}
-	if displayScrollOffset > maxScrollOffset {
-		displayScrollOffset = maxScrollOffset
-	}
-
-	// Apply clamped scroll offset
-	if displayScrollOffset > 0 && displayScrollOffset < totalLines {
-		visibleLines = topologyLines[displayScrollOffset:]
-	} else if displayScrollOffset >= totalLines {
-		visibleLines = []string{}
+	// Pack lines into columns based on available height
+	var columns [][]string
+	if len(allTopologyLines) <= availableHeight {
+		// Everything fits in one column
+		columns = [][]string{allTopologyLines}
 	} else {
-		// displayScrollOffset == 0, show all from start
-		visibleLines = topologyLines
-	}
-
-	// Determine if we'll show "more below" indicator
-	hasMoreBelow := displayScrollOffset < maxScrollOffset && len(visibleLines) > availableHeight-1
-
-	// Reserve 1 line for scroll indicator if needed
-	maxVisibleLines := availableHeight
-	if hasMoreBelow {
-		maxVisibleLines = availableHeight - 1
-	}
-
-	// Limit visible lines to available space
-	if len(visibleLines) > maxVisibleLines {
-		visibleLines = visibleLines[:maxVisibleLines]
-	}
-
-	// Build left pane (topology) content as array of lines
-	var leftLines []string
-	for _, line := range visibleLines {
-		leftLines = append(leftLines, line)
-	}
-
-	// Add scroll indicator if there's more content below
-	if hasMoreBelow {
-		scrollIndicator := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240")).
-			Render("... (more below)")
-		leftLines = append(leftLines, scrollIndicator)
-	}
-
-	// Calculate max width needed for left pane
-	leftPaneWidth := 0
-	for _, line := range leftLines {
-		width := lipgloss.Width(line)
-		if width > leftPaneWidth {
-			leftPaneWidth = width
+		// Need multiple columns
+		currentColumn := []string{}
+		for _, line := range allTopologyLines {
+			if len(currentColumn) >= availableHeight {
+				// Current column is full, start a new one
+				columns = append(columns, currentColumn)
+				currentColumn = []string{line}
+			} else {
+				currentColumn = append(currentColumn, line)
+			}
+		}
+		// Add the last column
+		if len(currentColumn) > 0 {
+			columns = append(columns, currentColumn)
 		}
 	}
-	// Add some padding
-	leftPaneWidth += 4
 
-	// Safety check for very small terminal sizes
+	// Calculate max width for each column
+	columnWidths := make([]int, len(columns))
+	for colIdx, column := range columns {
+		maxWidth := 0
+		for _, line := range column {
+			width := lipgloss.Width(line)
+			if width > maxWidth {
+				maxWidth = width
+			}
+		}
+		columnWidths[colIdx] = maxWidth + 2 // Add 2 for spacing between columns
+	}
+
+	// Calculate total left pane width
+	leftPaneWidth := 0
+	for _, w := range columnWidths {
+		leftPaneWidth += w
+	}
 	if leftPaneWidth < 20 {
 		leftPaneWidth = 20
 	}
@@ -737,40 +690,46 @@ func (m model) View() string {
 	// Build right pane (event list) content as array of lines
 	eventLines := m.buildEventListPane(availableHeight, rightPaneWidth)
 
-	// Pad both panes to same height
+	// Pad columns to same height
 	maxLines := availableHeight
-	for len(leftLines) < maxLines {
-		leftLines = append(leftLines, "")
+	for i := range columns {
+		for len(columns[i]) < maxLines {
+			columns[i] = append(columns[i], "")
+		}
 	}
 	for len(eventLines) < maxLines {
 		eventLines = append(eventLines, "")
 	}
 
-	// Build split view line by line
+	// Build split view line by line with columnar topology
 	var splitContent strings.Builder
 	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
-	for i := 0; i < maxLines; i++ {
-		leftLine := ""
-		if i < len(leftLines) {
-			leftLine = leftLines[i]
+	for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
+		// Render all topology columns for this line
+		for colIdx, column := range columns {
+			var line string
+			if lineIdx < len(column) {
+				line = column[lineIdx]
+			}
+
+			// Pad to column width
+			lineWidth := lipgloss.Width(line)
+			targetWidth := columnWidths[colIdx]
+			if lineWidth < targetWidth {
+				line = line + strings.Repeat(" ", targetWidth-lineWidth)
+			}
+
+			splitContent.WriteString(line)
 		}
 
-		rightLine := ""
-		if i < len(eventLines) {
-			rightLine = eventLines[i]
-		}
-
-		// Pad left to half width
-		leftWidth := lipgloss.Width(leftLine)
-		if leftWidth < leftPaneWidth {
-			leftLine = leftLine + strings.Repeat(" ", leftPaneWidth-leftWidth)
-		}
-
-		// Combine with border
-		splitContent.WriteString(leftLine)
+		// Add border and event line
 		splitContent.WriteString(borderStyle.Render(" │ "))
-		splitContent.WriteString(rightLine)
+
+		if lineIdx < len(eventLines) {
+			splitContent.WriteString(eventLines[lineIdx])
+		}
+
 		splitContent.WriteString("\n")
 	}
 
@@ -857,7 +816,7 @@ func (m model) View() string {
 	bottomSection.WriteString("\n")
 
 	// Help text
-	help := helpStyle.Render("Up/Down: scroll topology | Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | r/R: recovery | c: config | q: quit")
+	help := helpStyle.Render("Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | r/R: recovery | c: config | q: quit")
 	bottomSection.WriteString(help)
 
 	// Combine split view with bottom section
