@@ -76,6 +76,7 @@ Current Functionality (v1.0):
     - storage_engine, log_engine
   - Shown at bottom above time scrubber with timestamp
   - Press 'c' to view full pretty-printed JSON config
+  - If no config available yet (e.g., at t=0), shows message "No configuration available yet"
   - Full config view shows all fields with timestamp
   - Config popup is vertically scrollable with up/down arrow keys
   - Scroll indicators show when more content above/below
@@ -96,13 +97,15 @@ Current Functionality (v1.0):
     - Workers sorted by address within each DC
   - Testers shown in separate section (3:... addresses)
     - Testers sorted by address
-  - Gray dots (●) for workers without assigned roles (available candidates)
-  - Green dots (●) for workers with assigned roles (SS, TLog, Coordinator, etc.)
-  - Cyan with arrow (→ ●) for the worker that produced the current highlighted trace event
-  - Machine addresses for each worker
-  - Role names shown on separate indented lines below worker address
-  - "Worker" role is filtered out (base state, not operational role)
-  - Current event source machine is highlighted in bright cyan to show which worker the event came from
+  - Machine address at top level: "● 2.0.1.0:1"
+  - Roles indented below machine, including "Worker" role
+  - Gray dots (●) for machines without any roles OR only "Worker" role
+  - Green dots (●) for machines with non-Worker roles (SS, TLog, Coordinator, etc.)
+  - Cyan with arrow (→ ●) for machine when Machine field matches but no role ID matches
+  - Role IDs shown in brackets after role name: e.g., "Worker [6e8c2f97ccc25b2b]", "StorageServer [f5f3670ef3675364]"
+  - When event ID matches a specific role ID (including Worker), that role is highlighted: "  → RoleName [ID]" in cyan
+  - Machine shown normally (green/gray based on non-Worker roles) when role ID matches - indentation makes relationship clear
+  - Precise role-level highlighting: machine match + ID match pinpoints exact role emitting the event
 - Address parsing:
   - Format 1: [abcd::X:Y:Z:W]:Port
   - Format 2: X.Y.Z.W:Port

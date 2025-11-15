@@ -388,10 +388,12 @@ func (m model) View() string {
 	// Build the topology pane (left) first to calculate its width
 	var topologyLines []string
 
-	// Get current event's machine for highlighting in topology
+	// Get current event's machine and ID for highlighting in topology
 	var currentMachine string
+	var currentID string
 	if m.currentEventIndex >= 0 && m.currentEventIndex < len(m.traceData.Events) {
 		currentMachine = m.traceData.Events[m.currentEventIndex].Machine
+		currentID = m.traceData.Events[m.currentEventIndex].ID
 	}
 
 	// Styles
@@ -426,6 +428,11 @@ func (m model) View() string {
 
 	roleStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252")) // Normal gray color
+
+	// Style for current role (when ID matches)
+	roleStyleCurrent := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("51")).
+		Bold(true)
 
 	scrubberStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
@@ -464,32 +471,82 @@ func (m model) View() string {
 				topologyLines = append(topologyLines, dcHeaderStyle.Render(fmt.Sprintf("DC %s", dcID)))
 
 				for _, worker := range workers {
-					// Check if this worker is the current event source
+					// Check if this worker's machine matches current event
 					isCurrentMachine := worker.Machine == currentMachine
 
-					// Display worker
-					if isCurrentMachine {
-						// Cyan with arrow indicator for current machine
+					// Check if any role ID matches current event ID
+					var matchingRole *RoleInfo
+					if isCurrentMachine && currentID != "" {
+						for i := range worker.Roles {
+							if worker.Roles[i].ID == currentID {
+								matchingRole = &worker.Roles[i]
+								break
+							}
+						}
+					}
+
+					// Display machine address at top level (no ID here)
+					if matchingRole != nil {
+						// Role ID matches - show machine normally, will highlight role below
+						if worker.HasNonWorkerRoles() {
+							workerLine := fmt.Sprintf("● %s", worker.Machine)
+							topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
+						} else {
+							workerLine := fmt.Sprintf("● %s", worker.Machine)
+							topologyLines = append(topologyLines, workerStyleGray.Render(workerLine))
+						}
+
+						// Show each role, highlighting the one with matching ID
+						for _, role := range worker.Roles {
+							roleLabel := role.Name
+							if role.ID != "" {
+								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+							}
+							if role.ID == currentID {
+								// Highlight this specific role
+								topologyLines = append(topologyLines, roleStyleCurrent.Render("    → "+roleLabel))
+							} else {
+								topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+							}
+						}
+					} else if isCurrentMachine {
+						// Machine matches but no role ID match - highlight machine
 						workerLine := fmt.Sprintf("→ ● %s", worker.Machine)
 						topologyLines = append(topologyLines, workerStyleCurrent.Render(workerLine))
 
-						// Show each role on a separate indented line
+						// Show all roles normally
 						for _, role := range worker.Roles {
-							topologyLines = append(topologyLines, roleStyle.Render("      "+role))
+							roleLabel := role.Name
+							if role.ID != "" {
+								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+							}
+							topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
 						}
-					} else if worker.HasRoles() {
-						// Green dot for workers with roles
+					} else if worker.HasNonWorkerRoles() {
+						// Normal worker with roles (no match)
 						workerLine := fmt.Sprintf("● %s", worker.Machine)
 						topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
 
-						// Show each role on a separate indented line
 						for _, role := range worker.Roles {
-							topologyLines = append(topologyLines, roleStyle.Render("      "+role))
+							roleLabel := role.Name
+							if role.ID != "" {
+								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+							}
+							topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					} else {
-						// Gray dot for workers without roles
+						// Worker without roles OR only Worker role (no match)
 						workerLine := fmt.Sprintf("● %s", worker.Machine)
 						topologyLines = append(topologyLines, workerStyleGray.Render(workerLine))
+
+						// Show all roles (including Worker if present)
+						for _, role := range worker.Roles {
+							roleLabel := role.Name
+							if role.ID != "" {
+								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+							}
+							topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+						}
 					}
 				}
 			}
@@ -500,32 +557,82 @@ func (m model) View() string {
 			topologyLines = append(topologyLines, testerHeaderStyle.Render("Testers"))
 
 			for _, worker := range testers {
-				// Check if this tester is the current event source
+				// Check if this tester's machine matches current event
 				isCurrentMachine := worker.Machine == currentMachine
 
-				// Display tester
-				if isCurrentMachine {
-					// Cyan with arrow indicator for current machine
+				// Check if any role ID matches current event ID
+				var matchingRole *RoleInfo
+				if isCurrentMachine && currentID != "" {
+					for i := range worker.Roles {
+						if worker.Roles[i].ID == currentID {
+							matchingRole = &worker.Roles[i]
+							break
+						}
+					}
+				}
+
+				// Display machine address at top level (no ID here)
+				if matchingRole != nil {
+					// Role ID matches - show machine normally, will highlight role below
+					if worker.HasNonWorkerRoles() {
+						workerLine := fmt.Sprintf("● %s", worker.Machine)
+						topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
+					} else {
+						workerLine := fmt.Sprintf("● %s", worker.Machine)
+						topologyLines = append(topologyLines, workerStyleGray.Render(workerLine))
+					}
+
+					// Show each role, highlighting the one with matching ID
+					for _, role := range worker.Roles {
+						roleLabel := role.Name
+						if role.ID != "" {
+							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+						}
+						if role.ID == currentID {
+							// Highlight this specific role
+							topologyLines = append(topologyLines, roleStyleCurrent.Render("    → "+roleLabel))
+						} else {
+							topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+						}
+					}
+				} else if isCurrentMachine {
+					// Machine matches but no role ID match - highlight machine
 					workerLine := fmt.Sprintf("→ ● %s", worker.Machine)
 					topologyLines = append(topologyLines, workerStyleCurrent.Render(workerLine))
 
-					// Show each role on a separate indented line
+					// Show all roles normally
 					for _, role := range worker.Roles {
-						topologyLines = append(topologyLines, roleStyle.Render("      "+role))
+						roleLabel := role.Name
+						if role.ID != "" {
+							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+						}
+						topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
 					}
-				} else if worker.HasRoles() {
-					// Green dot for testers with roles
+				} else if worker.HasNonWorkerRoles() {
+					// Normal tester with roles (no match)
 					workerLine := fmt.Sprintf("● %s", worker.Machine)
 					topologyLines = append(topologyLines, workerStyleGreen.Render(workerLine))
 
-					// Show each role on a separate indented line
 					for _, role := range worker.Roles {
-						topologyLines = append(topologyLines, roleStyle.Render("      "+role))
+						roleLabel := role.Name
+						if role.ID != "" {
+							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+						}
+						topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				} else {
-					// Gray dot for testers without roles
+					// Tester without roles OR only Worker role (no match)
 					workerLine := fmt.Sprintf("● %s", worker.Machine)
 					topologyLines = append(topologyLines, workerStyleGray.Render(workerLine))
+
+					// Show all roles (including Worker if present)
+					for _, role := range worker.Roles {
+						roleLabel := role.Name
+						if role.ID != "" {
+							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+						}
+						topologyLines = append(topologyLines, roleStyle.Render("      "+roleLabel))
+					}
 				}
 			}
 		}
@@ -761,6 +868,9 @@ func (m model) View() string {
 		config := m.traceData.GetLatestConfigAtTime(m.currentTime)
 		if config != nil {
 			return m.renderConfigPopup(fullView, config)
+		} else {
+			// No config available yet - show message
+			return m.renderNoConfigPopup(fullView)
 		}
 	}
 
@@ -770,6 +880,36 @@ func (m model) View() string {
 	}
 
 	return fullView
+}
+
+// renderNoConfigPopup renders a message when no config is available
+func (m model) renderNoConfigPopup(baseView string) string {
+	popupStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 2).
+		Width(50)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39"))
+
+	messageStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		MarginTop(1)
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		MarginTop(1)
+
+	popupContent := titleStyle.Render("DB Config") + "\n" +
+		messageStyle.Render("No configuration available yet at this time.") + "\n" +
+		helpStyle.Render("Press q or c to close")
+
+	popup := popupStyle.Render(popupContent)
+
+	// Overlay the popup on top of the base view
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
 }
 
 // renderConfigPopup renders the full config JSON popup overlay

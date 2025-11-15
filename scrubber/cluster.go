@@ -5,12 +5,18 @@ import (
 	"strings"
 )
 
+// RoleInfo represents a role with its ID
+type RoleInfo struct {
+	Name string // e.g., "StorageServer", "Coordinator"
+	ID   string // e.g., "f5f3670ef3675364"
+}
+
 // Worker represents a process in the cluster
 type Worker struct {
-	Machine     string   // e.g., "[abcd::2:1:1:0]:1"
-	Roles       []string // e.g., ["Coordinator", "ClusterController"]
-	MachineType string   // "main" or "tester"
-	DCID        string   // e.g., "0", "1", "2", etc.
+	Machine     string     // e.g., "[abcd::2:1:1:0]:1"
+	Roles       []RoleInfo // Roles assigned to this worker (including "Worker" role)
+	MachineType string     // "main" or "tester"
+	DCID        string     // e.g., "0", "1", "2", etc.
 }
 
 // ClusterState represents the state of the cluster at a given time
@@ -80,6 +86,7 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 		if event.Type == "Role" && event.Machine != "0.0.0.0:0" {
 			transition := event.Attrs["Transition"]
 			roleName := event.Attrs["As"]
+			roleID := event.ID
 
 			// Skip if no role name
 			if roleName == "" {
@@ -92,36 +99,34 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 				machineType, dcID := parseAddress(event.Machine)
 				worker = &Worker{
 					Machine:     event.Machine,
-					Roles:       []string{},
+					Roles:       []RoleInfo{},
 					MachineType: machineType,
 					DCID:        dcID,
 				}
 				state.Workers[event.Machine] = worker
 			}
 
-			// Skip "Worker" role from being added to roles list, but we still track the worker
-			if roleName == "Worker" {
-				continue
-			}
-
-			// Handle role transition for real roles (not "Worker")
+			// Handle role transitions (including "Worker" role)
 			if transition == "Begin" {
 				// Add role if not already present
 				hasRole := false
 				for _, r := range worker.Roles {
-					if r == roleName {
+					if r.Name == roleName && r.ID == roleID {
 						hasRole = true
 						break
 					}
 				}
 				if !hasRole {
-					worker.Roles = append(worker.Roles, roleName)
+					worker.Roles = append(worker.Roles, RoleInfo{
+						Name: roleName,
+						ID:   roleID,
+					})
 				}
 			} else if transition == "End" {
-				// Remove role
-				newRoles := []string{}
+				// Remove role with matching name and ID
+				newRoles := []RoleInfo{}
 				for _, r := range worker.Roles {
-					if r != roleName {
+					if !(r.Name == roleName && r.ID == roleID) {
 						newRoles = append(newRoles, r)
 					}
 				}
@@ -185,10 +190,24 @@ func (w *Worker) HasRoles() bool {
 	return len(w.Roles) > 0
 }
 
+// HasNonWorkerRoles returns true if the worker has any roles other than "Worker"
+func (w *Worker) HasNonWorkerRoles() bool {
+	for _, role := range w.Roles {
+		if role.Name != "Worker" {
+			return true
+		}
+	}
+	return false
+}
+
 // RolesString returns a comma-separated string of roles
 func (w *Worker) RolesString() string {
 	if len(w.Roles) == 0 {
 		return ""
 	}
-	return strings.Join(w.Roles, ", ")
+	roleNames := make([]string, len(w.Roles))
+	for i, r := range w.Roles {
+		roleNames[i] = r.Name
+	}
+	return strings.Join(roleNames, ", ")
 }
