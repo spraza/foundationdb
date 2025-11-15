@@ -311,24 +311,32 @@ func (td *TraceData) FindNextRecoveryWithStatusCode(targetTime float64, statusCo
 	return nil
 }
 
-// GetEventIndexAtTime finds the index of the event closest to targetTime
+// GetEventIndexAtTime finds the index of the first event at or closest to targetTime
 func (td *TraceData) GetEventIndexAtTime(targetTime float64) int {
-	// Binary search to find the event closest to targetTime
+	// Binary search to find the first event at targetTime or later
 	idx := sort.Search(len(td.Events), func(i int) bool {
-		return td.Events[i].TimeValue > targetTime
+		return td.Events[i].TimeValue >= targetTime
 	})
 
-	if idx == 0 {
-		return 0
-	}
 	if idx >= len(td.Events) {
+		// If no event at or after targetTime, return last event
 		return len(td.Events) - 1
 	}
 
-	// Check which is closer: idx or idx-1
-	if (targetTime - td.Events[idx-1].TimeValue) < (td.Events[idx].TimeValue - targetTime) {
-		return idx - 1
+	// If we found an event at exactly targetTime, return it
+	if td.Events[idx].TimeValue == targetTime {
+		return idx
 	}
+
+	// Otherwise, check if the previous event is closer
+	if idx > 0 {
+		prevDiff := targetTime - td.Events[idx-1].TimeValue
+		nextDiff := td.Events[idx].TimeValue - targetTime
+		if prevDiff < nextDiff {
+			return idx - 1
+		}
+	}
+
 	return idx
 }
 

@@ -39,15 +39,19 @@ Files Created:
 - CMakeLists.txt      : CMake build integration
 - scrubber-notes.txt  : This file
 
-Current Functionality (v0.9):
+Current Functionality (v1.0):
 -----------------------------
 - Accepts single XML trace file path as argument
 - Parses XML trace file into TraceEvent structs and DB configurations
+- Split pane layout:
+  - Left pane: Cluster topology view
+  - Right pane: Trace events around current time (synchronized with time navigation)
+  - Bottom section: DB config, recovery state, time scrubber, help text
 - Time-based scrubbing with less-style keybindings:
-  - Ctrl+N: Step forward in time (100ms)
-  - Ctrl+P: Step backward in time (100ms)
-  - Left/Right: Fast scrub (1 second)
-  - Up/Down: Scroll topology pane (DC 0 always visible)
+  - Ctrl+N: Jump to next trace event (one event forward)
+  - Ctrl+P: Jump to previous trace event (one event backward)
+  - Left/Right: Fast scrub (±1 second) - updates both topology and event list
+  - Up/Down: Scroll topology pane (DC 0 always starts at top)
   - g: Jump to start (t=0)
   - G: Jump to end of trace
   - t: Open time jump popup (enter time in seconds)
@@ -55,16 +59,15 @@ Current Functionality (v0.9):
   - R: Jump forward to next recovery (StatusCode=0)
   - c: Show full DB config JSON (press q or c to close)
   - q/Q: Quit
-- Time jump popup:
-  - Press 't' to open popup
-  - Enter time in seconds (e.g., 123.456)
-  - Real-time validation with visual feedback:
-    - Green checkmark (✓) for valid times
-    - Red X (✗) for invalid times with error message
-    - Shows valid range at bottom of popup
-  - Press Enter to jump (only if time is valid)
-  - Press Esc, q, or t to cancel
-  - Invalid times prevent jumping and keep popup open for correction
+- Trace event list (right pane):
+  - Shows events in a window centered around current event
+  - Current event highlighted with dark yellow background
+  - Events displayed with specific field ordering: Time, Type, Severity, Machine, Roles, ID, other attrs (sorted)
+  - Field names in dim gray, field values in green/colors
+  - All events shown (no filtering) for consistent navigation
+  - Automatically scrolls to keep current event visible and centered
+  - Long event lines wrap to fit pane width
+  - Navigation (Ctrl+N/P) moves one event at a time, updating topology and footer in sync
 - Database Configuration Display:
   - Shows latest DB config at or before current time
   - Extracted from MasterRecoveryState events
@@ -83,7 +86,7 @@ Current Functionality (v0.9):
   - Allows tracking cluster recovery progress over time
   - Press 'r' to jump backward to previous recovery start (StatusCode=0)
   - Press 'R' to jump forward to next recovery start (StatusCode=0)
-- Displays cluster topology with:
+- Displays cluster topology (left pane) with:
   - Workers grouped by DC (Data Center) ID
     - "DC 0", "DC 1", etc. sections for main machines (2:...)
     - Each DC shown separately with underlined header (compact, no extra spacing)
@@ -100,20 +103,11 @@ Current Functionality (v0.9):
   - Format 2: X.Y.Z.W:Port
   - X=2 for main machines, X=3 for testers
   - Y=DC ID (0, 1, 2, etc.)
-- Time scrubber at bottom showing current time and max time
+- Time scrubber at bottom showing current time
 - Shows <NO_CLUSTER_YET> at t=0 or when no workers exist
 - Workers tracked when they appear (even if only "Worker" role)
 - All workers visible in topology showing candidates vs assigned
 - Consistent worker ordering (sorted by address, no random reordering)
-
-Next Steps:
------------
-[ ] Display list of trace events in TUI
-[ ] Add time-based navigation (scrubbing)
-[ ] Add filtering by severity/type/machine
-[ ] Split pane view (event list + details)
-[ ] Cluster state visualization
-[ ] Live file watching
 
 Dependencies:
 -------------
