@@ -24,6 +24,7 @@ type model struct {
 	timeInput         textinput.Model
 	configViewMode    bool
 	configScrollOffset int // Vertical scroll offset for config popup
+	helpViewMode      bool // Help popup mode
 }
 
 // newModel creates a new model with the given trace data
@@ -42,6 +43,7 @@ func newModel(traceData *TraceData) model {
 		timeInput:          ti,
 		configViewMode:     false,
 		configScrollOffset: 0,
+		helpViewMode:       false,
 	}
 }
 
@@ -53,6 +55,20 @@ func (m model) Init() tea.Cmd {
 // Update handles messages and updates the model (required by Bubbletea)
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	// Handle help view mode
+	if m.helpViewMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "q", "h", "ctrl+c":
+				// Exit help view mode
+				m.helpViewMode = false
+				return m, nil
+			}
+		}
+		return m, nil
+	}
 
 	// Handle config view mode
 	if m.configViewMode {
@@ -135,6 +151,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Enter config view mode
 			m.configViewMode = true
 			return m, nil
+
+		case "h":
+			// Enter help view mode
+			m.helpViewMode = true
+			return m, nil
+
+		case "ctrl+r":
+			// Jump backward to previous MasterRecoveryState (any)
+			if recovery := m.traceData.FindPreviousRecovery(m.currentEventIndex); recovery != nil {
+				m.currentEventIndex = recovery.EventIndex
+				m.currentTime = recovery.Time
+				m.updateClusterState()
+			}
+
+		case "ctrl+R":
+			// Jump forward to next MasterRecoveryState (any)
+			if recovery := m.traceData.FindNextRecovery(m.currentEventIndex); recovery != nil {
+				m.currentEventIndex = recovery.EventIndex
+				m.currentTime = recovery.Time
+				m.updateClusterState()
+			}
 
 		case "ctrl+n":
 			// Move forward to next event
@@ -863,11 +900,16 @@ func (m model) View() string {
 	bottomSection.WriteString("\n")
 
 	// Help text
-	help := helpStyle.Render("Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | r/R: recovery | c: config | q: quit")
+	help := helpStyle.Render("Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | r/R: recovery | c: config | h: help | q: quit")
 	bottomSection.WriteString(help)
 
 	// Combine split view with bottom section
 	fullView := splitContent.String() + bottomSection.String()
+
+	// If in help view mode, show help popup overlay
+	if m.helpViewMode {
+		return m.renderHelpPopup(fullView)
+	}
 
 	// If in config view mode, show config popup overlay
 	if m.configViewMode {
@@ -886,6 +928,77 @@ func (m model) View() string {
 	}
 
 	return fullView
+}
+
+// renderHelpPopup renders the help information popup overlay
+func (m model) renderHelpPopup(baseView string) string {
+	popupStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 2).
+		Width(80)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39")).
+		Underline(true)
+
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("46")).
+		MarginTop(1)
+
+	commandStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		MarginTop(1)
+
+	var content strings.Builder
+	content.WriteString(titleStyle.Render("FDB Trace Scrubber - Help"))
+	content.WriteString("\n\n")
+
+	// Navigation section
+	content.WriteString(sectionStyle.Render("Navigation:"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  Ctrl+N / Ctrl+P    Next / previous trace event"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  Left / Right       Fast scrub (±1 second)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  g / G              Jump to start / end"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  t                  Jump to specific time"))
+	content.WriteString("\n\n")
+
+	// Recovery section
+	content.WriteString(sectionStyle.Render("Recovery Navigation:"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  r / R              Jump to prev / next recovery start (StatusCode=0)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  Ctrl+r / Ctrl+R    Jump to prev / next MasterRecoveryState (any)"))
+	content.WriteString("\n\n")
+
+	// View section
+	content.WriteString(sectionStyle.Render("Views:"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  c                  Show full DB config JSON (Up/Down to scroll)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  h                  Show this help"))
+	content.WriteString("\n\n")
+
+	// General section
+	content.WriteString(sectionStyle.Render("General:"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  q / Q / Ctrl+C     Quit"))
+	content.WriteString("\n")
+
+	content.WriteString(helpStyle.Render("\nPress q or h to close"))
+
+	popup := popupStyle.Render(content.String())
+
+	// Overlay the popup on top of the base view
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
 }
 
 // renderNoConfigPopup renders a message when no config is available

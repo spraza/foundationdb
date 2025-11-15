@@ -285,6 +285,37 @@ func (td *TraceData) GetLatestRecoveryStateAtIndex(eventIndex int) *RecoveryStat
 	return &td.RecoveryStates[idx-1]
 }
 
+// FindPreviousRecovery finds the latest MasterRecoveryState before the given event index
+func (td *TraceData) FindPreviousRecovery(eventIndex int) *RecoveryState {
+	// Binary search to find where to start looking
+	idx := sort.Search(len(td.RecoveryStates), func(i int) bool {
+		return td.RecoveryStates[i].EventIndex >= eventIndex
+	})
+
+	// Walk backwards from idx-1 to find any recovery state
+	if idx > 0 {
+		return &td.RecoveryStates[idx-1]
+	}
+
+	return nil
+}
+
+// FindNextRecovery finds the earliest MasterRecoveryState after the given event index
+func (td *TraceData) FindNextRecovery(eventIndex int) *RecoveryState {
+	// Binary search to find where to start looking
+	// Use > to skip the current event index
+	idx := sort.Search(len(td.RecoveryStates), func(i int) bool {
+		return td.RecoveryStates[i].EventIndex > eventIndex
+	})
+
+	// Return first recovery state after current index
+	if idx < len(td.RecoveryStates) {
+		return &td.RecoveryStates[idx]
+	}
+
+	return nil
+}
+
 // FindPreviousRecoveryWithStatusCode finds the latest recovery state before the given event index with the specified status code
 func (td *TraceData) FindPreviousRecoveryWithStatusCode(eventIndex int, statusCode string) *RecoveryState {
 	// Binary search to find where to start looking
