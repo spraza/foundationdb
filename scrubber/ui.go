@@ -209,12 +209,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // formatTraceEvent formats a trace event for display with config.fish field ordering and colors
 func formatTraceEvent(event *TraceEvent, isCurrent bool) string {
-	// Skip fields as per config.fish
+	// Skip fields as per config.fish and fields shown in topology
 	skipFields := map[string]bool{
 		"DateTime":         true,
 		"ThreadID":         true,
 		"LogGroup":         true,
 		"TrackLatestType":  true,
+		"Roles":            true, // Shown in topology
 	}
 
 	// Color styles
@@ -224,7 +225,7 @@ func formatTraceEvent(event *TraceEvent, isCurrent bool) string {
 
 	var parts []string
 
-	// Add fields in specific order: Time, Type, Severity, Machine, Roles, ID, then other attributes
+	// Add fields in specific order: Time, Type, Severity (skip Machine, Roles, ID - shown in topology), then other attributes
 	if event.Time != "" {
 		parts = append(parts, fieldNameStyle.Render("Time=")+fieldValueStyle.Render(event.Time))
 	}
@@ -234,15 +235,9 @@ func formatTraceEvent(event *TraceEvent, isCurrent bool) string {
 	if event.Severity != "" {
 		parts = append(parts, fieldNameStyle.Render("Severity=")+fieldValueStyle.Render(event.Severity))
 	}
-	if event.Machine != "" {
-		parts = append(parts, fieldNameStyle.Render("Machine=")+fieldValueStyle.Render(event.Machine))
-	}
-	if roles, ok := event.Attrs["Roles"]; ok && !skipFields["Roles"] {
-		parts = append(parts, fieldNameStyle.Render("Roles=")+fieldValueStyle.Render(roles))
-	}
-	if event.ID != "" {
-		parts = append(parts, fieldNameStyle.Render("ID=")+fieldValueStyle.Render(event.ID))
-	}
+	// Skip Machine - shown in topology
+	// Skip Roles - shown in topology
+	// Skip ID - shown in topology
 
 	// Add remaining attributes (sorted for consistent ordering)
 	var attrKeys []string
@@ -632,21 +627,49 @@ func (m model) View() string {
 	}
 
 	// Pack lines into columns based on available height
+	// Keep machines and their roles together (don't split across columns)
 	var columns [][]string
 	if len(allTopologyLines) <= availableHeight {
 		// Everything fits in one column
 		columns = [][]string{allTopologyLines}
 	} else {
-		// Need multiple columns
+		// Need multiple columns - group lines to keep machines together
 		currentColumn := []string{}
-		for _, line := range allTopologyLines {
-			if len(currentColumn) >= availableHeight {
-				// Current column is full, start a new one
-				columns = append(columns, currentColumn)
-				currentColumn = []string{line}
-			} else {
-				currentColumn = append(currentColumn, line)
+		i := 0
+		for i < len(allTopologyLines) {
+			line := allTopologyLines[i]
+
+			// Check if this is a DC header or machine line (starts with "DC", "Testers", "●", or "→")
+			// These mark the start of a new logical group
+			isGroupStart := strings.HasPrefix(line, "DC ") ||
+				strings.HasPrefix(line, "Testers") ||
+				strings.Contains(line, "● ") ||
+				strings.Contains(line, "→ ●")
+
+			if isGroupStart && len(currentColumn) > 0 {
+				// Peek ahead to see how many lines this group needs
+				groupSize := 1 // Current line
+				for j := i + 1; j < len(allTopologyLines); j++ {
+					nextLine := allTopologyLines[j]
+					// Check if next line is a role (indented) or another group start
+					if strings.HasPrefix(nextLine, "DC ") ||
+						strings.HasPrefix(nextLine, "Testers") ||
+						strings.Contains(nextLine, "● ") ||
+						strings.Contains(nextLine, "→ ●") {
+						break // End of this group
+					}
+					groupSize++
+				}
+
+				// If adding this group would overflow, start new column
+				if len(currentColumn) + groupSize > availableHeight {
+					columns = append(columns, currentColumn)
+					currentColumn = []string{}
+				}
 			}
+
+			currentColumn = append(currentColumn, line)
+			i++
 		}
 		// Add the last column
 		if len(currentColumn) > 0 {
@@ -774,11 +797,17 @@ func (m model) View() string {
 		if config.RemoteLogs > 0 {
 			configParts = append(configParts, fmt.Sprintf("remote_logs=%d", config.RemoteLogs))
 		}
+		if config.Proxies > 0 {
+			configParts = append(configParts, fmt.Sprintf("proxies=%d", config.Proxies))
+		}
+		if config.GrvProxies > 0 {
+			configParts = append(configParts, fmt.Sprintf("grv_proxies=%d", config.GrvProxies))
+		}
+		if config.BackupWorkerEnabled > 0 {
+			configParts = append(configParts, fmt.Sprintf("backup_worker_enabled=%d", config.BackupWorkerEnabled))
+		}
 		if config.StorageEngine != "" {
 			configParts = append(configParts, fmt.Sprintf("storage_engine=%s", config.StorageEngine))
-		}
-		if config.LogEngine != "" {
-			configParts = append(configParts, fmt.Sprintf("log_engine=%s", config.LogEngine))
 		}
 
 		configContent += configValueStyle.Render(strings.Join(configParts, " | "))
@@ -797,8 +826,26 @@ func (m model) View() string {
 			Foreground(lipgloss.Color("39")).
 			Bold(true)
 
-		recoveryValueStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252"))
+		// Color code based on StatusCode value
+		var recoveryValueStyle lipgloss.Style
+		if statusCode, err := strconv.Atoi(recoveryState.StatusCode); err == nil {
+			if statusCode < 11 {
+				// Red for < 11
+				recoveryValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+			} else if statusCode >= 11 && statusCode < 14 {
+				// Blue for 11 <= statusCode < 14
+				recoveryValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+			} else if statusCode == 14 {
+				// Green for = 14
+				recoveryValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("46"))
+			} else {
+				// Default gray for > 14
+				recoveryValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+			}
+		} else {
+			// Default gray if can't parse
+			recoveryValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		}
 
 		recoveryContent := recoveryTitleStyle.Render(fmt.Sprintf("Recovery State (t=%.6fs)", recoveryState.Time)) + " "
 		recoveryContent += recoveryValueStyle.Render(fmt.Sprintf("StatusCode=%s | Status=%s", recoveryState.StatusCode, recoveryState.Status))

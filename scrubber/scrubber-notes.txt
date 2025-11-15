@@ -62,7 +62,8 @@ Current Functionality (v1.0):
 - Trace event list (right pane):
   - Shows events in a window centered around current event
   - Current event highlighted with dark yellow background
-  - Events displayed with specific field ordering: Time, Type, Severity, Machine, Roles, ID, other attrs (sorted)
+  - Events displayed with specific field ordering: Time, Type, Severity, then other attrs (sorted)
+  - Machine, ID, and Roles fields NOT shown (visible in topology pane)
   - Field names in dim gray, field values in green/colors
   - All events shown (no filtering) for consistent navigation
   - Automatically scrolls to keep current event visible and centered
@@ -73,7 +74,8 @@ Current Functionality (v1.0):
   - Extracted from MasterRecoveryState events
   - Compact summary with exact field names for easy code mapping:
     - redundancy_mode, usable_regions, logs, log_routers, remote_logs
-    - storage_engine, log_engine
+    - proxies, grv_proxies, backup_worker_enabled
+    - storage_engine
   - Shown at bottom above time scrubber with timestamp
   - Press 'c' to view full pretty-printed JSON config
   - If no config available yet (e.g., at t=0), shows message "No configuration available yet"
@@ -85,6 +87,11 @@ Current Functionality (v1.0):
   - Shows latest MasterRecoveryState at or before current event (index-based, not time-based)
   - Displayed below DB config with timestamp
   - Format: StatusCode=X | Status=Y
+  - Color coded by StatusCode:
+    - Red (< 11): Early recovery states
+    - Blue (11 <= code < 14): Mid-recovery states
+    - Green (= 14): Fully recovered
+    - Gray (> 14): Post-recovery states
   - Example: StatusCode=14 | Status=fully_recovered
   - Allows tracking cluster recovery progress over time
   - Press 'r' to jump backward to previous recovery start (StatusCode=0) - jumps to exact MasterRecoveryState event
@@ -98,6 +105,7 @@ Current Functionality (v1.0):
   - Testers shown in separate section (3:... addresses)
     - Testers sorted by address
   - Columnar layout: fills one column vertically, then starts new column to the right
+  - Machines and their roles kept together (never split across columns)
   - No vertical scrolling needed - all workers visible across multiple columns
   - Machine address at top level: "● 2.0.1.0:1"
   - Roles indented below machine, including "Worker" role

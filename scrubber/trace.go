@@ -37,8 +37,10 @@ type DBConfig struct {
 	Logs                  int    `json:"logs"`
 	LogRouters            int    `json:"log_routers"`
 	RemoteLogs            int    `json:"remote_logs"`
+	Proxies               int    `json:"proxies"`
+	GrvProxies            int    `json:"grv_proxies"`
+	BackupWorkerEnabled   int    `json:"backup_worker_enabled"`
 	StorageEngine         string `json:"storage_engine"`
-	LogEngine             string `json:"log_engine"`
 	RemoteRedundancyMode  string `json:"remote_redundancy_mode"`
 	TenantMode            string `json:"tenant_mode"`
 	// Add other fields as needed
@@ -219,11 +221,17 @@ func parseDBConfig(confStr string, time float64) *DBConfig {
 	if v, ok := rawConfig["remote_logs"].(float64); ok {
 		config.RemoteLogs = int(v)
 	}
+	if v, ok := rawConfig["proxies"].(float64); ok {
+		config.Proxies = int(v)
+	}
+	if v, ok := rawConfig["grv_proxies"].(float64); ok {
+		config.GrvProxies = int(v)
+	}
+	if v, ok := rawConfig["backup_worker_enabled"].(float64); ok {
+		config.BackupWorkerEnabled = int(v)
+	}
 	if v, ok := rawConfig["storage_engine"].(string); ok {
 		config.StorageEngine = v
-	}
-	if v, ok := rawConfig["log_engine"].(string); ok {
-		config.LogEngine = v
 	}
 	if v, ok := rawConfig["remote_redundancy_mode"].(string); ok {
 		config.RemoteRedundancyMode = v
