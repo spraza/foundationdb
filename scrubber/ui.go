@@ -181,7 +181,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch msg.String() {
-			case "q", "h", "ctrl+c":
+			case "q", "h", "esc", "ctrl+c":
 				// Exit help view mode
 				m.helpViewMode = false
 				return m, nil
@@ -195,18 +195,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch msg.String() {
-			case "q", "c", "ctrl+c":
+			case "q", "c", "esc", "ctrl+c":
 				// Exit config view mode
 				m.configViewMode = false
 				m.configScrollOffset = 0 // Reset scroll when exiting
 				return m, nil
-			case "up":
+			case "ctrl+p":
 				// Scroll up in config view
 				if m.configScrollOffset > 0 {
 					m.configScrollOffset--
 				}
 				return m, nil
-			case "down":
+			case "ctrl+n":
 				// Scroll down in config view
 				m.configScrollOffset++
 				// Will be clamped in renderConfigPopup
@@ -1593,7 +1593,7 @@ func (m model) renderHelpPopup(baseView string) string {
 	// View section
 	content.WriteString(sectionStyle.Render("Views:"))
 	content.WriteString("\n")
-	content.WriteString(commandStyle.Render("  c                  Show full DB config JSON (Up/Down to scroll)"))
+	content.WriteString(commandStyle.Render("  c                  Show full DB config JSON (Ctrl+N/P to scroll)"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  h                  Show this help"))
 	content.WriteString("\n\n")
@@ -1604,7 +1604,7 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString(commandStyle.Render("  q / Q / Ctrl+C     Quit"))
 	content.WriteString("\n")
 
-	content.WriteString(helpStyle.Render("\nPress q or h to close"))
+	content.WriteString(helpStyle.Render("\nPress q/h/Esc to close"))
 
 	popup := popupStyle.Render(content.String())
 
@@ -1634,7 +1634,7 @@ func (m model) renderNoConfigPopup(baseView string) string {
 
 	popupContent := titleStyle.Render("DB Config") + "\n" +
 		messageStyle.Render("No configuration available yet at this time.") + "\n" +
-		helpStyle.Render("Press q or c to close")
+		helpStyle.Render("Press q/c/Esc to close")
 
 	popup := popupStyle.Render(popupContent)
 
@@ -1732,7 +1732,7 @@ func (m model) renderConfigPopup(baseView string, config *DBConfig) string {
 	// Build popup content
 	popupContent := titleStyle.Render(fmt.Sprintf("DB Config (t=%.2fs)", config.Time)) + "\n\n" +
 		jsonContentBuilder.String() + "\n\n" +
-		helpStyle.Render("Press q or c to close | Up/Down to scroll")
+		helpStyle.Render("Press q/c/Esc to close | Ctrl+N/P to scroll")
 
 	popup := popupStyle.Render(popupContent)
 
