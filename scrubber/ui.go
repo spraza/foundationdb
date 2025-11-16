@@ -394,8 +394,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case "right":
-			// Fast forward (1 second) to next visible event
+		case "ctrl+v":
+			// Page forward (1 second) to next visible event
 			newTime := m.currentTime + 1.0
 			if newTime <= m.traceData.MaxTime {
 				targetIdx := m.traceData.GetEventIndexAtTime(newTime)
@@ -410,8 +410,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case "left":
-			// Fast backward (1 second) to previous visible event
+		case "alt+v":
+			// Page backward (1 second) to previous visible event
 			newTime := m.currentTime - 1.0
 			if newTime >= m.traceData.MinTime {
 				targetIdx := m.traceData.GetEventIndexAtTime(newTime)
@@ -1360,7 +1360,7 @@ func (m model) View() string {
 	bottomSection.WriteString("\n")
 
 	// Help text
-	help := helpStyle.Render("Ctrl+N/P: next/prev event | Left/Right: ±1s | g/G: start/end | t: jump time | /?: search | n/N: next/prev match | f: filter | r/R: recovery | c: config | h: help | q: quit")
+	help := helpStyle.Render("Ctrl+N/P: next/prev event | g/G: start/end | t: jump time | /?: search | n/N: next/prev match | f: filter | r/R: recovery | c: config | h: help | q: quit")
 	bottomSection.WriteString(help)
 
 	// Combine split view with bottom section
@@ -1547,7 +1547,7 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  Ctrl+N / Ctrl+P    Next / previous trace event"))
 	content.WriteString("\n")
-	content.WriteString(commandStyle.Render("  Left / Right       Fast scrub (±1 second)"))
+	content.WriteString(commandStyle.Render("  Ctrl+V / Alt+V     Page forward / backward (±1 second)"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  g / G              Jump to start / end"))
 	content.WriteString("\n")
