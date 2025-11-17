@@ -32,12 +32,28 @@ type model struct {
 	searchPattern     string // Current search pattern
 	searchActive      bool // Whether search highlighting is active
 	// Filter state
-	filterViewMode       bool // Filter popup mode
-	filterShowAll        bool // Whether "All" is checked (default true)
-	filterList           []string // List of inclusive filter patterns
-	filterInput          textinput.Model // Input for new filter
-	filterSelectedIndex  int // Selected filter index (for navigation/deletion)
-	filterInputActive    bool // Whether input field is active
+	filterViewMode          bool     // Filter popup mode
+	filterShowAll           bool     // Whether "All" is checked (default true)
+	filterCurrentCategory   int      // 0=Raw, 1=Machine, 2=Time
+	// Category 1: Raw filters (OR logic)
+	filterRawList           []string // Raw filter patterns
+	filterRawInput          textinput.Model
+	filterRawSelectedIndex  int
+	filterRawInputActive    bool
+	// Category 2: Machine filters (OR logic)
+	filterMachineList       []string // Selected machine addresses
+	filterMachineSelectMode bool     // In machine selection popup
+	filterMachineInput      textinput.Model // For fuzzy search in machine popup
+	filterMachineDCs        map[string]bool // Selected DCs (map[dcID]selected)
+	filterMachineScroll     int // Scroll offset in machine popup
+	filterMachineSelected   int // Currently highlighted item in machine popup
+	// Category 3: Time range filter
+	filterTimeEnabled       bool    // Whether time filter is active
+	filterTimeStart         float64 // Start time
+	filterTimeEnd           float64 // End time
+	filterTimeInputMode     bool    // Configuring time range
+	filterTimeEditingStart  bool    // true=editing start, false=editing end
+	filterTimeInput         textinput.Model
 }
 
 // newModel creates a new model with the given trace data
@@ -52,10 +68,23 @@ func newModel(traceData *TraceData) model {
 	si.CharLimit = 100
 	si.Width = 60
 
-	fi := textinput.New()
-	fi.Placeholder = "Enter filter pattern (e.g., Type=WorkerHealthMonitor or Role*TL)"
-	fi.CharLimit = 100
-	fi.Width = 70
+	// Raw filter input
+	rawInput := textinput.New()
+	rawInput.Placeholder = "Enter raw filter pattern (e.g., Type=WorkerHealthMonitor or Role*TL)"
+	rawInput.CharLimit = 100
+	rawInput.Width = 70
+
+	// Machine filter fuzzy search input
+	machineInput := textinput.New()
+	machineInput.Placeholder = "Type to filter machines..."
+	machineInput.CharLimit = 50
+	machineInput.Width = 60
+
+	// Time filter input
+	timeFilterInput := textinput.New()
+	timeFilterInput.Placeholder = "Enter time (e.g., 4.5)"
+	timeFilterInput.CharLimit = 20
+	timeFilterInput.Width = 30
 
 	return model{
 		traceData:          traceData,
@@ -73,12 +102,25 @@ func newModel(traceData *TraceData) model {
 		searchPattern:      "",
 		searchActive:       false,
 		// Filter initialization
-		filterViewMode:      false,
-		filterShowAll:       true, // Default: show all events
-		filterList:          []string{},
-		filterInput:         fi,
-		filterSelectedIndex: -1, // -1 means input field is selected
-		filterInputActive:   false,
+		filterViewMode:         false,
+		filterShowAll:          true, // Default: show all events
+		filterCurrentCategory:  0,    // Start in Raw category
+		filterRawList:          []string{},
+		filterRawInput:         rawInput,
+		filterRawSelectedIndex: -1,
+		filterRawInputActive:   false,
+		filterMachineList:      []string{},
+		filterMachineSelectMode: false,
+		filterMachineInput:     machineInput,
+		filterMachineDCs:       make(map[string]bool),
+		filterMachineScroll:    0,
+		filterMachineSelected:  0,
+		filterTimeEnabled:      false,
+		filterTimeStart:        traceData.MinTime,
+		filterTimeEnd:          traceData.MaxTime,
+		filterTimeInputMode:    false,
+		filterTimeEditingStart: true,
+		filterTimeInput:        timeFilterInput,
 	}
 }
 
@@ -93,81 +135,123 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle filter view mode
 	if m.filterViewMode {
+		// If in machine selection popup
+		if m.filterMachineSelectMode {
+			return m.handleMachineSelectionPopup(msg)
+		}
+
+		// If in time input mode within filter
+		if m.filterTimeInputMode {
+			return m.handleFilterTimeInput(msg)
+		}
+
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
-			// If in input mode, handle input field first for most keys
-			if m.filterInputActive {
+			// Handle raw filter input mode
+			if m.filterRawInputActive {
 				switch msg.String() {
 				case "enter":
-					// Add new filter from input
-					if filterText := m.filterInput.Value(); filterText != "" {
-						m.filterList = append(m.filterList, filterText)
-						m.filterInput.Reset()
-						m.filterInput.Blur()
-						m.filterInputActive = false
-						m.filterSelectedIndex = len(m.filterList) - 1 // Select the newly added filter
+					if filterText := m.filterRawInput.Value(); filterText != "" {
+						m.filterRawList = append(m.filterRawList, filterText)
+						m.filterRawInput.Reset()
+						m.filterRawInput.Blur()
+						m.filterRawInputActive = false
+						m.filterRawSelectedIndex = len(m.filterRawList) - 1
 					}
 					return m, nil
 				case "esc", "ctrl+c":
-					// Cancel input mode
-					m.filterInput.Reset()
-					m.filterInput.Blur()
-					m.filterInputActive = false
+					m.filterRawInput.Reset()
+					m.filterRawInput.Blur()
+					m.filterRawInputActive = false
 					return m, nil
 				default:
-					// Pass all other keys (including backspace and space) to input field
-					m.filterInput, cmd = m.filterInput.Update(msg)
+					m.filterRawInput, cmd = m.filterRawInput.Update(msg)
 					return m, cmd
 				}
 			}
 
-			// Handle keys when NOT in input mode
+			// Handle keys when not in input mode
 			switch msg.String() {
 			case "q", "f", "esc", "ctrl+c":
-				// Exit filter view mode
 				m.filterViewMode = false
-				m.filterInput.Reset()
+				m.filterRawInput.Reset()
 				return m, nil
 
 			case "space", " ":
-				// Toggle "All" checkbox (handle both "space" and " ")
+				// Toggle "All" checkbox
 				m.filterShowAll = !m.filterShowAll
 				return m, nil
 
-			case "i":
-				// Activate input field for new filter
-				m.filterInputActive = true
-				m.filterInput.Focus()
-				return m, textinput.Blink
+			case "tab":
+				// Move to next category
+				if !m.filterShowAll {
+					m.filterCurrentCategory = (m.filterCurrentCategory + 1) % 3
+				}
+				return m, nil
+
+			case "shift+tab":
+				// Move to previous category
+				if !m.filterShowAll {
+					m.filterCurrentCategory = (m.filterCurrentCategory - 1 + 3) % 3
+				}
+				return m, nil
+
+			case "a":
+				// Add new filter (only in Raw category)
+				if !m.filterShowAll && m.filterCurrentCategory == 0 {
+					m.filterRawInputActive = true
+					m.filterRawInput.Focus()
+					return m, textinput.Blink
+				}
+				return m, nil
+
+			case "r":
+				// Remove selected filter (only in Raw category)
+				if !m.filterShowAll && m.filterCurrentCategory == 0 {
+					if m.filterRawSelectedIndex >= 0 && m.filterRawSelectedIndex < len(m.filterRawList) {
+						m.filterRawList = append(m.filterRawList[:m.filterRawSelectedIndex], m.filterRawList[m.filterRawSelectedIndex+1:]...)
+						if m.filterRawSelectedIndex >= len(m.filterRawList) {
+							m.filterRawSelectedIndex = len(m.filterRawList) - 1
+						}
+					}
+				}
+				return m, nil
+
+			case "enter":
+				// Open configuration for Machine or Time category
+				if !m.filterShowAll {
+					if m.filterCurrentCategory == 1 {
+						// Enter machine selection mode
+						m.filterMachineSelectMode = true
+						m.filterMachineInput.Focus()
+						return m, textinput.Blink
+					} else if m.filterCurrentCategory == 2 {
+						// Enter time configuration mode
+						m.filterTimeInputMode = true
+						m.filterTimeEditingStart = true
+						m.filterTimeInput.SetValue(fmt.Sprintf("%.6f", m.filterTimeStart))
+						m.filterTimeInput.Focus()
+						return m, textinput.Blink
+					}
+				}
+				return m, nil
 
 			case "ctrl+n":
-				// Navigate to next filter in list
-				if len(m.filterList) > 0 {
-					m.filterSelectedIndex++
-					if m.filterSelectedIndex >= len(m.filterList) {
-						m.filterSelectedIndex = 0
+				// Navigate down within current category
+				if !m.filterShowAll && m.filterCurrentCategory == 0 && len(m.filterRawList) > 0 {
+					m.filterRawSelectedIndex++
+					if m.filterRawSelectedIndex >= len(m.filterRawList) {
+						m.filterRawSelectedIndex = 0
 					}
 				}
 				return m, nil
 
 			case "ctrl+p":
-				// Navigate to previous filter in list
-				if len(m.filterList) > 0 {
-					m.filterSelectedIndex--
-					if m.filterSelectedIndex < 0 {
-						m.filterSelectedIndex = len(m.filterList) - 1
-					}
-				}
-				return m, nil
-
-			case "backspace":
-				// Delete selected filter
-				if m.filterSelectedIndex >= 0 && m.filterSelectedIndex < len(m.filterList) {
-					// Remove filter at selected index
-					m.filterList = append(m.filterList[:m.filterSelectedIndex], m.filterList[m.filterSelectedIndex+1:]...)
-					// Adjust selection
-					if m.filterSelectedIndex >= len(m.filterList) {
-						m.filterSelectedIndex = len(m.filterList) - 1
+				// Navigate up within current category
+				if !m.filterShowAll && m.filterCurrentCategory == 0 && len(m.filterRawList) > 0 {
+					m.filterRawSelectedIndex--
+					if m.filterRawSelectedIndex < 0 {
+						m.filterRawSelectedIndex = len(m.filterRawList) - 1
 					}
 				}
 				return m, nil
@@ -232,7 +316,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							found := false
 							// Try forward
 							for i := targetIdx; i < len(m.traceData.Events); i++ {
-								if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+								if eventMatchesFilters(&m.traceData.Events[i], &m) {
 									m.currentEventIndex = i
 									m.currentTime = m.traceData.Events[i].TimeValue
 									m.updateClusterState()
@@ -243,7 +327,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							// If not found forward, try backward
 							if !found {
 								for i := targetIdx - 1; i >= 0; i-- {
-									if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+									if eventMatchesFilters(&m.traceData.Events[i], &m) {
 										m.currentEventIndex = i
 										m.currentTime = m.traceData.Events[i].TimeValue
 										m.updateClusterState()
@@ -345,9 +429,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			// Enter filter view mode
 			m.filterViewMode = true
-			m.filterInputActive = false
-			m.filterSelectedIndex = -1
-			m.filterInput.Blur() // Ensure input field is not focused
 			return m, nil
 
 		case "e":
@@ -371,7 +452,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentEventIndex < len(m.traceData.Events)-1 {
 				// Find next event that matches filters
 				for i := m.currentEventIndex + 1; i < len(m.traceData.Events); i++ {
-					if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+					if eventMatchesFilters(&m.traceData.Events[i], &m) {
 						m.currentEventIndex = i
 						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
 						m.updateClusterState()
@@ -385,7 +466,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentEventIndex > 0 {
 				// Find previous event that matches filters
 				for i := m.currentEventIndex - 1; i >= 0; i-- {
-					if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+					if eventMatchesFilters(&m.traceData.Events[i], &m) {
 						m.currentEventIndex = i
 						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
 						m.updateClusterState()
@@ -401,7 +482,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				targetIdx := m.traceData.GetEventIndexAtTime(newTime)
 				// Find next visible event from target
 				for i := targetIdx; i < len(m.traceData.Events); i++ {
-					if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+					if eventMatchesFilters(&m.traceData.Events[i], &m) {
 						m.currentEventIndex = i
 						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
 						m.updateClusterState()
@@ -417,7 +498,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				targetIdx := m.traceData.GetEventIndexAtTime(newTime)
 				// Find previous visible event from target
 				for i := targetIdx; i >= 0; i-- {
-					if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+					if eventMatchesFilters(&m.traceData.Events[i], &m) {
 						m.currentEventIndex = i
 						m.currentTime = m.traceData.Events[m.currentEventIndex].TimeValue
 						m.updateClusterState()
@@ -429,7 +510,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "g":
 			// Jump to start - first visible event
 			for i := 0; i < len(m.traceData.Events); i++ {
-				if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+				if eventMatchesFilters(&m.traceData.Events[i], &m) {
 					m.currentEventIndex = i
 					m.currentTime = m.traceData.Events[i].TimeValue
 					m.updateClusterState()
@@ -440,7 +521,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "G", "shift+g":
 			// Jump to end - last visible event
 			for i := len(m.traceData.Events) - 1; i >= 0; i-- {
-				if eventMatchesFilters(&m.traceData.Events[i], m.filterShowAll, m.filterList) {
+				if eventMatchesFilters(&m.traceData.Events[i], &m) {
 					m.currentEventIndex = i
 					m.currentTime = m.traceData.Events[i].TimeValue
 					m.updateClusterState()
@@ -468,7 +549,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Jump forward to next Severity=30 event
 			for i := m.currentEventIndex + 1; i < len(m.traceData.Events); i++ {
 				event := &m.traceData.Events[i]
-				if event.Severity == "30" && eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+				if event.Severity == "30" && eventMatchesFilters(event, &m) {
 					m.currentEventIndex = i
 					m.currentTime = event.TimeValue
 					m.updateClusterState()
@@ -480,7 +561,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Jump backward to previous Severity=30 event
 			for i := m.currentEventIndex - 1; i >= 0; i-- {
 				event := &m.traceData.Events[i]
-				if event.Severity == "30" && eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+				if event.Severity == "30" && eventMatchesFilters(event, &m) {
 					m.currentEventIndex = i
 					m.currentTime = event.TimeValue
 					m.updateClusterState()
@@ -492,7 +573,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Jump forward to next Severity=40 event
 			for i := m.currentEventIndex + 1; i < len(m.traceData.Events); i++ {
 				event := &m.traceData.Events[i]
-				if event.Severity == "40" && eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+				if event.Severity == "40" && eventMatchesFilters(event, &m) {
 					m.currentEventIndex = i
 					m.currentTime = event.TimeValue
 					m.updateClusterState()
@@ -504,7 +585,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Jump backward to previous Severity=40 event
 			for i := m.currentEventIndex - 1; i >= 0; i-- {
 				event := &m.traceData.Events[i]
-				if event.Severity == "40" && eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+				if event.Severity == "40" && eventMatchesFilters(event, &m) {
 					m.currentEventIndex = i
 					m.currentTime = event.TimeValue
 					m.updateClusterState()
@@ -727,6 +808,196 @@ func formatTraceEvent(event *TraceEvent, isCurrent bool, searchPattern string) s
 	return line
 }
 
+// handleMachineSelectionPopup handles keys in the machine selection popup
+func (m model) handleMachineSelectionPopup(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc", "ctrl+c", "q":
+			// Exit machine selection
+			m.filterMachineSelectMode = false
+			m.filterMachineInput.Reset()
+			m.filterMachineInput.Blur()
+			return m, nil
+
+		case "enter":
+			// Confirm selection and return to filter view
+			m.filterMachineSelectMode = false
+			m.filterMachineInput.Reset()
+			m.filterMachineInput.Blur()
+			return m, nil
+
+		case "ctrl+n":
+			// Move down in list
+			m.filterMachineSelected++
+			// Will be clamped in rendering
+			return m, nil
+
+		case "ctrl+p":
+			// Move up in list
+			if m.filterMachineSelected > 0 {
+				m.filterMachineSelected--
+			}
+			return m, nil
+
+		case " ", "space":
+			// Toggle selection of current item
+			machines, dcs := m.getFilteredMachineList()
+			if m.filterMachineSelected < len(dcs) {
+				// Toggling a DC
+				dcID := dcs[m.filterMachineSelected]
+				m.filterMachineDCs[dcID] = !m.filterMachineDCs[dcID]
+			} else if m.filterMachineSelected < len(dcs)+len(machines) {
+				// Toggling a machine
+				machine := machines[m.filterMachineSelected-len(dcs)]
+				// Check if already selected
+				found := false
+				for i, m2 := range m.filterMachineList {
+					if m2 == machine {
+						// Remove it
+						m.filterMachineList = append(m.filterMachineList[:i], m.filterMachineList[i+1:]...)
+						found = true
+						break
+					}
+				}
+				if !found {
+					m.filterMachineList = append(m.filterMachineList, machine)
+				}
+			}
+			return m, nil
+
+		default:
+			// Pass to input for fuzzy search
+			m.filterMachineInput, cmd = m.filterMachineInput.Update(msg)
+			return m, cmd
+		}
+	}
+	return m, nil
+}
+
+// handleFilterTimeInput handles time range input
+func (m model) handleFilterTimeInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			// Cancel time input
+			m.filterTimeInputMode = false
+			m.filterTimeInput.Reset()
+			m.filterTimeInput.Blur()
+			return m, nil
+
+		case "enter":
+			// Save the time value
+			if timeStr := m.filterTimeInput.Value(); timeStr != "" {
+				if t, err := strconv.ParseFloat(timeStr, 64); err == nil {
+					if m.filterTimeEditingStart {
+						m.filterTimeStart = t
+						// Move to editing end time
+						m.filterTimeEditingStart = false
+						m.filterTimeInput.SetValue(fmt.Sprintf("%.6f", m.filterTimeEnd))
+						return m, nil
+					} else {
+						m.filterTimeEnd = t
+						// Enable filter and exit
+						m.filterTimeEnabled = true
+						m.filterTimeInputMode = false
+						m.filterTimeInput.Reset()
+						m.filterTimeInput.Blur()
+						return m, nil
+					}
+				}
+			}
+			return m, nil
+
+		case "tab":
+			// Toggle between start and end
+			if timeStr := m.filterTimeInput.Value(); timeStr != "" {
+				if t, err := strconv.ParseFloat(timeStr, 64); err == nil {
+					if m.filterTimeEditingStart {
+						m.filterTimeStart = t
+					} else {
+						m.filterTimeEnd = t
+					}
+				}
+			}
+			m.filterTimeEditingStart = !m.filterTimeEditingStart
+			if m.filterTimeEditingStart {
+				m.filterTimeInput.SetValue(fmt.Sprintf("%.6f", m.filterTimeStart))
+			} else {
+				m.filterTimeInput.SetValue(fmt.Sprintf("%.6f", m.filterTimeEnd))
+			}
+			return m, nil
+
+		default:
+			m.filterTimeInput, cmd = m.filterTimeInput.Update(msg)
+			return m, cmd
+		}
+	}
+	return m, nil
+}
+
+// getFilteredMachineList returns lists of DCs and machines filtered by search input
+func (m model) getFilteredMachineList() ([]string, []string) {
+	searchTerm := strings.ToLower(m.filterMachineInput.Value())
+
+	// Collect all unique machines and DCs from trace data
+	machineSet := make(map[string]bool)
+	dcSet := make(map[string]bool)
+
+	for _, event := range m.traceData.Events {
+		if event.Machine != "" {
+			machineSet[event.Machine] = true
+			// Extract DC from machine address
+			if dc := extractDCFromAddress(event.Machine); dc != "" {
+				dcSet[dc] = true
+			}
+		}
+	}
+
+	// Convert to sorted slices
+	var machines []string
+	for machine := range machineSet {
+		if searchTerm == "" || strings.Contains(strings.ToLower(machine), searchTerm) {
+			machines = append(machines, machine)
+		}
+	}
+	sort.Strings(machines)
+
+	var dcs []string
+	for dc := range dcSet {
+		dcs = append(dcs, dc)
+	}
+	sort.Strings(dcs)
+
+	return machines, dcs
+}
+
+// extractDCFromAddress extracts DC ID from machine address
+func extractDCFromAddress(addr string) string {
+	// Format: [abcd::X:Y:Z:W]:Port or X.Y.Z.W:Port
+	// Y is the DC ID
+	addr = strings.TrimPrefix(addr, "[")
+	addr = strings.TrimSuffix(addr, "]")
+
+	parts := strings.Split(addr, ":")
+	if len(parts) >= 4 {
+		// IPv6 format: abcd::X:Y:Z:W
+		return parts[len(parts)-3]
+	} else if len(parts) >= 1 {
+		// IPv4 format: X.Y.Z.W
+		dotParts := strings.Split(parts[0], ".")
+		if len(dotParts) >= 2 {
+			return dotParts[1]
+		}
+	}
+	return ""
+}
+
 
 func (m *model) updateClusterState() {
 	// Get events up to and including the current event index
@@ -756,7 +1027,7 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int, searchPatt
 		event := &m.traceData.Events[i]
 
 		// Skip filtered events
-		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+		if !eventMatchesFilters(event, &m) {
 			continue
 		}
 
@@ -796,7 +1067,7 @@ func (m model) buildEventListPane(availableHeight int, paneWidth int, searchPatt
 		event := &m.traceData.Events[i]
 
 		// Skip filtered events
-		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+		if !eventMatchesFilters(event, &m) {
 			continue
 		}
 
@@ -1366,8 +1637,17 @@ func (m model) View() string {
 	// Combine split view with bottom section
 	fullView := splitContent.String() + bottomSection.String()
 
-	// If in filter view mode, show filter popup overlay
+	// If in filter view mode, show appropriate popup overlay
 	if m.filterViewMode {
+		// If in machine selection sub-popup, show it
+		if m.filterMachineSelectMode {
+			return m.renderMachineSelectionPopup(fullView)
+		}
+		// If in time range configuration sub-popup, show it
+		if m.filterTimeInputMode {
+			return m.renderFilterTimeRangePopup(fullView)
+		}
+		// Otherwise show main filter popup
 		return m.renderFilterPopup(fullView)
 	}
 
@@ -1401,7 +1681,240 @@ func (m model) renderFilterPopup(baseView string) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("39")).
 		Padding(1, 2).
-		Width(80)
+		Width(90)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39")).
+		Underline(true)
+
+	categoryStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("46"))
+
+	categorySelectedStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("226"))
+
+	normalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	grayedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
+
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("226")).
+		Bold(true)
+
+	var content strings.Builder
+	content.WriteString(titleStyle.Render("Filter Configuration"))
+	content.WriteString("\n\n")
+
+	// Show "All" checkbox
+	checkbox := "[ ]"
+	if m.filterShowAll {
+		checkbox = "[x]"
+	}
+	content.WriteString(normalStyle.Render(fmt.Sprintf("%s All (space to toggle)", checkbox)))
+	content.WriteString("\n")
+
+	// Determine if categories should be grayed out
+	isGrayed := m.filterShowAll
+
+	// Category 1: Raw Filters
+	content.WriteString("\n")
+	cat1Style := categoryStyle
+	if m.filterCurrentCategory == 0 && !isGrayed {
+		cat1Style = categorySelectedStyle
+	}
+	if isGrayed {
+		cat1Style = grayedStyle
+	}
+	content.WriteString(cat1Style.Render("[1] Raw Filters (OR within category):"))
+	content.WriteString("\n")
+
+	if isGrayed {
+		content.WriteString(grayedStyle.Render("  (disabled - toggle All off to configure)"))
+		content.WriteString("\n")
+	} else {
+		if len(m.filterRawList) == 0 {
+			content.WriteString(normalStyle.Render("  (no filters)"))
+			content.WriteString("\n")
+		} else {
+			for i, filter := range m.filterRawList {
+				filterStyle := normalStyle
+				prefix := "  "
+				if i == m.filterRawSelectedIndex && !m.filterRawInputActive {
+					filterStyle = selectedStyle
+					prefix = "→ "
+				}
+				content.WriteString(filterStyle.Render(fmt.Sprintf("%s%s", prefix, filter)))
+				content.WriteString("\n")
+			}
+		}
+		// Input field for new raw filter
+		if m.filterRawInputActive {
+			content.WriteString(selectedStyle.Render("  New filter: "))
+			content.WriteString(m.filterRawInput.View())
+			content.WriteString("\n")
+		} else {
+			content.WriteString(normalStyle.Render("  Press 'a' to add, 'r' to remove"))
+			content.WriteString("\n")
+		}
+	}
+
+	// Category 2: Machine Filters
+	content.WriteString("\n")
+	cat2Style := categoryStyle
+	if m.filterCurrentCategory == 1 && !isGrayed {
+		cat2Style = categorySelectedStyle
+	}
+	if isGrayed {
+		cat2Style = grayedStyle
+	}
+	content.WriteString(cat2Style.Render("[2] By Machine (OR within category):"))
+	content.WriteString("\n")
+
+	if isGrayed {
+		content.WriteString(grayedStyle.Render("  (disabled - toggle All off to configure)"))
+		content.WriteString("\n")
+	} else {
+		// Show selected DCs
+		if len(m.filterMachineDCs) > 0 {
+			content.WriteString(normalStyle.Render("  DCs: "))
+			var dcList []string
+			for dc, selected := range m.filterMachineDCs {
+				if selected {
+					dcList = append(dcList, dc)
+				}
+			}
+			sort.Strings(dcList)
+			content.WriteString(normalStyle.Render(strings.Join(dcList, ", ")))
+			content.WriteString("\n")
+		}
+		// Show selected machines
+		if len(m.filterMachineList) == 0 && len(m.filterMachineDCs) == 0 {
+			content.WriteString(normalStyle.Render("  (no machines selected)"))
+			content.WriteString("\n")
+		} else if len(m.filterMachineList) > 0 {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("  Machines: %d selected", len(m.filterMachineList))))
+			content.WriteString("\n")
+		}
+		content.WriteString(normalStyle.Render("  Press Enter to configure"))
+		content.WriteString("\n")
+	}
+
+	// Category 3: Time Range
+	content.WriteString("\n")
+	cat3Style := categoryStyle
+	if m.filterCurrentCategory == 2 && !isGrayed {
+		cat3Style = categorySelectedStyle
+	}
+	if isGrayed {
+		cat3Style = grayedStyle
+	}
+	content.WriteString(cat3Style.Render("[3] By Time Range:"))
+	content.WriteString("\n")
+
+	if isGrayed {
+		content.WriteString(grayedStyle.Render("  (disabled - toggle All off to configure)"))
+		content.WriteString("\n")
+	} else {
+		if m.filterTimeEnabled {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("  [x] Enabled: %.6fs - %.6fs", m.filterTimeStart, m.filterTimeEnd)))
+			content.WriteString("\n")
+		} else {
+			content.WriteString(normalStyle.Render("  [ ] Disabled"))
+			content.WriteString("\n")
+		}
+		content.WriteString(normalStyle.Render("  Press Enter to configure"))
+		content.WriteString("\n")
+	}
+
+	// Help text
+	content.WriteString("\n")
+	if isGrayed {
+		content.WriteString(normalStyle.Render("Space: toggle All | q/f/Esc: close"))
+	} else {
+		content.WriteString(normalStyle.Render("Tab/Shift+Tab: switch category | Space: toggle All | q/f/Esc: close"))
+	}
+
+	popup := popupStyle.Render(content.String())
+
+	// Center the popup
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
+}
+
+// renderFilterTimeRangePopup renders the time range configuration popup
+func (m model) renderFilterTimeRangePopup(baseView string) string {
+	popupStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 2).
+		Width(60)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39"))
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	selectedLabelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("226")).
+		Bold(true)
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		MarginTop(1)
+
+	rangeStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("243")).
+		Italic(true)
+
+	var content strings.Builder
+	content.WriteString(titleStyle.Render("Configure Time Range Filter"))
+	content.WriteString("\n\n")
+
+	// Show which field is being edited
+	startLabel := "Start Time:"
+	endLabel := "End Time:"
+
+	if m.filterTimeEditingStart {
+		content.WriteString(selectedLabelStyle.Render(startLabel))
+		content.WriteString(" ")
+		content.WriteString(m.filterTimeInput.View())
+		content.WriteString("\n\n")
+		content.WriteString(labelStyle.Render(fmt.Sprintf("%s %.6fs", endLabel, m.filterTimeEnd)))
+	} else {
+		content.WriteString(labelStyle.Render(fmt.Sprintf("%s %.6fs", startLabel, m.filterTimeStart)))
+		content.WriteString("\n\n")
+		content.WriteString(selectedLabelStyle.Render(endLabel))
+		content.WriteString(" ")
+		content.WriteString(m.filterTimeInput.View())
+	}
+
+	content.WriteString("\n\n")
+	rangeInfo := rangeStyle.Render(fmt.Sprintf("Valid range: %.2f - %.2f seconds", m.traceData.MinTime, m.traceData.MaxTime))
+	content.WriteString(rangeInfo)
+
+	content.WriteString("\n")
+	content.WriteString(helpStyle.Render("Tab: switch field | Enter: confirm | Esc: cancel"))
+
+	popup := popupStyle.Render(content.String())
+
+	// Center the popup
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
+}
+
+// renderMachineSelectionPopup renders the machine selection popup overlay
+func (m model) renderMachineSelectionPopup(baseView string) string {
+	popupStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 2).
+		Width(70).
+		MaxHeight(m.height - 4)
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -1420,82 +1933,134 @@ func (m model) renderFilterPopup(baseView string) string {
 		Foreground(lipgloss.Color("226")).
 		Bold(true)
 
+	checkedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("46"))
+
 	var content strings.Builder
-	content.WriteString(titleStyle.Render("Filter Configuration"))
+	content.WriteString(titleStyle.Render("Select Machines"))
 	content.WriteString("\n\n")
 
-	// Show "All" checkbox
-	checkboxStyle := normalStyle
-	checkbox := "[ ]"
-	if m.filterShowAll {
-		checkbox = "[x]"
+	// Search input
+	content.WriteString(normalStyle.Render("Search: "))
+	content.WriteString(m.filterMachineInput.View())
+	content.WriteString("\n")
+
+	// Get filtered lists
+	machines, dcs := m.getFilteredMachineList()
+
+	// Calculate visible window
+	maxDisplayLines := 15
+	totalItems := len(dcs) + len(machines)
+
+	// Clamp selection
+	if m.filterMachineSelected >= totalItems {
+		m.filterMachineSelected = totalItems - 1
 	}
-	content.WriteString(checkboxStyle.Render(fmt.Sprintf("%s All (space to toggle)", checkbox)))
-	content.WriteString("\n")
+	if m.filterMachineSelected < 0 && totalItems > 0 {
+		m.filterMachineSelected = 0
+	}
 
-	// INCLUSIVE filters section
-	content.WriteString(sectionStyle.Render("INCLUSIVE Filters (OR):"))
-	content.WriteString("\n")
+	// Calculate scroll offset to keep selection visible
+	if m.filterMachineSelected < m.filterMachineScroll {
+		m.filterMachineScroll = m.filterMachineSelected
+	}
+	if m.filterMachineSelected >= m.filterMachineScroll+maxDisplayLines {
+		m.filterMachineScroll = m.filterMachineSelected - maxDisplayLines + 1
+	}
 
-	if len(m.filterList) == 0 {
-		content.WriteString(normalStyle.Render("  (no filters)"))
+	// DCs section
+	if len(dcs) > 0 {
 		content.WriteString("\n")
-	} else {
-		for i, filter := range m.filterList {
-			filterStyle := normalStyle
+		content.WriteString(sectionStyle.Render("Data Centers:"))
+		content.WriteString("\n")
+
+		for i, dc := range dcs {
+			itemIndex := i
+			if itemIndex < m.filterMachineScroll {
+				continue
+			}
+			if itemIndex >= m.filterMachineScroll+maxDisplayLines {
+				break
+			}
+
+			checkbox := "[ ]"
+			if m.filterMachineDCs[dc] {
+				checkbox = checkedStyle.Render("[x]")
+			} else {
+				checkbox = normalStyle.Render(checkbox)
+			}
+
+			itemStyle := normalStyle
 			prefix := "  "
-			if i == m.filterSelectedIndex && !m.filterInputActive {
-				filterStyle = selectedStyle
+			if itemIndex == m.filterMachineSelected {
+				itemStyle = selectedStyle
 				prefix = "→ "
 			}
-			content.WriteString(filterStyle.Render(fmt.Sprintf("%s%s", prefix, filter)))
+
+			line := fmt.Sprintf("%s%s DC %s", prefix, checkbox, dc)
+			content.WriteString(itemStyle.Render(line))
 			content.WriteString("\n")
 		}
 	}
 
-	content.WriteString("\n")
+	// Machines section
+	if len(machines) > 0 {
+		content.WriteString("\n")
+		content.WriteString(sectionStyle.Render("Machines:"))
+		content.WriteString("\n")
 
-	// Input field for new filter
-	if m.filterInputActive {
-		content.WriteString(selectedStyle.Render("New filter: "))
-		content.WriteString(m.filterInput.View())
-	} else {
-		content.WriteString(normalStyle.Render("Press 'i' to add new filter"))
+		for i, machine := range machines {
+			itemIndex := len(dcs) + i
+			if itemIndex < m.filterMachineScroll {
+				continue
+			}
+			if itemIndex >= m.filterMachineScroll+maxDisplayLines {
+				break
+			}
+
+			// Check if machine is selected
+			isSelected := false
+			for _, m2 := range m.filterMachineList {
+				if m2 == machine {
+					isSelected = true
+					break
+				}
+			}
+
+			checkbox := "[ ]"
+			if isSelected {
+				checkbox = checkedStyle.Render("[x]")
+			} else {
+				checkbox = normalStyle.Render(checkbox)
+			}
+
+			itemStyle := normalStyle
+			prefix := "  "
+			if itemIndex == m.filterMachineSelected {
+				itemStyle = selectedStyle
+				prefix = "→ "
+			}
+
+			line := fmt.Sprintf("%s%s %s", prefix, checkbox, machine)
+			content.WriteString(itemStyle.Render(line))
+			content.WriteString("\n")
+		}
 	}
 
-	content.WriteString("\n\n")
-	content.WriteString(normalStyle.Render("Ctrl+N/P: navigate | Backspace: delete | Enter: add | Space: toggle All | q/f/Esc: close"))
+	if totalItems == 0 {
+		content.WriteString("\n")
+		content.WriteString(normalStyle.Render("  (no matches)"))
+		content.WriteString("\n")
+	}
+
+	// Help text
+	content.WriteString("\n")
+	content.WriteString(normalStyle.Render("Ctrl+N/P: navigate | Space: toggle | Enter: done | Esc: cancel"))
 
 	popup := popupStyle.Render(content.String())
 
 	// Center the popup
-	lines := strings.Split(baseView, "\n")
-	popupLines := strings.Split(popup, "\n")
-
-	// Calculate centering
-	baseHeight := len(lines)
-	popupHeight := len(popupLines)
-	startLine := (baseHeight - popupHeight) / 2
-	if startLine < 0 {
-		startLine = 0
-	}
-
-	// Overlay the popup
-	for i, popupLine := range popupLines {
-		lineIdx := startLine + i
-		if lineIdx < len(lines) {
-			// Center horizontally
-			baseWidth := m.width
-			popupWidth := lipgloss.Width(popupLine)
-			leftPadding := (baseWidth - popupWidth) / 2
-			if leftPadding < 0 {
-				leftPadding = 0
-			}
-			lines[lineIdx] = strings.Repeat(" ", leftPadding) + popupLine
-		}
-	}
-
-	return strings.Join(lines, "\n")
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
 }
 
 // renderHelpPopup renders the help information popup overlay
@@ -1880,7 +2445,7 @@ func (m *model) searchForward(startIndex int, pattern string) int {
 		event := &m.traceData.Events[i]
 
 		// Skip filtered events
-		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+		if !eventMatchesFilters(event, m) {
 			continue
 		}
 
@@ -1895,7 +2460,7 @@ func (m *model) searchForward(startIndex int, pattern string) int {
 		event := &m.traceData.Events[i]
 
 		// Skip filtered events
-		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+		if !eventMatchesFilters(event, m) {
 			continue
 		}
 
@@ -1922,7 +2487,7 @@ func (m *model) searchBackward(startIndex int, pattern string) int {
 		event := &m.traceData.Events[i]
 
 		// Skip filtered events
-		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+		if !eventMatchesFilters(event, m) {
 			continue
 		}
 
@@ -1937,7 +2502,7 @@ func (m *model) searchBackward(startIndex int, pattern string) int {
 		event := &m.traceData.Events[i]
 
 		// Skip filtered events
-		if !eventMatchesFilters(event, m.filterShowAll, m.filterList) {
+		if !eventMatchesFilters(event, m) {
 			continue
 		}
 
@@ -1955,28 +2520,74 @@ func (m *model) searchBackward(startIndex int, pattern string) int {
 // - showAll is true, OR
 // - filterList is empty, OR
 // - event matches at least one filter pattern
-func eventMatchesFilters(event *TraceEvent, showAll bool, filterList []string) bool {
-	// If "All" is checked or no filters, show everything
-	if showAll || len(filterList) == 0 {
+func eventMatchesFilters(event *TraceEvent, m *model) bool {
+	// If "All" is checked, show everything
+	if m.filterShowAll {
 		return true
 	}
 
-	// Get full event text for matching
-	eventText := getEventFullText(event)
+	// If "All" is unchecked but no filters are set, show nothing
+	if len(m.filterRawList) == 0 && len(m.filterMachineList) == 0 && len(m.filterMachineDCs) == 0 && !m.filterTimeEnabled {
+		return false
+	}
 
-	// Check if event matches any filter (OR logic)
-	for _, filter := range filterList {
-		regexPattern := convertWildcardToRegex(filter)
-		re, err := regexp.Compile(regexPattern)
-		if err != nil {
-			continue // Skip invalid patterns
-		}
-		if re.MatchString(eventText) {
-			return true
+	// Apply filters with AND precedence: Time AND Machine AND Raw
+
+	// 1. Time filter (highest precedence)
+	if m.filterTimeEnabled {
+		if event.TimeValue < m.filterTimeStart || event.TimeValue > m.filterTimeEnd {
+			return false
 		}
 	}
 
-	return false
+	// 2. Machine filter (OR within category)
+	if len(m.filterMachineList) > 0 || len(m.filterMachineDCs) > 0 {
+		machineMatches := false
+
+		// Check if machine is in selected list
+		for _, machine := range m.filterMachineList {
+			if event.Machine == machine {
+				machineMatches = true
+				break
+			}
+		}
+
+		// Check if machine's DC is selected
+		if !machineMatches {
+			dc := extractDCFromAddress(event.Machine)
+			if dc != "" && m.filterMachineDCs[dc] {
+				machineMatches = true
+			}
+		}
+
+		if !machineMatches {
+			return false
+		}
+	}
+
+	// 3. Raw filters (OR within category)
+	if len(m.filterRawList) > 0 {
+		eventText := getEventFullText(event)
+		rawMatches := false
+
+		for _, filter := range m.filterRawList {
+			regexPattern := convertWildcardToRegex(filter)
+			re, err := regexp.Compile(regexPattern)
+			if err != nil {
+				continue // Skip invalid patterns
+			}
+			if re.MatchString(eventText) {
+				rawMatches = true
+				break
+			}
+		}
+
+		if !rawMatches {
+			return false
+		}
+	}
+
+	return true
 }
 
 // runUI starts the Bubbletea TUI program
