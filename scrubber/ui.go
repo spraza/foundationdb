@@ -42,6 +42,10 @@ type model struct {
 	filterRawInputActive    bool
 	filterRawColumn         int           // Current column in raw filter list (for ctrl+f/ctrl+b navigation)
 	filterRawDisabled       map[int]bool  // Track disabled raw filters (map[index]disabled)
+	filterTypeSearchMode    bool          // Type search popup mode
+	filterTypeSearchInput   textinput.Model
+	filterTypeSearchList    []string      // All unique Type values from trace
+	filterTypeSearchSelected int          // Currently selected Type in list
 	// Category 2: Machine filters (OR logic)
 	filterMachineList       []string // Selected machine addresses
 	filterMachineSelectMode bool     // In machine selection popup
@@ -89,6 +93,25 @@ func newModel(traceData *TraceData) model {
 	timeFilterInput.CharLimit = 20
 	timeFilterInput.Width = 30
 
+	// Type search input
+	typeSearchInput := textinput.New()
+	typeSearchInput.Placeholder = "Type to search event types..."
+	typeSearchInput.CharLimit = 50
+	typeSearchInput.Width = 60
+
+	// Extract all unique Type values from trace data
+	typeSet := make(map[string]bool)
+	for _, event := range traceData.Events {
+		if event.Type != "" {
+			typeSet[event.Type] = true
+		}
+	}
+	var allTypes []string
+	for t := range typeSet {
+		allTypes = append(allTypes, t)
+	}
+	sort.Strings(allTypes)
+
 	return model{
 		traceData:          traceData,
 		currentTime:        0.0,
@@ -114,6 +137,10 @@ func newModel(traceData *TraceData) model {
 		filterRawInputActive:   false,
 		filterRawColumn:        0,
 		filterRawDisabled:      make(map[int]bool),
+		filterTypeSearchMode:    false,
+		filterTypeSearchInput:   typeSearchInput,
+		filterTypeSearchList:    allTypes,
+		filterTypeSearchSelected: 0,
 		filterMachineList:      []string{},
 		filterMachineSelectMode: false,
 		filterMachineInput:     machineInput,
@@ -149,6 +176,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If in time input mode within filter
 		if m.filterTimeInputMode {
 			return m.handleFilterTimeInput(msg)
+		}
+
+		// If in Type search popup
+		if m.filterTypeSearchMode {
+			return m.handleTypeSearchPopup(msg)
 		}
 
 		switch msg := msg.(type) {
@@ -362,6 +394,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 
+			case "t":
+				// Open Type search popup (only in Raw category)
+				if m.filterCurrentCategory == 0 {
+					m.filterTypeSearchMode = true
+					m.filterTypeSearchInput.Focus()
+					m.filterTypeSearchSelected = 0
+					return m, textinput.Blink
+				}
+				return m, nil
+
 			case "c":
 				// Toggle common trace event filters (only in Raw category)
 				if m.filterCurrentCategory == 0 {
@@ -382,6 +424,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						"Type=AddFailureInjectionWorkload",
 						"Type=TrackTLogRecovery",
 						"Type=MutationTracking",
+						"Severity=40",
 					}
 
 					// Check if any common filters exist
@@ -1422,6 +1465,101 @@ func (m model) handleFilterTimeInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleTypeSearchPopup handles the Type search popup for fuzzy matching Type values
+func (m model) handleTypeSearchPopup(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			// Cancel Type search
+			m.filterTypeSearchMode = false
+			m.filterTypeSearchInput.Reset()
+			m.filterTypeSearchInput.Blur()
+			m.filterTypeSearchSelected = 0
+			return m, nil
+
+		case "enter":
+			// Add selected Type as filter
+			searchTerm := strings.ToLower(m.filterTypeSearchInput.Value())
+			var filteredTypes []string
+			for _, t := range m.filterTypeSearchList {
+				if searchTerm == "" || strings.Contains(strings.ToLower(t), searchTerm) {
+					filteredTypes = append(filteredTypes, t)
+				}
+			}
+
+			if len(filteredTypes) > 0 && m.filterTypeSearchSelected >= 0 && m.filterTypeSearchSelected < len(filteredTypes) {
+				selectedType := filteredTypes[m.filterTypeSearchSelected]
+				// Add filter with trailing space for exact matching
+				filterPattern := fmt.Sprintf("Type=%s ", selectedType)
+				m.filterRawList = append(m.filterRawList, filterPattern)
+				m.filterRawSelectedIndex = len(m.filterRawList) - 1
+				// Update column index
+				maxRows := 5
+				m.filterRawColumn = m.filterRawSelectedIndex / maxRows
+			}
+
+			// Close popup
+			m.filterTypeSearchMode = false
+			m.filterTypeSearchInput.Reset()
+			m.filterTypeSearchInput.Blur()
+			m.filterTypeSearchSelected = 0
+			// Ensure current event is visible after adding filter
+			m.ensureCurrentEventVisible()
+			return m, nil
+
+		case "ctrl+n":
+			// Move down in filtered list
+			searchTerm := strings.ToLower(m.filterTypeSearchInput.Value())
+			var filteredTypes []string
+			for _, t := range m.filterTypeSearchList {
+				if searchTerm == "" || strings.Contains(strings.ToLower(t), searchTerm) {
+					filteredTypes = append(filteredTypes, t)
+				}
+			}
+
+			if len(filteredTypes) > 0 {
+				m.filterTypeSearchSelected++
+				if m.filterTypeSearchSelected >= len(filteredTypes) {
+					m.filterTypeSearchSelected = 0 // Wrap around
+				}
+			}
+			return m, nil
+
+		case "ctrl+p":
+			// Move up in filtered list
+			searchTerm := strings.ToLower(m.filterTypeSearchInput.Value())
+			var filteredTypes []string
+			for _, t := range m.filterTypeSearchList {
+				if searchTerm == "" || strings.Contains(strings.ToLower(t), searchTerm) {
+					filteredTypes = append(filteredTypes, t)
+				}
+			}
+
+			if len(filteredTypes) > 0 {
+				m.filterTypeSearchSelected--
+				if m.filterTypeSearchSelected < 0 {
+					m.filterTypeSearchSelected = len(filteredTypes) - 1 // Wrap around
+				}
+			}
+			return m, nil
+
+		default:
+			// Pass other keys to input for fuzzy search
+			// Reset selection when search changes
+			oldValue := m.filterTypeSearchInput.Value()
+			m.filterTypeSearchInput, cmd = m.filterTypeSearchInput.Update(msg)
+			if m.filterTypeSearchInput.Value() != oldValue {
+				m.filterTypeSearchSelected = 0
+			}
+			return m, cmd
+		}
+	}
+	return m, nil
+}
+
 // getFilteredMachineList returns lists of DCs and machines filtered by search input
 func (m model) getFilteredMachineList() ([]string, []string) {
 	searchTerm := strings.ToLower(m.filterMachineInput.Value())
@@ -2246,6 +2384,10 @@ func (m model) View() string {
 		if m.filterTimeInputMode {
 			return m.renderFilterTimeRangePopup(fullView)
 		}
+		// If in Type search sub-popup, show it
+		if m.filterTypeSearchMode {
+			return m.renderTypeSearchPopup(fullView)
+		}
 		// Otherwise show main filter popup
 		return m.renderFilterPopup(fullView)
 	}
@@ -2411,7 +2553,7 @@ func (m model) renderFilterPopup(baseView string) string {
 			content.WriteString(m.filterRawInput.View())
 			content.WriteString("\n")
 		} else {
-			content.WriteString(normalStyle.Render("  Press 'a' to add, 'e' to edit, 'r' to remove, 'd' to toggle disable, 'c' for common, Ctrl+N/P to navigate, Ctrl+F/B for columns"))
+			content.WriteString(normalStyle.Render("  Press 'a' to add, 'e' to edit, 'r' to remove, 'd' to toggle disable, 't' for Type search, 'c' for common, Ctrl+N/P to navigate, Ctrl+F/B for columns"))
 			content.WriteString("\n")
 		}
 	}
@@ -2503,7 +2645,7 @@ func (m model) renderFilterPopup(baseView string) string {
 		var categoryHelp string
 		if m.filterCurrentCategory == 0 {
 			// Raw category
-			categoryHelp = "a: add | e: edit | r: remove | d: toggle disable | c: common | Ctrl+N/P: navigate | Ctrl+F/B: columns | "
+			categoryHelp = "a: add | t: Type search | e: edit | r: remove | d: toggle disable | c: common | Ctrl+N/P: navigate | Ctrl+F/B: columns | "
 		} else if m.filterCurrentCategory == 1 {
 			// Machine category
 			categoryHelp = "Enter: configure machines | "
@@ -2772,6 +2914,113 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
 }
 
+// renderTypeSearchPopup renders the Type search popup overlay
+func (m model) renderTypeSearchPopup(baseView string) string {
+	popupStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 2).
+		Width(70).
+		MaxHeight(m.height - 4)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39")).
+		Underline(true)
+
+	normalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("226")).
+		Bold(true)
+
+	var content strings.Builder
+	content.WriteString(titleStyle.Render("Search Event Types"))
+	content.WriteString("\n\n")
+
+	// Search input
+	content.WriteString(normalStyle.Render("Search: "))
+	content.WriteString(m.filterTypeSearchInput.View())
+	content.WriteString("\n\n")
+
+	// Filter Type list based on search input
+	searchTerm := strings.ToLower(m.filterTypeSearchInput.Value())
+	var filteredTypes []string
+	for _, t := range m.filterTypeSearchList {
+		if searchTerm == "" || strings.Contains(strings.ToLower(t), searchTerm) {
+			filteredTypes = append(filteredTypes, t)
+		}
+	}
+
+	// Calculate available height for Type list
+	maxDisplayLines := m.height - 14 // Account for title, search, help, padding, border
+
+	// Display filtered Types with scrolling
+	if len(filteredTypes) == 0 {
+		content.WriteString(normalStyle.Render("  (no matches)"))
+		content.WriteString("\n")
+	} else {
+		// Clamp selected index
+		if m.filterTypeSearchSelected >= len(filteredTypes) {
+			m.filterTypeSearchSelected = len(filteredTypes) - 1
+		}
+		if m.filterTypeSearchSelected < 0 {
+			m.filterTypeSearchSelected = 0
+		}
+
+		// Calculate scroll offset to keep selected item visible
+		scrollOffset := 0
+		if m.filterTypeSearchSelected >= maxDisplayLines {
+			scrollOffset = m.filterTypeSearchSelected - maxDisplayLines + 1
+		}
+
+		// Show count if many types
+		if len(filteredTypes) > maxDisplayLines {
+			countInfo := fmt.Sprintf("  Showing %d-%d of %d types", scrollOffset+1, min(scrollOffset+maxDisplayLines, len(filteredTypes)), len(filteredTypes))
+			content.WriteString(normalStyle.Render(countInfo))
+			content.WriteString("\n\n")
+		}
+
+		// Display visible range
+		endIdx := scrollOffset + maxDisplayLines
+		if endIdx > len(filteredTypes) {
+			endIdx = len(filteredTypes)
+		}
+
+		for i := scrollOffset; i < endIdx; i++ {
+			typeValue := filteredTypes[i]
+			prefix := "  "
+			style := normalStyle
+
+			if i == m.filterTypeSearchSelected {
+				prefix = "→ "
+				style = selectedStyle
+			}
+
+			content.WriteString(style.Render(fmt.Sprintf("%s%s", prefix, typeValue)))
+			content.WriteString("\n")
+		}
+	}
+
+	// Help text
+	content.WriteString("\n")
+	content.WriteString(normalStyle.Render("Ctrl+N/P: navigate | Enter: add filter | Esc: cancel"))
+
+	popup := popupStyle.Render(content.String())
+
+	// Center the popup
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // renderHelpPopup renders the help information popup overlay
 func (m model) renderHelpPopup(baseView string) string {
 	popupStyle := lipgloss.NewStyle().
@@ -2854,6 +3103,8 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString(commandStyle.Render("  Ctrl+N/P           Switch categories (or navigate within Raw filters)"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  a                  Add new raw filter (wildcard patterns: Type=*Recovery*)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  t                  Search and add Type filter (fuzzy match Type values)"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  e                  Edit selected raw filter"))
 	content.WriteString("\n")
