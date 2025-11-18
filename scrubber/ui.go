@@ -175,21 +175,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "f", "esc", "ctrl+c":
 				m.filterViewMode = false
 				m.filterRawInput.Reset()
+				// Ensure current event is visible after filter changes
+				m.ensureCurrentEventVisible()
 				return m, nil
 
 			case "space", " ":
 				// Toggle "All" checkbox
 				m.filterShowAll = !m.filterShowAll
+				// Ensure current event is visible after toggling
+				m.ensureCurrentEventVisible()
 				return m, nil
 
-			case "tab":
+			case "ctrl+n":
 				// Move to next category
 				if !m.filterShowAll {
 					m.filterCurrentCategory = (m.filterCurrentCategory + 1) % 3
 				}
 				return m, nil
 
-			case "shift+tab":
+			case "ctrl+p":
 				// Move to previous category
 				if !m.filterShowAll {
 					m.filterCurrentCategory = (m.filterCurrentCategory - 1 + 3) % 3
@@ -232,26 +236,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.filterTimeInput.SetValue(fmt.Sprintf("%.6f", m.filterTimeStart))
 						m.filterTimeInput.Focus()
 						return m, textinput.Blink
-					}
-				}
-				return m, nil
-
-			case "ctrl+n":
-				// Navigate down within current category
-				if !m.filterShowAll && m.filterCurrentCategory == 0 && len(m.filterRawList) > 0 {
-					m.filterRawSelectedIndex++
-					if m.filterRawSelectedIndex >= len(m.filterRawList) {
-						m.filterRawSelectedIndex = 0
-					}
-				}
-				return m, nil
-
-			case "ctrl+p":
-				// Navigate up within current category
-				if !m.filterShowAll && m.filterCurrentCategory == 0 && len(m.filterRawList) > 0 {
-					m.filterRawSelectedIndex--
-					if m.filterRawSelectedIndex < 0 {
-						m.filterRawSelectedIndex = len(m.filterRawList) - 1
 					}
 				}
 				return m, nil
@@ -844,32 +828,37 @@ func (m model) handleMachineSelectionPopup(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case " ", "space":
 			// Toggle selection of current item
-			machines, dcs := m.getFilteredMachineList()
-			if m.filterMachineSelected < len(dcs) {
-				// Toggling a DC
-				dcID := dcs[m.filterMachineSelected]
-				m.filterMachineDCs[dcID] = !m.filterMachineDCs[dcID]
-			} else if m.filterMachineSelected < len(dcs)+len(machines) {
-				// Toggling a machine
-				machine := machines[m.filterMachineSelected-len(dcs)]
-				// Check if already selected
-				found := false
-				for i, m2 := range m.filterMachineList {
-					if m2 == machine {
-						// Remove it
-						m.filterMachineList = append(m.filterMachineList[:i], m.filterMachineList[i+1:]...)
-						found = true
-						break
+			// Get the items list (same structure as in renderMachineSelectionPopup)
+			items := m.getMachineSelectionItems()
+
+			if m.filterMachineSelected >= 0 && m.filterMachineSelected < len(items) {
+				item := items[m.filterMachineSelected]
+
+				if item.Type == "dc" && item.DC != "Testers" {
+					// Toggle DC selection
+					m.filterMachineDCs[item.DC] = !m.filterMachineDCs[item.DC]
+				} else if item.Type == "machine" {
+					// Toggle individual machine selection
+					found := false
+					for i, m2 := range m.filterMachineList {
+						if m2 == item.Machine {
+							// Remove it
+							m.filterMachineList = append(m.filterMachineList[:i], m.filterMachineList[i+1:]...)
+							found = true
+							break
+						}
 					}
-				}
-				if !found {
-					m.filterMachineList = append(m.filterMachineList, machine)
+					if !found {
+						m.filterMachineList = append(m.filterMachineList, item.Machine)
+					}
 				}
 			}
 			return m, nil
 
 		default:
 			// Pass to input for fuzzy search
+			// Reset selection when search changes
+			m.filterMachineSelected = 0
 			m.filterMachineInput, cmd = m.filterMachineInput.Update(msg)
 			return m, cmd
 		}
@@ -998,11 +987,109 @@ func extractDCFromAddress(addr string) string {
 	return ""
 }
 
+// SelectableItem represents an item in the machine selection popup
+type SelectableItem struct {
+	Type     string  // "dc" or "machine"
+	DC       string  // DC ID for "dc" type
+	Machine  string  // Machine address for "machine" type
+	Worker   *Worker // Worker info for displaying roles
+	IsTester bool
+}
+
+// getMachineSelectionItems builds the list of selectable items for machine selection popup
+func (m model) getMachineSelectionItems() []SelectableItem {
+	// Build machine topology similar to main view
+	clusterState := BuildClusterState(m.traceData.Events)
+	dcWorkers := clusterState.GetWorkersByDC()
+	testers := clusterState.GetTesters()
+
+	searchTerm := strings.ToLower(m.filterMachineInput.Value())
+
+	var items []SelectableItem
+
+	// Add DCs first
+	var dcIDs []string
+	for dcID := range dcWorkers {
+		dcIDs = append(dcIDs, dcID)
+	}
+	sort.Strings(dcIDs)
+
+	for _, dcID := range dcIDs {
+		// Check if DC or any of its machines match search
+		matches := searchTerm == "" || strings.Contains(strings.ToLower("dc "+dcID), searchTerm)
+		if !matches {
+			for _, worker := range dcWorkers[dcID] {
+				if strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
+					matches = true
+					break
+				}
+			}
+		}
+
+		if matches {
+			items = append(items, SelectableItem{Type: "dc", DC: dcID})
+			// Add machines under this DC
+			for _, worker := range dcWorkers[dcID] {
+				if searchTerm == "" || strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
+					items = append(items, SelectableItem{Type: "machine", Machine: worker.Machine, Worker: worker, IsTester: false})
+				}
+			}
+		}
+	}
+
+	// Add testers
+	if len(testers) > 0 {
+		items = append(items, SelectableItem{Type: "dc", DC: "Testers"})
+		for _, worker := range testers {
+			if searchTerm == "" || strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
+				items = append(items, SelectableItem{Type: "machine", Machine: worker.Machine, Worker: worker, IsTester: true})
+			}
+		}
+	}
+
+	return items
+}
+
 
 func (m *model) updateClusterState() {
 	// Get events up to and including the current event index
 	events := m.traceData.Events[:m.currentEventIndex+1]
 	m.clusterState = BuildClusterState(events)
+}
+
+// ensureCurrentEventVisible makes sure the current event index points to a visible event
+// If current event is filtered out, find the nearest visible event
+func (m *model) ensureCurrentEventVisible() {
+	// Check if current event is visible
+	if m.currentEventIndex >= 0 && m.currentEventIndex < len(m.traceData.Events) {
+		if eventMatchesFilters(&m.traceData.Events[m.currentEventIndex], m) {
+			// Current event is visible, nothing to do
+			return
+		}
+	}
+
+	// Current event is filtered out, find nearest visible event
+	// Try forward first
+	for i := m.currentEventIndex + 1; i < len(m.traceData.Events); i++ {
+		if eventMatchesFilters(&m.traceData.Events[i], m) {
+			m.currentEventIndex = i
+			m.currentTime = m.traceData.Events[i].TimeValue
+			m.updateClusterState()
+			return
+		}
+	}
+
+	// Try backward
+	for i := m.currentEventIndex - 1; i >= 0; i-- {
+		if eventMatchesFilters(&m.traceData.Events[i], m) {
+			m.currentEventIndex = i
+			m.currentTime = m.traceData.Events[i].TimeValue
+			m.updateClusterState()
+			return
+		}
+	}
+
+	// No visible events found, stay at current (but it won't be visible)
 }
 
 // buildEventListPane builds the event list pane showing events around current time
@@ -1836,7 +1923,7 @@ func (m model) renderFilterPopup(baseView string) string {
 	if isGrayed {
 		content.WriteString(normalStyle.Render("Space: toggle All | q/f/Esc: close"))
 	} else {
-		content.WriteString(normalStyle.Render("Tab/Shift+Tab: switch category | Space: toggle All | q/f/Esc: close"))
+		content.WriteString(normalStyle.Render("Ctrl+N/P: switch category | Space: toggle All | q/f/Esc: close"))
 	}
 
 	popup := popupStyle.Render(content.String())
@@ -1913,7 +2000,7 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("39")).
 		Padding(1, 2).
-		Width(70).
+		Width(90).
 		MaxHeight(m.height - 4)
 
 	titleStyle := lipgloss.NewStyle().
@@ -1921,10 +2008,13 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 		Foreground(lipgloss.Color("39")).
 		Underline(true)
 
-	sectionStyle := lipgloss.NewStyle().
+	dcHeaderStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("46")).
-		MarginTop(1)
+		Foreground(lipgloss.Color("33"))
+
+	testerHeaderStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("135"))
 
 	normalStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252"))
@@ -1936,6 +2026,9 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 	checkedStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("46"))
 
+	roleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
+
 	var content strings.Builder
 	content.WriteString(titleStyle.Render("Select Machines"))
 	content.WriteString("\n\n")
@@ -1943,14 +2036,14 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 	// Search input
 	content.WriteString(normalStyle.Render("Search: "))
 	content.WriteString(m.filterMachineInput.View())
-	content.WriteString("\n")
+	content.WriteString("\n\n")
 
-	// Get filtered lists
-	machines, dcs := m.getFilteredMachineList()
+	// Get items using helper function
+	items := m.getMachineSelectionItems()
 
 	// Calculate visible window
-	maxDisplayLines := 15
-	totalItems := len(dcs) + len(machines)
+	maxDisplayLines := 20
+	totalItems := len(items)
 
 	// Clamp selection
 	if m.filterMachineSelected >= totalItems {
@@ -1960,7 +2053,7 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 		m.filterMachineSelected = 0
 	}
 
-	// Calculate scroll offset to keep selection visible
+	// Calculate scroll offset
 	if m.filterMachineSelected < m.filterMachineScroll {
 		m.filterMachineScroll = m.filterMachineSelected
 	}
@@ -1968,63 +2061,43 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 		m.filterMachineScroll = m.filterMachineSelected - maxDisplayLines + 1
 	}
 
-	// DCs section
-	if len(dcs) > 0 {
-		content.WriteString("\n")
-		content.WriteString(sectionStyle.Render("Data Centers:"))
-		content.WriteString("\n")
-
-		for i, dc := range dcs {
-			itemIndex := i
-			if itemIndex < m.filterMachineScroll {
-				continue
-			}
-			if itemIndex >= m.filterMachineScroll+maxDisplayLines {
-				break
-			}
-
-			checkbox := "[ ]"
-			if m.filterMachineDCs[dc] {
-				checkbox = checkedStyle.Render("[x]")
-			} else {
-				checkbox = normalStyle.Render(checkbox)
-			}
-
-			itemStyle := normalStyle
-			prefix := "  "
-			if itemIndex == m.filterMachineSelected {
-				itemStyle = selectedStyle
-				prefix = "→ "
-			}
-
-			line := fmt.Sprintf("%s%s DC %s", prefix, checkbox, dc)
-			content.WriteString(itemStyle.Render(line))
-			content.WriteString("\n")
+	// Display items
+	for i, item := range items {
+		if i < m.filterMachineScroll {
+			continue
 		}
-	}
+		if i >= m.filterMachineScroll+maxDisplayLines {
+			break
+		}
 
-	// Machines section
-	if len(machines) > 0 {
-		content.WriteString("\n")
-		content.WriteString(sectionStyle.Render("Machines:"))
-		content.WriteString("\n")
-
-		for i, machine := range machines {
-			itemIndex := len(dcs) + i
-			if itemIndex < m.filterMachineScroll {
-				continue
+		if item.Type == "dc" {
+			// DC header (not selectable, just for display)
+			var header string
+			if item.DC == "Testers" {
+				header = testerHeaderStyle.Render("Testers")
+			} else {
+				header = dcHeaderStyle.Render(fmt.Sprintf("DC %s", item.DC))
 			}
-			if itemIndex >= m.filterMachineScroll+maxDisplayLines {
-				break
+			if i == m.filterMachineSelected {
+				content.WriteString(selectedStyle.Render("→ ") + header)
+			} else {
+				content.WriteString("  " + header)
 			}
-
-			// Check if machine is selected
+			content.WriteString("\n")
+		} else if item.Type == "machine" {
+			// Machine with checkbox and roles
+			// Check if machine or DC is selected
 			isSelected := false
 			for _, m2 := range m.filterMachineList {
-				if m2 == machine {
+				if m2 == item.Machine {
 					isSelected = true
 					break
 				}
+			}
+			// Check if DC is selected
+			dc := extractDCFromAddress(item.Machine)
+			if !isSelected && dc != "" && m.filterMachineDCs[dc] {
+				isSelected = true
 			}
 
 			checkbox := "[ ]"
@@ -2035,20 +2108,32 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 			}
 
 			itemStyle := normalStyle
-			prefix := "  "
-			if itemIndex == m.filterMachineSelected {
+			prefix := "    "
+			if i == m.filterMachineSelected {
 				itemStyle = selectedStyle
-				prefix = "→ "
+				prefix = "  → "
 			}
 
-			line := fmt.Sprintf("%s%s %s", prefix, checkbox, machine)
-			content.WriteString(itemStyle.Render(line))
+			// Machine line
+			machineLine := fmt.Sprintf("%s%s %s", prefix, checkbox, item.Machine)
+			content.WriteString(itemStyle.Render(machineLine))
 			content.WriteString("\n")
+
+			// Show roles indented under machine
+			if item.Worker != nil {
+				for _, role := range item.Worker.Roles {
+					roleLabel := role.Name
+					if role.ID != "" {
+						roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+					}
+					content.WriteString(roleStyle.Render(fmt.Sprintf("        %s", roleLabel)))
+					content.WriteString("\n")
+				}
+			}
 		}
 	}
 
 	if totalItems == 0 {
-		content.WriteString("\n")
 		content.WriteString(normalStyle.Render("  (no matches)"))
 		content.WriteString("\n")
 	}
