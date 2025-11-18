@@ -26,6 +26,7 @@ type model struct {
 	configViewMode    bool
 	configScrollOffset int // Vertical scroll offset for config popup
 	helpViewMode      bool // Help popup mode
+	healthViewMode    bool // Health popup mode
 	searchMode        bool // Search input mode
 	searchDirection   string // "forward" or "backward"
 	searchInput       textinput.Model
@@ -126,6 +127,7 @@ func newModel(traceData *TraceData) model {
 		configViewMode:     false,
 		configScrollOffset: 0,
 		helpViewMode:       false,
+		healthViewMode:     false,
 		searchMode:         false,
 		searchDirection:    "",
 		searchInput:        si,
@@ -580,6 +582,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle health view mode
+	if m.healthViewMode {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "q", "x", "esc", "ctrl+c":
+				// Exit health view mode
+				m.healthViewMode = false
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
 	// Handle config view mode
 	if m.configViewMode {
 		switch msg := msg.(type) {
@@ -730,6 +746,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "h":
 			// Enter help view mode
 			m.helpViewMode = true
+			return m, nil
+
+		case "x":
+			// Enter health view mode
+			m.healthViewMode = true
 			return m, nil
 
 		case "f":
@@ -2388,7 +2409,7 @@ func (m model) View() string {
 	bottomSection.WriteString("\n")
 
 	// Help text
-	help := helpStyle.Render("Ctrl+N/P: next/prev event | g/G: start/end | t: jump time | /?: search | n/N: next/prev match | f: filter | r/R: recovery | c: config | h: help | q: quit")
+	help := helpStyle.Render("Ctrl+N/P: next/prev event | g/G: start/end | t: jump time | /?: search | n/N: next/prev match | f: filter | r/R: recovery | c: config | x: health | h: help | q: quit")
 	bottomSection.WriteString(help)
 
 	// Combine split view with bottom section
@@ -2415,6 +2436,11 @@ func (m model) View() string {
 	// If in help view mode, show help popup overlay
 	if m.helpViewMode {
 		return m.renderHelpPopup(fullView)
+	}
+
+	// If in health view mode, show health popup overlay
+	if m.healthViewMode {
+		return m.renderHealthPopup(fullView)
 	}
 
 	// If in config view mode, show config popup overlay
@@ -3041,6 +3067,216 @@ func min(a, b int) int {
 	return b
 }
 
+// NetworkMetric represents a single network latency measurement
+type NetworkMetric struct {
+	Time          string
+	TimeValue     float64
+	Src           string
+	Dst           string
+	MinLatency    float64
+	MaxLatency    float64
+	MedianLatency float64
+	P90Latency    float64
+	TimeoutCount  int
+}
+
+// collectNetworkMetrics collects PingLatency events up to current time
+// Returns the latest metric for each (src, dst) pair
+func (m *model) collectNetworkMetrics() []NetworkMetric {
+	// Map to store latest metric for each (src, dst) pair
+	metricsMap := make(map[string]*NetworkMetric)
+
+	// Scan all events up to current event index
+	for i := 0; i <= m.currentEventIndex && i < len(m.traceData.Events); i++ {
+		event := &m.traceData.Events[i]
+
+		// Filter for PingLatency events
+		if event.Type != "PingLatency" {
+			continue
+		}
+
+		// Skip if no Machine or PeerAddress
+		src := event.Machine
+		dst := event.Attrs["PeerAddress"]
+		if dst == "" {
+			dst = event.Attrs["PeerAddr"]
+		}
+		if src == "" || dst == "" {
+			continue
+		}
+
+		// Skip 0.0.0.0 addresses (invalid/placeholder)
+		if strings.HasPrefix(src, "0.0.0.0") || strings.HasPrefix(dst, "0.0.0.0") {
+			continue
+		}
+
+		// Create key for (src, dst) pair
+		key := src + "|" + dst
+
+		// Parse metrics from event attributes
+		metric := NetworkMetric{
+			Time:      event.Time,
+			TimeValue: event.TimeValue,
+			Src:       src,
+			Dst:       dst,
+		}
+
+		// Parse latencies - skip this metric if any value is invalid or unreasonably large
+		validMetric := true
+		if val, err := strconv.ParseFloat(event.Attrs["MinLatency"], 64); err == nil && val < 1000.0 {
+			metric.MinLatency = val
+		} else {
+			validMetric = false
+		}
+		if val, err := strconv.ParseFloat(event.Attrs["MaxLatency"], 64); err == nil && val < 1000.0 {
+			metric.MaxLatency = val
+		} else {
+			validMetric = false
+		}
+		if val, err := strconv.ParseFloat(event.Attrs["MedianLatency"], 64); err == nil && val < 1000.0 {
+			metric.MedianLatency = val
+		} else {
+			validMetric = false
+		}
+		if val, err := strconv.ParseFloat(event.Attrs["P90Latency"], 64); err == nil && val < 1000.0 {
+			metric.P90Latency = val
+		} else {
+			validMetric = false
+		}
+		if val, err := strconv.Atoi(event.Attrs["TimeoutCount"]); err == nil {
+			metric.TimeoutCount = val
+		}
+
+		// Only keep valid metrics
+		if !validMetric {
+			continue
+		}
+
+		// Keep latest event for this (src, dst) pair
+		if existing, found := metricsMap[key]; !found || event.TimeValue > existing.TimeValue {
+			metricsMap[key] = &metric
+		}
+	}
+
+	// Convert map to slice
+	var metrics []NetworkMetric
+	for _, metric := range metricsMap {
+		metrics = append(metrics, *metric)
+	}
+
+	// Sort by (TimeoutCount desc, MedianLatency desc)
+	sort.Slice(metrics, func(i, j int) bool {
+		if metrics[i].TimeoutCount != metrics[j].TimeoutCount {
+			return metrics[i].TimeoutCount > metrics[j].TimeoutCount
+		}
+		return metrics[i].MedianLatency > metrics[j].MedianLatency
+	})
+
+	return metrics
+}
+
+// renderHealthPopup renders the health metrics popup overlay
+func (m model) renderHealthPopup(baseView string) string {
+	popupStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 2).
+		MaxWidth(m.width - 4).
+		MaxHeight(m.height - 4)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("39")).
+		Underline(true)
+
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("46")).
+		MarginTop(1)
+
+	headerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("33")).
+		Bold(true)
+
+	normalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252"))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		MarginTop(1)
+
+	var content strings.Builder
+	content.WriteString(titleStyle.Render(fmt.Sprintf("Cluster Health Snapshot (t=%.6fs)", m.currentTime)))
+	content.WriteString("\n\n")
+
+	// Network section
+	content.WriteString(sectionStyle.Render("NETWORK LATENCIES"))
+	content.WriteString("\n\n")
+
+	// Collect network metrics
+	metrics := m.collectNetworkMetrics()
+
+	if len(metrics) == 0 {
+		content.WriteString(normalStyle.Render("  No PingLatency events found"))
+		content.WriteString("\n")
+	} else {
+		// Table header
+		header := fmt.Sprintf("%-12s  %-21s  %-21s  %8s  %8s  %8s  %8s  %8s",
+			"Time", "Src", "Dst", "MinLat", "MaxLat", "MedLat", "P90Lat", "Timeouts")
+		content.WriteString(headerStyle.Render(header))
+		content.WriteString("\n")
+
+		// Separator line
+		separator := strings.Repeat("─", 130)
+		content.WriteString(normalStyle.Render(separator))
+		content.WriteString("\n")
+
+		// Table rows (limit to screen size)
+		maxRows := m.height - 15 // Account for title, headers, help text
+		displayCount := len(metrics)
+		if displayCount > maxRows {
+			displayCount = maxRows
+		}
+
+		for i := 0; i < displayCount; i++ {
+			metric := metrics[i]
+			row := fmt.Sprintf("%-12s  %-21s  %-21s  %7.3fs  %7.3fs  %7.3fs  %7.3fs  %8d",
+				metric.Time,
+				truncateAddr(metric.Src, 21),
+				truncateAddr(metric.Dst, 21),
+				metric.MinLatency,
+				metric.MaxLatency,
+				metric.MedianLatency,
+				metric.P90Latency,
+				metric.TimeoutCount)
+			content.WriteString(normalStyle.Render(row))
+			content.WriteString("\n")
+		}
+
+		if len(metrics) > displayCount {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("... and %d more entries", len(metrics)-displayCount)))
+			content.WriteString("\n")
+		}
+	}
+
+	content.WriteString(helpStyle.Render("\nPress q/x/Esc to close"))
+
+	popup := popupStyle.Render(content.String())
+
+	// Center the popup
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
+}
+
+// truncateAddr truncates an address to fit within maxLen characters
+func truncateAddr(addr string, maxLen int) string {
+	if len(addr) <= maxLen {
+		return addr
+	}
+	// Truncate from the middle to keep both start and end visible
+	halfLen := (maxLen - 3) / 2
+	return addr[:halfLen] + "..." + addr[len(addr)-halfLen:]
+}
+
 // renderHelpPopup renders the help information popup overlay
 func (m model) renderHelpPopup(baseView string) string {
 	popupStyle := lipgloss.NewStyle().
@@ -3165,6 +3401,8 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString(sectionStyle.Render("Views:"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  c                  Show full DB config JSON (Ctrl+N/P to scroll)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  x                  Show health metrics (network latencies)"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  h                  Show this help"))
 	content.WriteString("\n\n")
