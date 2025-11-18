@@ -42,12 +42,14 @@ type model struct {
 	filterRawInputActive    bool
 	filterRawColumn         int           // Current column in raw filter list (for ctrl+f/ctrl+b navigation)
 	filterRawDisabled       map[int]bool  // Track disabled raw filters (map[index]disabled)
+	filterRawCompiledRegex  []*regexp.Regexp // Pre-compiled regex patterns for raw filters (parallel to filterRawList)
 	filterTypeSearchMode    bool          // Type search popup mode
 	filterTypeSearchInput   textinput.Model
 	filterTypeSearchList    []string      // All unique Type values from trace
 	filterTypeSearchSelected int          // Currently selected Type in list
 	// Category 2: Machine filters (OR logic)
 	filterMachineList       []string // Selected machine addresses
+	filterMachineSet        map[string]bool // Set for O(1) lookup of selected machines
 	filterMachineSelectMode bool     // In machine selection popup
 	filterMachineInput      textinput.Model // For fuzzy search in machine popup
 	filterMachineDCs        map[string]bool // Selected DCs (map[dcID]selected)
@@ -61,6 +63,8 @@ type model struct {
 	filterTimeInputMode     bool    // Configuring time range
 	filterTimeEditingStart  bool    // true=editing start, false=editing end
 	filterTimeInput         textinput.Model
+	// Performance caches
+	machineDCCache          map[string]string // Cache DC extraction results (map[machineAddr]dcID)
 }
 
 // newModel creates a new model with the given trace data
@@ -137,11 +141,13 @@ func newModel(traceData *TraceData) model {
 		filterRawInputActive:   false,
 		filterRawColumn:        0,
 		filterRawDisabled:      make(map[int]bool),
+		filterRawCompiledRegex: []*regexp.Regexp{},
 		filterTypeSearchMode:    false,
 		filterTypeSearchInput:   typeSearchInput,
 		filterTypeSearchList:    allTypes,
 		filterTypeSearchSelected: 0,
 		filterMachineList:      []string{},
+		filterMachineSet:       make(map[string]bool),
 		filterMachineSelectMode: false,
 		filterMachineInput:     machineInput,
 		filterMachineDCs:       make(map[string]bool),
@@ -154,6 +160,7 @@ func newModel(traceData *TraceData) model {
 		filterTimeInputMode:    false,
 		filterTimeEditingStart: true,
 		filterTimeInput:        timeFilterInput,
+		machineDCCache:         make(map[string]string),
 	}
 }
 
@@ -200,6 +207,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.filterRawList = append(m.filterRawList, filterText)
 							m.filterRawSelectedIndex = len(m.filterRawList) - 1
 						}
+						// Recompile regex patterns for performance
+						m.recompileRawFilterRegexes()
 						m.filterRawInput.Reset()
 						m.filterRawInput.Blur()
 						m.filterRawInputActive = false
@@ -343,6 +352,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						m.filterRawDisabled = newDisabled
 
+						// Recompile regex patterns for performance
+						m.recompileRawFilterRegexes()
+
 						// Update selection
 						if m.filterRawSelectedIndex >= len(m.filterRawList) {
 							m.filterRawSelectedIndex = len(m.filterRawList) - 1
@@ -424,6 +436,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						"Type=AddFailureInjectionWorkload",
 						"Type=TrackTLogRecovery",
 						"Type=MutationTracking",
+						"Type=Assassination",
 						"Severity=40",
 					}
 
@@ -479,6 +492,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						maxRows := 5
 						m.filterRawColumn = m.filterRawSelectedIndex / maxRows
 					}
+
+					// Recompile regex patterns for performance
+					m.recompileRawFilterRegexes()
 
 					// Update visibility after filter change
 					m.ensureCurrentEventVisible()
@@ -1382,6 +1398,8 @@ func (m model) handleMachineSelectionPopup(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if !found {
 						m.filterMachineList = append(m.filterMachineList, item.Machine)
 					}
+					// Rebuild machine set for O(1) lookups
+					m.rebuildMachineSet()
 				}
 			}
 			return m, nil
@@ -1499,6 +1517,8 @@ func (m model) handleTypeSearchPopup(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Update column index
 				maxRows := 5
 				m.filterRawColumn = m.filterRawSelectedIndex / maxRows
+				// Recompile regex patterns for performance
+				m.recompileRawFilterRegexes()
 			}
 
 			// Close popup
@@ -3501,6 +3521,44 @@ func (m *model) searchBackward(startIndex int, pattern string) int {
 	return -1
 }
 
+// recompileRawFilterRegexes pre-compiles all raw filter regex patterns for performance
+// This should be called whenever filterRawList changes (add, remove, edit, toggle common)
+func (m *model) recompileRawFilterRegexes() {
+	m.filterRawCompiledRegex = make([]*regexp.Regexp, len(m.filterRawList))
+	for i, filter := range m.filterRawList {
+		regexPattern := convertWildcardToRegex(filter)
+		re, err := regexp.Compile(regexPattern)
+		if err != nil {
+			// Store nil for invalid patterns
+			m.filterRawCompiledRegex[i] = nil
+		} else {
+			m.filterRawCompiledRegex[i] = re
+		}
+	}
+}
+
+// rebuildMachineSet rebuilds the machine set for O(1) lookups
+// This should be called whenever filterMachineList changes
+func (m *model) rebuildMachineSet() {
+	m.filterMachineSet = make(map[string]bool)
+	for _, machine := range m.filterMachineList {
+		m.filterMachineSet[machine] = true
+	}
+}
+
+// getCachedDC returns the DC for a machine address, using cache for performance
+func (m *model) getCachedDC(machineAddr string) string {
+	// Check cache first
+	if dc, found := m.machineDCCache[machineAddr]; found {
+		return dc
+	}
+
+	// Extract and cache
+	dc := extractDCFromAddress(machineAddr)
+	m.machineDCCache[machineAddr] = dc
+	return dc
+}
+
 // eventMatchesFilters checks if an event matches any of the filter patterns (OR logic)
 // Returns true if:
 // - showAll is true, OR
@@ -3530,17 +3588,14 @@ func eventMatchesFilters(event *TraceEvent, m *model) bool {
 	if len(m.filterMachineList) > 0 || len(m.filterMachineDCs) > 0 {
 		machineMatches := false
 
-		// Check if machine is in selected list
-		for _, machine := range m.filterMachineList {
-			if event.Machine == machine {
-				machineMatches = true
-				break
-			}
+		// Check if machine is in selected list using O(1) set lookup
+		if m.filterMachineSet[event.Machine] {
+			machineMatches = true
 		}
 
-		// Check if machine's DC is selected
+		// Check if machine's DC is selected using cached DC extraction
 		if !machineMatches {
-			dc := extractDCFromAddress(event.Machine)
+			dc := m.getCachedDC(event.Machine)
 			if dc != "" && m.filterMachineDCs[dc] {
 				machineMatches = true
 			}
@@ -3556,20 +3611,18 @@ func eventMatchesFilters(event *TraceEvent, m *model) bool {
 		eventText := getEventFullText(event)
 		rawMatches := false
 
-		for i, filter := range m.filterRawList {
+		for i := range m.filterRawList {
 			// Skip disabled filters
 			if m.filterRawDisabled[i] {
 				continue
 			}
 
-			regexPattern := convertWildcardToRegex(filter)
-			re, err := regexp.Compile(regexPattern)
-			if err != nil {
-				continue // Skip invalid patterns
-			}
-			if re.MatchString(eventText) {
-				rawMatches = true
-				break
+			// Use pre-compiled regex for performance
+			if i < len(m.filterRawCompiledRegex) && m.filterRawCompiledRegex[i] != nil {
+				if m.filterRawCompiledRegex[i].MatchString(eventText) {
+					rawMatches = true
+					break
+				}
 			}
 		}
 
