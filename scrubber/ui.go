@@ -40,13 +40,16 @@ type model struct {
 	filterRawInput          textinput.Model
 	filterRawSelectedIndex  int
 	filterRawInputActive    bool
+	filterRawColumn         int           // Current column in raw filter list (for ctrl+f/ctrl+b navigation)
+	filterRawDisabled       map[int]bool  // Track disabled raw filters (map[index]disabled)
 	// Category 2: Machine filters (OR logic)
 	filterMachineList       []string // Selected machine addresses
 	filterMachineSelectMode bool     // In machine selection popup
 	filterMachineInput      textinput.Model // For fuzzy search in machine popup
 	filterMachineDCs        map[string]bool // Selected DCs (map[dcID]selected)
-	filterMachineScroll     int // Scroll offset in machine popup
+	filterMachineScroll     int // Scroll offset in machine popup (deprecated, using columns now)
 	filterMachineSelected   int // Currently highlighted item in machine popup
+	filterMachineColumn     int // Current column in machine popup (for ctrl+f/ctrl+b navigation)
 	// Category 3: Time range filter
 	filterTimeEnabled       bool    // Whether time filter is active
 	filterTimeStart         float64 // Start time
@@ -109,12 +112,15 @@ func newModel(traceData *TraceData) model {
 		filterRawInput:         rawInput,
 		filterRawSelectedIndex: -1,
 		filterRawInputActive:   false,
+		filterRawColumn:        0,
+		filterRawDisabled:      make(map[int]bool),
 		filterMachineList:      []string{},
 		filterMachineSelectMode: false,
 		filterMachineInput:     machineInput,
 		filterMachineDCs:       make(map[string]bool),
 		filterMachineScroll:    0,
 		filterMachineSelected:  0,
+		filterMachineColumn:    0,
 		filterTimeEnabled:      false,
 		filterTimeStart:        traceData.MinTime,
 		filterTimeEnd:          traceData.MaxTime,
@@ -152,11 +158,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch msg.String() {
 				case "enter":
 					if filterText := m.filterRawInput.Value(); filterText != "" {
-						m.filterRawList = append(m.filterRawList, filterText)
+						// Check if we're editing an existing filter or adding new
+						if m.filterRawSelectedIndex >= 0 && m.filterRawSelectedIndex < len(m.filterRawList) {
+							// Editing existing - check if original value is still in input
+							// If user entered edit mode via enter, replace the filter
+							m.filterRawList[m.filterRawSelectedIndex] = filterText
+						} else {
+							// Adding new
+							m.filterRawList = append(m.filterRawList, filterText)
+							m.filterRawSelectedIndex = len(m.filterRawList) - 1
+						}
 						m.filterRawInput.Reset()
 						m.filterRawInput.Blur()
 						m.filterRawInputActive = false
-						m.filterRawSelectedIndex = len(m.filterRawList) - 1
 					}
 					return m, nil
 				case "esc", "ctrl+c":
@@ -187,16 +201,83 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case "ctrl+n":
-				// Move to next category
+				// Move to next category OR navigate down in raw filter list
 				if !m.filterShowAll {
-					m.filterCurrentCategory = (m.filterCurrentCategory + 1) % 3
+					// If in Raw category with filters, try to navigate within the list first
+					if m.filterCurrentCategory == 0 && len(m.filterRawList) > 0 {
+						maxRows := 5
+						itemsPerColumn := maxRows
+
+						// Calculate the start and end index for current column
+						startIdx := m.filterRawColumn * itemsPerColumn
+						endIdx := startIdx + itemsPerColumn
+						if endIdx > len(m.filterRawList) {
+							endIdx = len(m.filterRawList)
+						}
+
+						// Check if we can move down within this column
+						if m.filterRawSelectedIndex < endIdx - 1 {
+							// Move down within this column
+							m.filterRawSelectedIndex++
+							return m, nil
+						} else {
+							// At the end of column, switch to next category
+							m.filterCurrentCategory = (m.filterCurrentCategory + 1) % 3
+							return m, nil
+						}
+					} else {
+						// Not in Raw category or no filters, just switch category
+						m.filterCurrentCategory = (m.filterCurrentCategory + 1) % 3
+					}
 				}
 				return m, nil
 
 			case "ctrl+p":
-				// Move to previous category
+				// Move to previous category OR navigate up in raw filter list
 				if !m.filterShowAll {
-					m.filterCurrentCategory = (m.filterCurrentCategory - 1 + 3) % 3
+					// If in Raw category with filters, try to navigate within the list first
+					if m.filterCurrentCategory == 0 && len(m.filterRawList) > 0 {
+						maxRows := 5
+						itemsPerColumn := maxRows
+
+						// Calculate the start and end index for current column
+						startIdx := m.filterRawColumn * itemsPerColumn
+
+						// Check if we can move up within this column
+						if m.filterRawSelectedIndex > startIdx {
+							// Move up within this column
+							m.filterRawSelectedIndex--
+							return m, nil
+						} else {
+							// At the start of column, switch to previous category
+							m.filterCurrentCategory = (m.filterCurrentCategory - 1 + 3) % 3
+							return m, nil
+						}
+					} else {
+						// Not in Raw category or no filters, just switch category
+						m.filterCurrentCategory = (m.filterCurrentCategory - 1 + 3) % 3
+					}
+				}
+				return m, nil
+
+			case "1":
+				// Jump to Raw category
+				if !m.filterShowAll {
+					m.filterCurrentCategory = 0
+				}
+				return m, nil
+
+			case "2":
+				// Jump to Machine category
+				if !m.filterShowAll {
+					m.filterCurrentCategory = 1
+				}
+				return m, nil
+
+			case "3":
+				// Jump to Time category
+				if !m.filterShowAll {
+					m.filterCurrentCategory = 2
 				}
 				return m, nil
 
@@ -204,6 +285,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Add new filter (only in Raw category)
 				if !m.filterShowAll && m.filterCurrentCategory == 0 {
 					m.filterRawInputActive = true
+					m.filterRawSelectedIndex = -1 // Mark as adding new (not editing)
 					m.filterRawInput.Focus()
 					return m, textinput.Blink
 				}
@@ -221,8 +303,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 
+			case "e":
+				// Edit selected filter (only in Raw category)
+				if !m.filterShowAll && m.filterCurrentCategory == 0 {
+					if m.filterRawSelectedIndex >= 0 && m.filterRawSelectedIndex < len(m.filterRawList) {
+						m.filterRawInputActive = true
+						m.filterRawInput.SetValue(m.filterRawList[m.filterRawSelectedIndex])
+						m.filterRawInput.Focus()
+						// We'll replace this filter when user presses enter again
+						return m, textinput.Blink
+					}
+				}
+				return m, nil
+
+			case "d":
+				// Toggle disabled state for selected raw filter OR toggle time filter
+				if !m.filterShowAll {
+					if m.filterCurrentCategory == 0 {
+						// Raw category: toggle disabled state for selected filter
+						if m.filterRawSelectedIndex >= 0 && m.filterRawSelectedIndex < len(m.filterRawList) {
+							m.filterRawDisabled[m.filterRawSelectedIndex] = !m.filterRawDisabled[m.filterRawSelectedIndex]
+							// Ensure current event is visible after toggling
+							m.ensureCurrentEventVisible()
+						}
+					} else if m.filterCurrentCategory == 2 {
+						// Time category: toggle time filter enabled/disabled
+						m.filterTimeEnabled = !m.filterTimeEnabled
+						// Ensure current event is visible after toggling
+						m.ensureCurrentEventVisible()
+					}
+				}
+				return m, nil
+
 			case "enter":
-				// Open configuration for Machine or Time category
+				// Open configuration for Machine or Time category only
 				if !m.filterShowAll {
 					if m.filterCurrentCategory == 1 {
 						// Enter machine selection mode
@@ -236,6 +350,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.filterTimeInput.SetValue(fmt.Sprintf("%.6f", m.filterTimeStart))
 						m.filterTimeInput.Focus()
 						return m, textinput.Blink
+					}
+				}
+				return m, nil
+
+			case "ctrl+f":
+				// Move to next column in raw filter list (only in Raw category)
+				if !m.filterShowAll && m.filterCurrentCategory == 0 && len(m.filterRawList) > 0 {
+					// Pack into columns to determine count
+					maxRows := 5
+					numColumns := (len(m.filterRawList) + maxRows - 1) / maxRows
+					if numColumns > 0 {
+						m.filterRawColumn++
+						if m.filterRawColumn >= numColumns {
+							m.filterRawColumn = 0 // Wrap to first column
+						}
+						// Reset selection to first item in new column
+						m.filterRawSelectedIndex = 0
+					}
+				}
+				return m, nil
+
+			case "ctrl+b":
+				// Move to previous column in raw filter list (only in Raw category)
+				if !m.filterShowAll && m.filterCurrentCategory == 0 && len(m.filterRawList) > 0 {
+					// Pack into columns to determine count
+					maxRows := 5
+					numColumns := (len(m.filterRawList) + maxRows - 1) / maxRows
+					if numColumns > 0 {
+						m.filterRawColumn--
+						if m.filterRawColumn < 0 {
+							m.filterRawColumn = numColumns - 1 // Wrap to last column
+						}
+						// Reset selection to first item in new column
+						m.filterRawSelectedIndex = 0
 					}
 				}
 				return m, nil
@@ -415,20 +563,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterViewMode = true
 			return m, nil
 
-		case "e":
+		case "E", "shift+e":
 			// Jump backward to previous MasterRecoveryState (any)
-			if recovery := m.traceData.FindPreviousRecovery(m.currentEventIndex); recovery != nil {
-				m.currentEventIndex = recovery.EventIndex
-				m.currentTime = recovery.Time
-				m.updateClusterState()
+			recovery := m.traceData.FindPreviousRecovery(m.currentEventIndex)
+			// If filterShowAll is false and time filter is enabled, keep searching until we find one in range
+			for recovery != nil {
+				if m.filterShowAll || !m.filterTimeEnabled || (recovery.Time >= m.filterTimeStart && recovery.Time <= m.filterTimeEnd) {
+					m.currentEventIndex = recovery.EventIndex
+					m.currentTime = recovery.Time
+					m.updateClusterState()
+					break
+				}
+				// Try previous recovery
+				recovery = m.traceData.FindPreviousRecovery(recovery.EventIndex - 1)
 			}
 
-		case "E", "shift+e":
+		case "e":
 			// Jump forward to next MasterRecoveryState (any)
-			if recovery := m.traceData.FindNextRecovery(m.currentEventIndex); recovery != nil {
-				m.currentEventIndex = recovery.EventIndex
-				m.currentTime = recovery.Time
-				m.updateClusterState()
+			recovery := m.traceData.FindNextRecovery(m.currentEventIndex)
+			// If filterShowAll is false and time filter is enabled, keep searching until we find one in range
+			for recovery != nil {
+				if m.filterShowAll || !m.filterTimeEnabled || (recovery.Time >= m.filterTimeStart && recovery.Time <= m.filterTimeEnd) {
+					m.currentEventIndex = recovery.EventIndex
+					m.currentTime = recovery.Time
+					m.updateClusterState()
+					break
+				}
+				// Try next recovery
+				recovery = m.traceData.FindNextRecovery(recovery.EventIndex + 1)
 			}
 
 		case "ctrl+n":
@@ -513,20 +675,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case "r":
+		case "R", "shift+r":
 			// Jump backward to latest MasterRecoveryState with StatusCode="0"
-			if recovery := m.traceData.FindPreviousRecoveryWithStatusCode(m.currentEventIndex, "0"); recovery != nil {
-				m.currentEventIndex = recovery.EventIndex
-				m.currentTime = recovery.Time
-				m.updateClusterState()
+			recovery := m.traceData.FindPreviousRecoveryWithStatusCode(m.currentEventIndex, "0")
+			// If filterShowAll is false and time filter is enabled, keep searching until we find one in range
+			for recovery != nil {
+				if m.filterShowAll || !m.filterTimeEnabled || (recovery.Time >= m.filterTimeStart && recovery.Time <= m.filterTimeEnd) {
+					m.currentEventIndex = recovery.EventIndex
+					m.currentTime = recovery.Time
+					m.updateClusterState()
+					break
+				}
+				// Try previous recovery with StatusCode=0
+				recovery = m.traceData.FindPreviousRecoveryWithStatusCode(recovery.EventIndex-1, "0")
 			}
 
-		case "R", "shift+r":
+		case "r":
 			// Jump forward to earliest MasterRecoveryState with StatusCode="0"
-			if recovery := m.traceData.FindNextRecoveryWithStatusCode(m.currentEventIndex, "0"); recovery != nil {
-				m.currentEventIndex = recovery.EventIndex
-				m.currentTime = recovery.Time
-				m.updateClusterState()
+			recovery := m.traceData.FindNextRecoveryWithStatusCode(m.currentEventIndex, "0")
+			// If filterShowAll is false and time filter is enabled, keep searching until we find one in range
+			for recovery != nil {
+				if m.filterShowAll || !m.filterTimeEnabled || (recovery.Time >= m.filterTimeStart && recovery.Time <= m.filterTimeEnd) {
+					m.currentEventIndex = recovery.EventIndex
+					m.currentTime = recovery.Time
+					m.updateClusterState()
+					break
+				}
+				// Try next recovery with StatusCode=0
+				recovery = m.traceData.FindNextRecoveryWithStatusCode(recovery.EventIndex+1, "0")
 			}
 
 		case "3":
@@ -814,25 +990,222 @@ func (m model) handleMachineSelectionPopup(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "ctrl+n":
-			// Move down in list
-			m.filterMachineSelected++
-			// Will be clamped in rendering
+			// Move down in current column
+			// We need to recalculate columns to know the size
+			items := m.getMachineSelectionItems()
+			maxDisplayLines := m.height - 12
+			var columns [][]SelectableItem
+			currentColumn := []SelectableItem{}
+			currentHeight := 0
+
+			for i := 0; i < len(items); i++ {
+				item := items[i]
+				itemLines := 1
+				if item.Type == "machine" && item.Worker != nil {
+					itemLines += len(item.Worker.Roles)
+				}
+				if currentHeight+itemLines > maxDisplayLines && len(currentColumn) > 0 {
+					columns = append(columns, currentColumn)
+					currentColumn = []SelectableItem{}
+					currentHeight = 0
+				}
+				currentColumn = append(currentColumn, item)
+				currentHeight += itemLines
+			}
+			if len(currentColumn) > 0 {
+				columns = append(columns, currentColumn)
+			}
+
+			// Clamp column index
+			if m.filterMachineColumn >= len(columns) {
+				m.filterMachineColumn = len(columns) - 1
+			}
+			if m.filterMachineColumn < 0 && len(columns) > 0 {
+				m.filterMachineColumn = 0
+			}
+
+			// Get current column
+			var displayItems []SelectableItem
+			if m.filterMachineColumn >= 0 && m.filterMachineColumn < len(columns) {
+				displayItems = columns[m.filterMachineColumn]
+			}
+
+			// Increment selection within current column
+			if len(displayItems) > 0 {
+				m.filterMachineSelected++
+				if m.filterMachineSelected >= len(displayItems) {
+					m.filterMachineSelected = 0 // Wrap around
+				}
+			}
 			return m, nil
 
 		case "ctrl+p":
-			// Move up in list
-			if m.filterMachineSelected > 0 {
+			// Move up in current column
+			// We need to recalculate columns to know the size
+			items := m.getMachineSelectionItems()
+			maxDisplayLines := m.height - 12
+			var columns [][]SelectableItem
+			currentColumn := []SelectableItem{}
+			currentHeight := 0
+
+			for i := 0; i < len(items); i++ {
+				item := items[i]
+				itemLines := 1
+				if item.Type == "machine" && item.Worker != nil {
+					itemLines += len(item.Worker.Roles)
+				}
+				if currentHeight+itemLines > maxDisplayLines && len(currentColumn) > 0 {
+					columns = append(columns, currentColumn)
+					currentColumn = []SelectableItem{}
+					currentHeight = 0
+				}
+				currentColumn = append(currentColumn, item)
+				currentHeight += itemLines
+			}
+			if len(currentColumn) > 0 {
+				columns = append(columns, currentColumn)
+			}
+
+			// Clamp column index
+			if m.filterMachineColumn >= len(columns) {
+				m.filterMachineColumn = len(columns) - 1
+			}
+			if m.filterMachineColumn < 0 && len(columns) > 0 {
+				m.filterMachineColumn = 0
+			}
+
+			// Get current column
+			var displayItems []SelectableItem
+			if m.filterMachineColumn >= 0 && m.filterMachineColumn < len(columns) {
+				displayItems = columns[m.filterMachineColumn]
+			}
+
+			// Decrement selection within current column
+			if len(displayItems) > 0 {
 				m.filterMachineSelected--
+				if m.filterMachineSelected < 0 {
+					m.filterMachineSelected = len(displayItems) - 1 // Wrap around
+				}
+			}
+			return m, nil
+
+		case "ctrl+f":
+			// Move to next column (forward)
+			items := m.getMachineSelectionItems()
+			maxDisplayLines := m.height - 12
+			var columns [][]SelectableItem
+			currentColumn := []SelectableItem{}
+			currentHeight := 0
+
+			for i := 0; i < len(items); i++ {
+				item := items[i]
+				itemLines := 1
+				if item.Type == "machine" && item.Worker != nil {
+					itemLines += len(item.Worker.Roles)
+				}
+				if currentHeight+itemLines > maxDisplayLines && len(currentColumn) > 0 {
+					columns = append(columns, currentColumn)
+					currentColumn = []SelectableItem{}
+					currentHeight = 0
+				}
+				currentColumn = append(currentColumn, item)
+				currentHeight += itemLines
+			}
+			if len(currentColumn) > 0 {
+				columns = append(columns, currentColumn)
+			}
+
+			// Move to next column
+			if len(columns) > 0 {
+				m.filterMachineColumn++
+				if m.filterMachineColumn >= len(columns) {
+					m.filterMachineColumn = 0 // Wrap to first column
+				}
+				// Reset selection to first item in new column
+				m.filterMachineSelected = 0
+			}
+			return m, nil
+
+		case "ctrl+b":
+			// Move to previous column (backward)
+			items := m.getMachineSelectionItems()
+			maxDisplayLines := m.height - 12
+			var columns [][]SelectableItem
+			currentColumn := []SelectableItem{}
+			currentHeight := 0
+
+			for i := 0; i < len(items); i++ {
+				item := items[i]
+				itemLines := 1
+				if item.Type == "machine" && item.Worker != nil {
+					itemLines += len(item.Worker.Roles)
+				}
+				if currentHeight+itemLines > maxDisplayLines && len(currentColumn) > 0 {
+					columns = append(columns, currentColumn)
+					currentColumn = []SelectableItem{}
+					currentHeight = 0
+				}
+				currentColumn = append(currentColumn, item)
+				currentHeight += itemLines
+			}
+			if len(currentColumn) > 0 {
+				columns = append(columns, currentColumn)
+			}
+
+			// Move to previous column
+			if len(columns) > 0 {
+				m.filterMachineColumn--
+				if m.filterMachineColumn < 0 {
+					m.filterMachineColumn = len(columns) - 1 // Wrap to last column
+				}
+				// Reset selection to first item in new column
+				m.filterMachineSelected = 0
 			}
 			return m, nil
 
 		case " ", "space":
-			// Toggle selection of current item
-			// Get the items list (same structure as in renderMachineSelectionPopup)
+			// Toggle selection of current item in current column
+			// Recalculate columns to get current item
 			items := m.getMachineSelectionItems()
+			maxDisplayLines := m.height - 12
+			var columns [][]SelectableItem
+			currentColumn := []SelectableItem{}
+			currentHeight := 0
 
-			if m.filterMachineSelected >= 0 && m.filterMachineSelected < len(items) {
-				item := items[m.filterMachineSelected]
+			for i := 0; i < len(items); i++ {
+				item := items[i]
+				itemLines := 1
+				if item.Type == "machine" && item.Worker != nil {
+					itemLines += len(item.Worker.Roles)
+				}
+				if currentHeight+itemLines > maxDisplayLines && len(currentColumn) > 0 {
+					columns = append(columns, currentColumn)
+					currentColumn = []SelectableItem{}
+					currentHeight = 0
+				}
+				currentColumn = append(currentColumn, item)
+				currentHeight += itemLines
+			}
+			if len(currentColumn) > 0 {
+				columns = append(columns, currentColumn)
+			}
+
+			// Clamp column index
+			if m.filterMachineColumn >= len(columns) {
+				m.filterMachineColumn = len(columns) - 1
+			}
+			if m.filterMachineColumn < 0 && len(columns) > 0 {
+				m.filterMachineColumn = 0
+			}
+
+			// Get current column and item
+			var displayItems []SelectableItem
+			if m.filterMachineColumn >= 0 && m.filterMachineColumn < len(columns) {
+				displayItems = columns[m.filterMachineColumn]
+			}
+
+			if m.filterMachineSelected >= 0 && m.filterMachineSelected < len(displayItems) {
+				item := displayItems[m.filterMachineSelected]
 
 				if item.Type == "dc" && item.DC != "Testers" {
 					// Toggle DC selection
@@ -856,10 +1229,14 @@ func (m model) handleMachineSelectionPopup(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		default:
-			// Pass to input for fuzzy search
-			// Reset selection when search changes
-			m.filterMachineSelected = 0
+			// Pass other keys (except space) to input for fuzzy search
+			// Reset selection and column when search changes
+			oldValue := m.filterMachineInput.Value()
 			m.filterMachineInput, cmd = m.filterMachineInput.Update(msg)
+			if m.filterMachineInput.Value() != oldValue {
+				m.filterMachineSelected = 0
+				m.filterMachineColumn = 0 // Also reset to first column
+			}
 			return m, cmd
 		}
 	}
@@ -1016,21 +1393,25 @@ func (m model) getMachineSelectionItems() []SelectableItem {
 
 	for _, dcID := range dcIDs {
 		// Check if DC or any of its machines match search
-		matches := searchTerm == "" || strings.Contains(strings.ToLower("dc "+dcID), searchTerm)
-		if !matches {
+		dcMatches := searchTerm == "" || strings.Contains(strings.ToLower("dc"+dcID), searchTerm)
+		machineMatches := false
+
+		if !dcMatches {
+			// Check if any machine in this DC matches
 			for _, worker := range dcWorkers[dcID] {
 				if strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
-					matches = true
+					machineMatches = true
 					break
 				}
 			}
 		}
 
-		if matches {
+		if dcMatches || machineMatches {
 			items = append(items, SelectableItem{Type: "dc", DC: dcID})
 			// Add machines under this DC
 			for _, worker := range dcWorkers[dcID] {
-				if searchTerm == "" || strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
+				// If DC matched, show all machines. Otherwise only show matching machines.
+				if dcMatches || strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
 					items = append(items, SelectableItem{Type: "machine", Machine: worker.Machine, Worker: worker, IsTester: false})
 				}
 			}
@@ -1039,10 +1420,26 @@ func (m model) getMachineSelectionItems() []SelectableItem {
 
 	// Add testers
 	if len(testers) > 0 {
-		items = append(items, SelectableItem{Type: "dc", DC: "Testers"})
-		for _, worker := range testers {
-			if searchTerm == "" || strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
-				items = append(items, SelectableItem{Type: "machine", Machine: worker.Machine, Worker: worker, IsTester: true})
+		testersMatches := searchTerm == "" || strings.Contains(strings.ToLower("testers"), searchTerm)
+		machineMatches := false
+
+		if !testersMatches {
+			// Check if any tester machine matches
+			for _, worker := range testers {
+				if strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
+					machineMatches = true
+					break
+				}
+			}
+		}
+
+		if testersMatches || machineMatches {
+			items = append(items, SelectableItem{Type: "dc", DC: "Testers"})
+			for _, worker := range testers {
+				// If "Testers" matched, show all. Otherwise only show matching machines.
+				if testersMatches || strings.Contains(strings.ToLower(worker.Machine), searchTerm) {
+					items = append(items, SelectableItem{Type: "machine", Machine: worker.Machine, Worker: worker, IsTester: true})
+				}
 			}
 		}
 	}
@@ -1288,7 +1685,7 @@ func (m model) View() string {
 			// Display each DC
 			for _, dcID := range dcIDs {
 				workers := dcWorkers[dcID]
-				allTopologyLines = append(allTopologyLines, dcHeaderStyle.Render(fmt.Sprintf("DC %s", dcID)))
+				allTopologyLines = append(allTopologyLines, dcHeaderStyle.Render(fmt.Sprintf("DC%s", dcID)))
 
 				for _, worker := range workers {
 					// Check if this worker's machine matches current event
@@ -1828,14 +2225,79 @@ func (m model) renderFilterPopup(baseView string) string {
 			content.WriteString(normalStyle.Render("  (no filters)"))
 			content.WriteString("\n")
 		} else {
-			for i, filter := range m.filterRawList {
-				filterStyle := normalStyle
-				prefix := "  "
-				if i == m.filterRawSelectedIndex && !m.filterRawInputActive {
-					filterStyle = selectedStyle
-					prefix = "→ "
+			// Pack filters into columns (max 5 rows per column)
+			maxRows := 5
+			numColumns := (len(m.filterRawList) + maxRows - 1) / maxRows
+
+			// Build columns
+			var columns [][]string
+			for col := 0; col < numColumns; col++ {
+				var column []string
+				startIdx := col * maxRows
+				endIdx := startIdx + maxRows
+				if endIdx > len(m.filterRawList) {
+					endIdx = len(m.filterRawList)
 				}
-				content.WriteString(filterStyle.Render(fmt.Sprintf("%s%s", prefix, filter)))
+
+				for i := startIdx; i < endIdx; i++ {
+					filter := m.filterRawList[i]
+					filterStyle := normalStyle
+					prefix := "  "
+
+					// Check if this filter is disabled
+					if m.filterRawDisabled[i] {
+						filterStyle = grayedStyle
+						filter = filter + " [disabled]"
+					}
+
+					// Check if selected
+					if i == m.filterRawSelectedIndex && !m.filterRawInputActive {
+						if m.filterRawDisabled[i] {
+							// Selected but disabled - show in grayed selected style
+							filterStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Bold(true)
+						} else {
+							filterStyle = selectedStyle
+						}
+						prefix = "→ "
+					}
+
+					column = append(column, filterStyle.Render(fmt.Sprintf("%s%s", prefix, filter)))
+				}
+				columns = append(columns, column)
+			}
+
+			// Find max lines
+			maxLines := maxRows
+
+			// Calculate max width for each column
+			columnWidths := make([]int, len(columns))
+			for i, col := range columns {
+				maxWidth := 0
+				for _, line := range col {
+					width := lipgloss.Width(line)
+					if width > maxWidth {
+						maxWidth = width
+					}
+				}
+				columnWidths[i] = maxWidth + 3 // Add spacing
+			}
+
+			// Render line by line across all columns
+			for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
+				for colIdx, col := range columns {
+					var line string
+					if lineIdx < len(col) {
+						line = col[lineIdx]
+					}
+
+					// Pad to column width
+					lineWidth := lipgloss.Width(line)
+					if lineWidth < columnWidths[colIdx] {
+						line = line + strings.Repeat(" ", columnWidths[colIdx]-lineWidth)
+					}
+
+					content.WriteString(line)
+				}
 				content.WriteString("\n")
 			}
 		}
@@ -1845,7 +2307,7 @@ func (m model) renderFilterPopup(baseView string) string {
 			content.WriteString(m.filterRawInput.View())
 			content.WriteString("\n")
 		} else {
-			content.WriteString(normalStyle.Render("  Press 'a' to add, 'r' to remove"))
+			content.WriteString(normalStyle.Render("  Press 'a' to add, 'e' to edit, 'r' to remove, 'd' to toggle disable, Ctrl+N/P to navigate, Ctrl+F/B for columns"))
 			content.WriteString("\n")
 		}
 	}
@@ -1914,7 +2376,7 @@ func (m model) renderFilterPopup(baseView string) string {
 			content.WriteString(normalStyle.Render("  [ ] Disabled"))
 			content.WriteString("\n")
 		}
-		content.WriteString(normalStyle.Render("  Press Enter to configure"))
+		content.WriteString(normalStyle.Render("  Press 'd' to toggle, Enter to configure"))
 		content.WriteString("\n")
 	}
 
@@ -1923,7 +2385,19 @@ func (m model) renderFilterPopup(baseView string) string {
 	if isGrayed {
 		content.WriteString(normalStyle.Render("Space: toggle All | q/f/Esc: close"))
 	} else {
-		content.WriteString(normalStyle.Render("Ctrl+N/P: switch category | Space: toggle All | q/f/Esc: close"))
+		// Context-sensitive help based on current category
+		var categoryHelp string
+		if m.filterCurrentCategory == 0 {
+			// Raw category
+			categoryHelp = "a: add | e: edit | r: remove | d: toggle disable | Ctrl+N/P: navigate | Ctrl+F/B: columns | "
+		} else if m.filterCurrentCategory == 1 {
+			// Machine category
+			categoryHelp = "Enter: configure machines | "
+		} else if m.filterCurrentCategory == 2 {
+			// Time category
+			categoryHelp = "d: toggle | Enter: configure range | "
+		}
+		content.WriteString(normalStyle.Render(categoryHelp + "1/2/3: jump | Ctrl+N/P: switch | Space: toggle All | q/f/Esc: close"))
 	}
 
 	popup := popupStyle.Render(content.String())
@@ -2041,106 +2515,180 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 	// Get items using helper function
 	items := m.getMachineSelectionItems()
 
-	// Calculate visible window
-	maxDisplayLines := 20
-	totalItems := len(items)
+	// Calculate available height for content
+	maxDisplayLines := m.height - 12 // Account for title, search, help, padding, border
 
-	// Clamp selection
-	if m.filterMachineSelected >= totalItems {
-		m.filterMachineSelected = totalItems - 1
-	}
-	if m.filterMachineSelected < 0 && totalItems > 0 {
-		m.filterMachineSelected = 0
-	}
+	// Pack items into columns (keep DCs with their machines)
+	var columns [][]SelectableItem
+	currentColumn := []SelectableItem{}
+	currentHeight := 0
 
-	// Calculate scroll offset
-	if m.filterMachineSelected < m.filterMachineScroll {
-		m.filterMachineScroll = m.filterMachineSelected
-	}
-	if m.filterMachineSelected >= m.filterMachineScroll+maxDisplayLines {
-		m.filterMachineScroll = m.filterMachineSelected - maxDisplayLines + 1
-	}
+	for i := 0; i < len(items); i++ {
+		item := items[i]
 
-	// Display items
-	for i, item := range items {
-		if i < m.filterMachineScroll {
-			continue
-		}
-		if i >= m.filterMachineScroll+maxDisplayLines {
-			break
+		// Calculate how many lines this item will take
+		itemLines := 1 // DC header or machine line
+		if item.Type == "machine" && item.Worker != nil {
+			itemLines += len(item.Worker.Roles) // Roles under machine
 		}
 
-		if item.Type == "dc" {
-			// DC header (not selectable, just for display)
-			var header string
-			if item.DC == "Testers" {
-				header = testerHeaderStyle.Render("Testers")
-			} else {
-				header = dcHeaderStyle.Render(fmt.Sprintf("DC %s", item.DC))
-			}
-			if i == m.filterMachineSelected {
-				content.WriteString(selectedStyle.Render("→ ") + header)
-			} else {
-				content.WriteString("  " + header)
-			}
-			content.WriteString("\n")
-		} else if item.Type == "machine" {
-			// Machine with checkbox and roles
-			// Check if machine or DC is selected
-			isSelected := false
-			for _, m2 := range m.filterMachineList {
-				if m2 == item.Machine {
-					isSelected = true
-					break
-				}
-			}
-			// Check if DC is selected
-			dc := extractDCFromAddress(item.Machine)
-			if !isSelected && dc != "" && m.filterMachineDCs[dc] {
-				isSelected = true
-			}
-
-			checkbox := "[ ]"
-			if isSelected {
-				checkbox = checkedStyle.Render("[x]")
-			} else {
-				checkbox = normalStyle.Render(checkbox)
-			}
-
-			itemStyle := normalStyle
-			prefix := "    "
-			if i == m.filterMachineSelected {
-				itemStyle = selectedStyle
-				prefix = "  → "
-			}
-
-			// Machine line
-			machineLine := fmt.Sprintf("%s%s %s", prefix, checkbox, item.Machine)
-			content.WriteString(itemStyle.Render(machineLine))
-			content.WriteString("\n")
-
-			// Show roles indented under machine
-			if item.Worker != nil {
-				for _, role := range item.Worker.Roles {
-					roleLabel := role.Name
-					if role.ID != "" {
-						roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-					}
-					content.WriteString(roleStyle.Render(fmt.Sprintf("        %s", roleLabel)))
-					content.WriteString("\n")
-				}
-			}
+		// If adding this item would overflow, start new column
+		if currentHeight+itemLines > maxDisplayLines && len(currentColumn) > 0 {
+			columns = append(columns, currentColumn)
+			currentColumn = []SelectableItem{}
+			currentHeight = 0
 		}
+
+		currentColumn = append(currentColumn, item)
+		currentHeight += itemLines
 	}
 
-	if totalItems == 0 {
+	// Add last column
+	if len(currentColumn) > 0 {
+		columns = append(columns, currentColumn)
+	}
+
+	// Clamp column index
+	if m.filterMachineColumn >= len(columns) {
+		m.filterMachineColumn = len(columns) - 1
+	}
+	if m.filterMachineColumn < 0 && len(columns) > 0 {
+		m.filterMachineColumn = 0
+	}
+
+	// Display ALL columns side-by-side
+	if len(columns) == 0 {
 		content.WriteString(normalStyle.Render("  (no matches)"))
 		content.WriteString("\n")
+	} else {
+		// Convert columns to line-by-line format for rendering
+		// First, build all lines for each column
+		type ColumnLines struct {
+			lines []string
+			items []SelectableItem // Track which item each line belongs to (for reference)
+		}
+
+		var columnData []ColumnLines
+		for _, column := range columns {
+			var lines []string
+			for _, item := range column {
+				if item.Type == "dc" {
+					var header string
+					if item.DC == "Testers" {
+						header = testerHeaderStyle.Render("Testers")
+					} else {
+						header = dcHeaderStyle.Render(fmt.Sprintf("DC%s", item.DC))
+					}
+					lines = append(lines, "  "+header)
+				} else if item.Type == "machine" {
+					// Check if machine or DC is selected
+					isSelected := false
+					for _, m2 := range m.filterMachineList {
+						if m2 == item.Machine {
+							isSelected = true
+							break
+						}
+					}
+					dc := extractDCFromAddress(item.Machine)
+					if !isSelected && dc != "" && m.filterMachineDCs[dc] {
+						isSelected = true
+					}
+
+					checkbox := "[ ]"
+					if isSelected {
+						checkbox = checkedStyle.Render("[x]")
+					} else {
+						checkbox = normalStyle.Render(checkbox)
+					}
+
+					machineLine := fmt.Sprintf("    %s %s", checkbox, item.Machine)
+					lines = append(lines, normalStyle.Render(machineLine))
+
+					// Add role lines
+					if item.Worker != nil {
+						for _, role := range item.Worker.Roles {
+							roleLabel := role.Name
+							if role.ID != "" {
+								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+							}
+							lines = append(lines, roleStyle.Render(fmt.Sprintf("        %s", roleLabel)))
+						}
+					}
+				}
+			}
+			columnData = append(columnData, ColumnLines{lines: lines, items: column})
+		}
+
+		// Find max lines across all columns
+		maxLines := 0
+		for _, col := range columnData {
+			if len(col.lines) > maxLines {
+				maxLines = len(col.lines)
+			}
+		}
+
+		// Calculate max width for each column (for padding)
+		columnWidths := make([]int, len(columnData))
+		for i, col := range columnData {
+			maxWidth := 0
+			for _, line := range col.lines {
+				width := lipgloss.Width(line)
+				if width > maxWidth {
+					maxWidth = width
+				}
+			}
+			columnWidths[i] = maxWidth + 3 // Add spacing
+		}
+
+		// Now render line by line across all columns, with highlighting for active selection
+		for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
+			// Determine which item index this line corresponds to in each column
+			// We need to map line index back to item index for highlighting
+			for colIdx, col := range columnData {
+				var line string
+				if lineIdx < len(col.lines) {
+					line = col.lines[lineIdx]
+
+					// Calculate which item this line belongs to and if it's the first line of that item
+					// We need to figure out if this is the selected item in the active column
+					itemIdx := -1
+					isFirstLine := false
+					lineCount := 0
+					for itemI, item := range col.items {
+						numLines := 1 // DC or machine line
+						if item.Type == "machine" && item.Worker != nil {
+							numLines += len(item.Worker.Roles)
+						}
+						if lineIdx >= lineCount && lineIdx < lineCount+numLines {
+							itemIdx = itemI
+							isFirstLine = (lineIdx == lineCount) // First line of this item
+							break
+						}
+						lineCount += numLines
+					}
+
+					// Highlight only if this is the active column, selected item, AND the first line
+					if colIdx == m.filterMachineColumn && itemIdx == m.filterMachineSelected && isFirstLine {
+						// This is the selected line - highlight it
+						line = selectedStyle.Render("→ " + strings.TrimPrefix(line, "  "))
+					}
+				}
+
+				// Pad to column width
+				lineWidth := lipgloss.Width(line)
+				if lineWidth < columnWidths[colIdx] {
+					line = line + strings.Repeat(" ", columnWidths[colIdx]-lineWidth)
+				}
+
+				content.WriteString(line)
+			}
+			content.WriteString("\n")
+		}
 	}
 
 	// Help text
 	content.WriteString("\n")
-	content.WriteString(normalStyle.Render("Ctrl+N/P: navigate | Space: toggle | Enter: done | Esc: cancel"))
+	content.WriteString(normalStyle.Render("Ctrl+N/P: row | Ctrl+F/B: column | Space: toggle | Enter: done | Esc: cancel"))
 
 	popup := popupStyle.Render(content.String())
 
@@ -2221,15 +2769,37 @@ func (m model) renderHelpPopup(baseView string) string {
 	// Filter section
 	content.WriteString(sectionStyle.Render("Filter:"))
 	content.WriteString("\n")
-	content.WriteString(commandStyle.Render("  f                  Configure event filters (toggle All, add/remove filters)"))
+	content.WriteString(commandStyle.Render("  f                  Open filter configuration popup"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  Space              Toggle 'All' to enable/disable filtering"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  1/2/3              Jump to Raw/Machine/Time category"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  Ctrl+N/P           Switch categories (or navigate within Raw filters)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  a                  Add new raw filter (wildcard patterns: Type=*Recovery*)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  e                  Edit selected raw filter"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  r                  Remove selected raw filter"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  d                  Toggle disable on selected raw filter (Raw category)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("                     Toggle time filter on/off (Time category)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  Ctrl+F/B           Navigate columns (in Raw filters)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  Enter              Configure Machine/Time filters"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("                     Filters use AND logic between categories, OR within"))
 	content.WriteString("\n\n")
 
 	// Recovery section
 	content.WriteString(sectionStyle.Render("Recovery Navigation:"))
 	content.WriteString("\n")
-	content.WriteString(commandStyle.Render("  r / R              Jump to prev / next recovery start (StatusCode=0)"))
+	content.WriteString(commandStyle.Render("  r / R              Jump to next / prev recovery start (StatusCode=0)"))
 	content.WriteString("\n")
-	content.WriteString(commandStyle.Render("  e / E              Jump to prev / next MasterRecoveryState (any)"))
+	content.WriteString(commandStyle.Render("  e / E              Jump to next / prev MasterRecoveryState (any)"))
 	content.WriteString("\n\n")
 
 	// Severity Navigation section
@@ -2650,12 +3220,17 @@ func eventMatchesFilters(event *TraceEvent, m *model) bool {
 		}
 	}
 
-	// 3. Raw filters (OR within category)
+	// 3. Raw filters (OR within category) - skip disabled filters
 	if len(m.filterRawList) > 0 {
 		eventText := getEventFullText(event)
 		rawMatches := false
 
-		for _, filter := range m.filterRawList {
+		for i, filter := range m.filterRawList {
+			// Skip disabled filters
+			if m.filterRawDisabled[i] {
+				continue
+			}
+
 			regexPattern := convertWildcardToRegex(filter)
 			re, err := regexp.Compile(regexPattern)
 			if err != nil {
