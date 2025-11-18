@@ -295,9 +295,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Remove selected filter (only in Raw category)
 				if !m.filterShowAll && m.filterCurrentCategory == 0 {
 					if m.filterRawSelectedIndex >= 0 && m.filterRawSelectedIndex < len(m.filterRawList) {
-						m.filterRawList = append(m.filterRawList[:m.filterRawSelectedIndex], m.filterRawList[m.filterRawSelectedIndex+1:]...)
+						// Remove filter and update disabled map
+						removedIdx := m.filterRawSelectedIndex
+						m.filterRawList = append(m.filterRawList[:removedIdx], m.filterRawList[removedIdx+1:]...)
+
+						// Rebuild disabled map, shifting indices
+						newDisabled := make(map[int]bool)
+						for i, disabled := range m.filterRawDisabled {
+							if i < removedIdx {
+								newDisabled[i] = disabled
+							} else if i > removedIdx {
+								newDisabled[i-1] = disabled
+							}
+							// Skip i == removedIdx (the removed filter)
+						}
+						m.filterRawDisabled = newDisabled
+
+						// Update selection
 						if m.filterRawSelectedIndex >= len(m.filterRawList) {
 							m.filterRawSelectedIndex = len(m.filterRawList) - 1
+						}
+						if m.filterRawSelectedIndex < 0 {
+							m.filterRawSelectedIndex = 0
+						}
+
+						// Update column index
+						if len(m.filterRawList) > 0 {
+							maxRows := 5
+							m.filterRawColumn = m.filterRawSelectedIndex / maxRows
+						} else {
+							m.filterRawColumn = 0
 						}
 					}
 				}
@@ -335,6 +362,86 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 
+			case "c":
+				// Toggle common trace event filters (only in Raw category)
+				if m.filterCurrentCategory == 0 {
+					// Define common trace event types
+					commonTypes := []string{
+						"Type=MasterRecoveryState",
+						"Type=ProxyReject",
+						"Type=CCWDB",
+						"Type=TPLSOnErrorLogSystemFailed",
+						"Type=TPLSOnErrorBackupFailed",
+						"Type=ForcedRecoveryStart",
+						"Type=MasterRegistrationKill",
+						"Type=ClusterControllerHealthMonitor",
+						"Type=DegradedServerDetectedAndTriggerRecovery",
+						"Type=RecentRecoveryCountHigh",
+						"Type=DegradedServerDetectedAndSuggestRecovery",
+						"Type=DegradedServerDetectedAndTriggerFailover",
+						"Type=AddFailureInjectionWorkload",
+						"Type=TrackTLogRecovery",
+						"Type=MutationTracking",
+					}
+
+					// Check if any common filters exist
+					hasCommonFilters := false
+					for _, filter := range m.filterRawList {
+						for _, common := range commonTypes {
+							if filter == common {
+								hasCommonFilters = true
+								break
+							}
+						}
+						if hasCommonFilters {
+							break
+						}
+					}
+
+					if hasCommonFilters {
+						// Remove all common filters
+						var newList []string
+						newDisabled := make(map[int]bool)
+						newIdx := 0
+						for i, filter := range m.filterRawList {
+							isCommon := false
+							for _, common := range commonTypes {
+								if filter == common {
+									isCommon = true
+									break
+								}
+							}
+							if !isCommon {
+								newList = append(newList, filter)
+								// Preserve disabled state for non-common filters
+								if m.filterRawDisabled[i] {
+									newDisabled[newIdx] = true
+								}
+								newIdx++
+							}
+						}
+						m.filterRawList = newList
+						m.filterRawDisabled = newDisabled
+						m.filterRawSelectedIndex = 0
+						m.filterRawColumn = 0 // Reset to first column
+						if m.filterRawSelectedIndex >= len(m.filterRawList) {
+							m.filterRawSelectedIndex = len(m.filterRawList) - 1
+						}
+					} else {
+						// Add all common filters (enabled by default)
+						startIdx := len(m.filterRawList)
+						m.filterRawList = append(m.filterRawList, commonTypes...)
+						m.filterRawSelectedIndex = startIdx
+						// Update column index to show the new filters
+						maxRows := 5
+						m.filterRawColumn = m.filterRawSelectedIndex / maxRows
+					}
+
+					// Update visibility after filter change
+					m.ensureCurrentEventVisible()
+				}
+				return m, nil
+
 			case "enter":
 				// Open configuration for Machine or Time category only
 				if !m.filterShowAll {
@@ -365,8 +472,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.filterRawColumn >= numColumns {
 							m.filterRawColumn = 0 // Wrap to first column
 						}
-						// Reset selection to first item in new column
-						m.filterRawSelectedIndex = 0
+						// Set selection to first item in new column
+						m.filterRawSelectedIndex = m.filterRawColumn * maxRows
+						// Clamp to valid range
+						if m.filterRawSelectedIndex >= len(m.filterRawList) {
+							m.filterRawSelectedIndex = len(m.filterRawList) - 1
+						}
 					}
 				}
 				return m, nil
@@ -382,8 +493,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.filterRawColumn < 0 {
 							m.filterRawColumn = numColumns - 1 // Wrap to last column
 						}
-						// Reset selection to first item in new column
-						m.filterRawSelectedIndex = 0
+						// Set selection to first item in new column
+						m.filterRawSelectedIndex = m.filterRawColumn * maxRows
+						// Clamp to valid range
+						if m.filterRawSelectedIndex >= len(m.filterRawList) {
+							m.filterRawSelectedIndex = len(m.filterRawList) - 1
+						}
 					}
 				}
 				return m, nil
@@ -2230,16 +2345,40 @@ func (m model) renderFilterPopup(baseView string) string {
 			numColumns := (len(m.filterRawList) + maxRows - 1) / maxRows
 
 			// Build columns
-			var columns [][]string
+			type ColumnItems struct {
+				items      []int // Indices into m.filterRawList
+				startIdx   int
+				endIdx     int
+			}
+			var columns []ColumnItems
 			for col := 0; col < numColumns; col++ {
-				var column []string
 				startIdx := col * maxRows
 				endIdx := startIdx + maxRows
 				if endIdx > len(m.filterRawList) {
 					endIdx = len(m.filterRawList)
 				}
-
+				var items []int
 				for i := startIdx; i < endIdx; i++ {
+					items = append(items, i)
+				}
+				columns = append(columns, ColumnItems{
+					items:    items,
+					startIdx: startIdx,
+					endIdx:   endIdx,
+				})
+			}
+
+			// Show column indicator if multiple columns exist
+			if len(columns) > 1 {
+				columnIndicator := fmt.Sprintf("Column %d/%d (Ctrl+F/B to navigate)", m.filterRawColumn+1, len(columns))
+				content.WriteString(normalStyle.Render("  " + columnIndicator))
+				content.WriteString("\n\n")
+			}
+
+			// Display only current column
+			if m.filterRawColumn >= 0 && m.filterRawColumn < len(columns) {
+				currentColumn := columns[m.filterRawColumn]
+				for _, i := range currentColumn.items {
 					filter := m.filterRawList[i]
 					filterStyle := normalStyle
 					prefix := "  "
@@ -2261,44 +2400,9 @@ func (m model) renderFilterPopup(baseView string) string {
 						prefix = "→ "
 					}
 
-					column = append(column, filterStyle.Render(fmt.Sprintf("%s%s", prefix, filter)))
+					content.WriteString(filterStyle.Render(fmt.Sprintf("%s%s", prefix, filter)))
+					content.WriteString("\n")
 				}
-				columns = append(columns, column)
-			}
-
-			// Find max lines
-			maxLines := maxRows
-
-			// Calculate max width for each column
-			columnWidths := make([]int, len(columns))
-			for i, col := range columns {
-				maxWidth := 0
-				for _, line := range col {
-					width := lipgloss.Width(line)
-					if width > maxWidth {
-						maxWidth = width
-					}
-				}
-				columnWidths[i] = maxWidth + 3 // Add spacing
-			}
-
-			// Render line by line across all columns
-			for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
-				for colIdx, col := range columns {
-					var line string
-					if lineIdx < len(col) {
-						line = col[lineIdx]
-					}
-
-					// Pad to column width
-					lineWidth := lipgloss.Width(line)
-					if lineWidth < columnWidths[colIdx] {
-						line = line + strings.Repeat(" ", columnWidths[colIdx]-lineWidth)
-					}
-
-					content.WriteString(line)
-				}
-				content.WriteString("\n")
 			}
 		}
 		// Input field for new raw filter
@@ -2307,7 +2411,7 @@ func (m model) renderFilterPopup(baseView string) string {
 			content.WriteString(m.filterRawInput.View())
 			content.WriteString("\n")
 		} else {
-			content.WriteString(normalStyle.Render("  Press 'a' to add, 'e' to edit, 'r' to remove, 'd' to toggle disable, Ctrl+N/P to navigate, Ctrl+F/B for columns"))
+			content.WriteString(normalStyle.Render("  Press 'a' to add, 'e' to edit, 'r' to remove, 'd' to toggle disable, 'c' for common, Ctrl+N/P to navigate, Ctrl+F/B for columns"))
 			content.WriteString("\n")
 		}
 	}
@@ -2328,25 +2432,35 @@ func (m model) renderFilterPopup(baseView string) string {
 		content.WriteString(grayedStyle.Render("  (disabled - toggle All off to configure)"))
 		content.WriteString("\n")
 	} else {
-		// Show selected DCs
+		// Calculate total number of selected machines (individual + from DCs)
+		machineSet := make(map[string]bool)
+
+		// Add individual machines
+		for _, machine := range m.filterMachineList {
+			machineSet[machine] = true
+		}
+
+		// Add machines from selected DCs using cluster state
 		if len(m.filterMachineDCs) > 0 {
-			content.WriteString(normalStyle.Render("  DCs: "))
-			var dcList []string
-			for dc, selected := range m.filterMachineDCs {
-				if selected {
-					dcList = append(dcList, dc)
+			// Build cluster state to get unique machines by DC
+			clusterState := BuildClusterState(m.traceData.Events)
+			dcWorkers := clusterState.GetWorkersByDC()
+
+			for dcID, workers := range dcWorkers {
+				if m.filterMachineDCs[dcID] {
+					for _, worker := range workers {
+						machineSet[worker.Machine] = true
+					}
 				}
 			}
-			sort.Strings(dcList)
-			content.WriteString(normalStyle.Render(strings.Join(dcList, ", ")))
-			content.WriteString("\n")
 		}
-		// Show selected machines
+
+		// Show selected machines count only (not DCs)
 		if len(m.filterMachineList) == 0 && len(m.filterMachineDCs) == 0 {
 			content.WriteString(normalStyle.Render("  (no machines selected)"))
 			content.WriteString("\n")
-		} else if len(m.filterMachineList) > 0 {
-			content.WriteString(normalStyle.Render(fmt.Sprintf("  Machines: %d selected", len(m.filterMachineList))))
+		} else {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("  Machines: %d selected", len(machineSet))))
 			content.WriteString("\n")
 		}
 		content.WriteString(normalStyle.Render("  Press Enter to configure"))
@@ -2389,7 +2503,7 @@ func (m model) renderFilterPopup(baseView string) string {
 		var categoryHelp string
 		if m.filterCurrentCategory == 0 {
 			// Raw category
-			categoryHelp = "a: add | e: edit | r: remove | d: toggle disable | Ctrl+N/P: navigate | Ctrl+F/B: columns | "
+			categoryHelp = "a: add | e: edit | r: remove | d: toggle disable | c: common | Ctrl+N/P: navigate | Ctrl+F/B: columns | "
 		} else if m.filterCurrentCategory == 1 {
 			// Machine category
 			categoryHelp = "Enter: configure machines | "
@@ -2556,133 +2670,95 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 		m.filterMachineColumn = 0
 	}
 
-	// Display ALL columns side-by-side
+	// Display only current column
 	if len(columns) == 0 {
 		content.WriteString(normalStyle.Render("  (no matches)"))
 		content.WriteString("\n")
 	} else {
-		// Convert columns to line-by-line format for rendering
-		// First, build all lines for each column
-		type ColumnLines struct {
-			lines []string
-			items []SelectableItem // Track which item each line belongs to (for reference)
+		// Get current column items
+		var displayItems []SelectableItem
+		if m.filterMachineColumn >= 0 && m.filterMachineColumn < len(columns) {
+			displayItems = columns[m.filterMachineColumn]
 		}
 
-		var columnData []ColumnLines
-		for _, column := range columns {
-			var lines []string
-			for _, item := range column {
-				if item.Type == "dc" {
-					var header string
+		// Show column indicator if multiple columns exist
+		if len(columns) > 1 {
+			columnIndicator := fmt.Sprintf("Column %d/%d (Ctrl+F/B to navigate)", m.filterMachineColumn+1, len(columns))
+			content.WriteString(normalStyle.Render("  " + columnIndicator))
+			content.WriteString("\n\n")
+		}
+
+		// Render items in current column
+		for itemIdx, item := range displayItems {
+			if item.Type == "dc" {
+				var header string
+				if item.DC == "Testers" {
+					header = "Testers"
+				} else {
+					header = fmt.Sprintf("DC%s", item.DC)
+				}
+
+				// Check if this DC is selected (highlighted)
+				if itemIdx == m.filterMachineSelected {
+					content.WriteString(selectedStyle.Render("→ " + header))
+				} else {
 					if item.DC == "Testers" {
-						header = testerHeaderStyle.Render("Testers")
+						content.WriteString(testerHeaderStyle.Render("  " + header))
 					} else {
-						header = dcHeaderStyle.Render(fmt.Sprintf("DC%s", item.DC))
+						content.WriteString(dcHeaderStyle.Render("  " + header))
 					}
-					lines = append(lines, "  "+header)
-				} else if item.Type == "machine" {
-					// Check if machine or DC is selected
-					isSelected := false
-					for _, m2 := range m.filterMachineList {
-						if m2 == item.Machine {
-							isSelected = true
-							break
-						}
-					}
-					dc := extractDCFromAddress(item.Machine)
-					if !isSelected && dc != "" && m.filterMachineDCs[dc] {
+				}
+				content.WriteString("\n")
+
+			} else if item.Type == "machine" {
+				// Check if machine or DC is selected
+				isSelected := false
+				for _, m2 := range m.filterMachineList {
+					if m2 == item.Machine {
 						isSelected = true
+						break
 					}
+				}
+				dc := extractDCFromAddress(item.Machine)
+				if !isSelected && dc != "" && m.filterMachineDCs[dc] {
+					isSelected = true
+				}
 
-					checkbox := "[ ]"
+				checkbox := "[ ]"
+				if isSelected {
+					checkbox = "[x]"
+				}
+
+				machineLine := fmt.Sprintf("    %s %s", checkbox, item.Machine)
+
+				// Check if this machine is selected (highlighted)
+				if itemIdx == m.filterMachineSelected {
+					// Apply checkbox styling first
 					if isSelected {
-						checkbox = checkedStyle.Render("[x]")
-					} else {
-						checkbox = normalStyle.Render(checkbox)
+						machineLine = strings.Replace(machineLine, "[x]", checkedStyle.Render("[x]"), 1)
 					}
+					content.WriteString(selectedStyle.Render("→ " + strings.TrimPrefix(machineLine, "  ")))
+				} else {
+					// Apply checkbox styling
+					if isSelected {
+						machineLine = strings.Replace(machineLine, "[x]", checkedStyle.Render("[x]"), 1)
+					}
+					content.WriteString(normalStyle.Render(machineLine))
+				}
+				content.WriteString("\n")
 
-					machineLine := fmt.Sprintf("    %s %s", checkbox, item.Machine)
-					lines = append(lines, normalStyle.Render(machineLine))
-
-					// Add role lines
-					if item.Worker != nil {
-						for _, role := range item.Worker.Roles {
-							roleLabel := role.Name
-							if role.ID != "" {
-								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-							}
-							lines = append(lines, roleStyle.Render(fmt.Sprintf("        %s", roleLabel)))
+				// Add role lines
+				if item.Worker != nil {
+					for _, role := range item.Worker.Roles {
+						roleLabel := role.Name
+						if role.ID != "" {
+							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
 						}
+						content.WriteString(roleStyle.Render(fmt.Sprintf("        %s", roleLabel)))
+						content.WriteString("\n")
 					}
 				}
 			}
-			columnData = append(columnData, ColumnLines{lines: lines, items: column})
-		}
-
-		// Find max lines across all columns
-		maxLines := 0
-		for _, col := range columnData {
-			if len(col.lines) > maxLines {
-				maxLines = len(col.lines)
-			}
-		}
-
-		// Calculate max width for each column (for padding)
-		columnWidths := make([]int, len(columnData))
-		for i, col := range columnData {
-			maxWidth := 0
-			for _, line := range col.lines {
-				width := lipgloss.Width(line)
-				if width > maxWidth {
-					maxWidth = width
-				}
-			}
-			columnWidths[i] = maxWidth + 3 // Add spacing
-		}
-
-		// Now render line by line across all columns, with highlighting for active selection
-		for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
-			// Determine which item index this line corresponds to in each column
-			// We need to map line index back to item index for highlighting
-			for colIdx, col := range columnData {
-				var line string
-				if lineIdx < len(col.lines) {
-					line = col.lines[lineIdx]
-
-					// Calculate which item this line belongs to and if it's the first line of that item
-					// We need to figure out if this is the selected item in the active column
-					itemIdx := -1
-					isFirstLine := false
-					lineCount := 0
-					for itemI, item := range col.items {
-						numLines := 1 // DC or machine line
-						if item.Type == "machine" && item.Worker != nil {
-							numLines += len(item.Worker.Roles)
-						}
-						if lineIdx >= lineCount && lineIdx < lineCount+numLines {
-							itemIdx = itemI
-							isFirstLine = (lineIdx == lineCount) // First line of this item
-							break
-						}
-						lineCount += numLines
-					}
-
-					// Highlight only if this is the active column, selected item, AND the first line
-					if colIdx == m.filterMachineColumn && itemIdx == m.filterMachineSelected && isFirstLine {
-						// This is the selected line - highlight it
-						line = selectedStyle.Render("→ " + strings.TrimPrefix(line, "  "))
-					}
-				}
-
-				// Pad to column width
-				lineWidth := lipgloss.Width(line)
-				if lineWidth < columnWidths[colIdx] {
-					line = line + strings.Repeat(" ", columnWidths[colIdx]-lineWidth)
-				}
-
-				content.WriteString(line)
-			}
-			content.WriteString("\n")
 		}
 	}
 
@@ -2786,6 +2862,10 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString(commandStyle.Render("  d                  Toggle disable on selected raw filter (Raw category)"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("                     Toggle time filter on/off (Time category)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("  c                  Toggle common trace event filters (Raw category)"))
+	content.WriteString("\n")
+	content.WriteString(commandStyle.Render("                     Adds/removes pre-defined important event types"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  Ctrl+F/B           Navigate columns (in Raw filters)"))
 	content.WriteString("\n")
