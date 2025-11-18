@@ -27,6 +27,7 @@ type model struct {
 	configScrollOffset int // Vertical scroll offset for config popup
 	helpViewMode      bool // Help popup mode
 	healthViewMode    bool // Health popup mode
+	healthScrollOffset int // Vertical scroll offset for health popup
 	searchMode        bool // Search input mode
 	searchDirection   string // "forward" or "backward"
 	searchInput       textinput.Model
@@ -128,6 +129,7 @@ func newModel(traceData *TraceData) model {
 		configScrollOffset: 0,
 		helpViewMode:       false,
 		healthViewMode:     false,
+		healthScrollOffset: 0,
 		searchMode:         false,
 		searchDirection:    "",
 		searchInput:        si,
@@ -590,6 +592,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "x", "esc", "ctrl+c":
 				// Exit health view mode
 				m.healthViewMode = false
+				m.healthScrollOffset = 0 // Reset scroll when exiting
+				return m, nil
+			case "ctrl+p":
+				// Scroll up in health view
+				if m.healthScrollOffset > 0 {
+					m.healthScrollOffset--
+				}
+				return m, nil
+			case "ctrl+n":
+				// Scroll down in health view
+				m.healthScrollOffset++
+				// Will be clamped in renderHealthPopup
 				return m, nil
 			}
 		}
@@ -3080,6 +3094,30 @@ type NetworkMetric struct {
 	TimeoutCount  int
 }
 
+// DegradedPeerMetric represents a degraded peer detection event
+type DegradedPeerMetric struct {
+	Time                      string
+	TimeValue                 float64
+	Src                       string
+	Dst                       string
+	Disconnected              string
+	MinLatency                float64
+	MaxLatency                float64
+	MedianLatency             float64
+	CheckedPercentileLatency  float64
+	ConnectionFailureCount    int
+}
+
+// ConnectionMetric represents a Sim2Connection or SimulatedDisconnection event
+type ConnectionMetric struct {
+	Time          string
+	TimeValue     float64
+	Src           string
+	Dst           string
+	Latency       float64
+	Disconnection string // Phase value from SimulatedDisconnection events
+}
+
 // collectNetworkMetrics collects PingLatency events up to current time
 // Returns the latest metric for each (src, dst) pair
 func (m *model) collectNetworkMetrics() []NetworkMetric {
@@ -3175,6 +3213,171 @@ func (m *model) collectNetworkMetrics() []NetworkMetric {
 	return metrics
 }
 
+// collectDegradedPeerMetrics collects HealthMonitorDetectDegradedPeer events up to current time
+// Returns the latest metric for each (src, dst) pair, sorted by dst
+func (m *model) collectDegradedPeerMetrics() []DegradedPeerMetric {
+	// Map to store latest metric for each (src, dst) pair
+	metricsMap := make(map[string]*DegradedPeerMetric)
+
+	// Scan all events up to current event index
+	for i := 0; i <= m.currentEventIndex && i < len(m.traceData.Events); i++ {
+		event := &m.traceData.Events[i]
+
+		// Filter for HealthMonitorDetectDegradedPeer events
+		if event.Type != "HealthMonitorDetectDegradedPeer" {
+			continue
+		}
+
+		// Skip if no Machine or PeerAddress
+		src := event.Machine
+		dst := event.Attrs["PeerAddress"]
+		if dst == "" {
+			continue
+		}
+		if src == "" {
+			continue
+		}
+
+		// Skip 0.0.0.0 addresses (invalid/placeholder)
+		if strings.HasPrefix(src, "0.0.0.0") || strings.HasPrefix(dst, "0.0.0.0") {
+			continue
+		}
+
+		// Create key for (src, dst) pair
+		key := src + "|" + dst
+
+		// Parse metric from event attributes
+		metric := DegradedPeerMetric{
+			Time:         event.Time,
+			TimeValue:    event.TimeValue,
+			Src:          src,
+			Dst:          dst,
+			Disconnected: event.Attrs["Disconnected"],
+		}
+
+		// Parse latencies - skip invalid or unreasonably large values
+		if val, err := strconv.ParseFloat(event.Attrs["MinLatency"], 64); err == nil && val < 1000.0 {
+			metric.MinLatency = val
+		}
+		if val, err := strconv.ParseFloat(event.Attrs["MaxLatency"], 64); err == nil && val < 1000.0 {
+			metric.MaxLatency = val
+		}
+		if val, err := strconv.ParseFloat(event.Attrs["MedianLatency"], 64); err == nil && val < 1000.0 {
+			metric.MedianLatency = val
+		}
+		if val, err := strconv.ParseFloat(event.Attrs["CheckedPercentileLatency"], 64); err == nil && val < 1000.0 {
+			metric.CheckedPercentileLatency = val
+		}
+		if val, err := strconv.Atoi(event.Attrs["ConnectionFailureCount"]); err == nil {
+			metric.ConnectionFailureCount = val
+		}
+
+		// Keep latest event for this (src, dst) pair
+		if existing, found := metricsMap[key]; !found || event.TimeValue > existing.TimeValue {
+			metricsMap[key] = &metric
+		}
+	}
+
+	// Convert map to slice
+	var metrics []DegradedPeerMetric
+	for _, metric := range metricsMap {
+		metrics = append(metrics, *metric)
+	}
+
+	// Sort by dst
+	sort.Slice(metrics, func(i, j int) bool {
+		return metrics[i].Dst < metrics[j].Dst
+	})
+
+	return metrics
+}
+
+// collectConnectionMetrics collects Sim2Connection and SimulatedDisconnection events up to current time
+// Returns the latest metric for each (src, dst) pair, sorted by latency (descending)
+func (m *model) collectConnectionMetrics() []ConnectionMetric {
+	// Map to store latest metric for each (src, dst) pair
+	metricsMap := make(map[string]*ConnectionMetric)
+
+	// Scan all events up to current event index
+	for i := 0; i <= m.currentEventIndex && i < len(m.traceData.Events); i++ {
+		event := &m.traceData.Events[i]
+
+		var src, dst string
+		var metric ConnectionMetric
+
+		if event.Type == "Sim2Connection" {
+			// Handle Sim2Connection events
+			src = event.Attrs["From"]
+			dst = event.Attrs["To"]
+			if src == "" || dst == "" {
+				continue
+			}
+
+			// Skip 0.0.0.0 addresses (invalid/placeholder)
+			if strings.HasPrefix(src, "0.0.0.0") || strings.HasPrefix(dst, "0.0.0.0") {
+				continue
+			}
+
+			metric = ConnectionMetric{
+				Time:      event.Time,
+				TimeValue: event.TimeValue,
+				Src:       src,
+				Dst:       dst,
+			}
+
+			// Parse latency - skip invalid or unreasonably large values
+			if val, err := strconv.ParseFloat(event.Attrs["Latency"], 64); err == nil && val < 1000.0 {
+				metric.Latency = val
+			}
+
+		} else if event.Type == "SimulatedDisconnection" {
+			// Handle SimulatedDisconnection events
+			src = event.Attrs["Address"]
+			dst = event.Attrs["PeerAddress"]
+			if src == "" || dst == "" {
+				continue
+			}
+
+			// Skip 0.0.0.0 addresses (invalid/placeholder)
+			if strings.HasPrefix(src, "0.0.0.0") || strings.HasPrefix(dst, "0.0.0.0") {
+				continue
+			}
+
+			metric = ConnectionMetric{
+				Time:          event.Time,
+				TimeValue:     event.TimeValue,
+				Src:           src,
+				Dst:           dst,
+				Disconnection: event.Attrs["Phase"],
+			}
+
+		} else {
+			continue
+		}
+
+		// Create key for (src, dst) pair
+		key := src + "|" + dst
+
+		// Keep latest event for this (src, dst) pair
+		if existing, found := metricsMap[key]; !found || event.TimeValue > existing.TimeValue {
+			metricsMap[key] = &metric
+		}
+	}
+
+	// Convert map to slice
+	var metrics []ConnectionMetric
+	for _, metric := range metricsMap {
+		metrics = append(metrics, *metric)
+	}
+
+	// Sort by latency (descending)
+	sort.Slice(metrics, func(i, j int) bool {
+		return metrics[i].Latency > metrics[j].Latency
+	})
+
+	return metrics
+}
+
 // renderHealthPopup renders the health metrics popup overlay
 func (m model) renderHealthPopup(baseView string) string {
 	popupStyle := lipgloss.NewStyle().
@@ -3204,6 +3407,10 @@ func (m model) renderHealthPopup(baseView string) string {
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
+
+	scrollIndicatorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Italic(true)
 
 	var content strings.Builder
 	content.WriteString(titleStyle.Render(fmt.Sprintf("Cluster Health Snapshot (t=%.6fs)", m.currentTime)))
@@ -3259,9 +3466,164 @@ func (m model) renderHealthPopup(baseView string) string {
 		}
 	}
 
-	content.WriteString(helpStyle.Render("\nPress q/x/Esc to close"))
+	// Degraded Peers section
+	content.WriteString("\n")
+	content.WriteString(sectionStyle.Render("DEGRADED PEERS"))
+	content.WriteString("\n\n")
 
-	popup := popupStyle.Render(content.String())
+	// Collect degraded peer metrics
+	degradedMetrics := m.collectDegradedPeerMetrics()
+
+	if len(degradedMetrics) == 0 {
+		content.WriteString(normalStyle.Render("  No HealthMonitorDetectDegradedPeer events found"))
+		content.WriteString("\n")
+	} else {
+		// Table header
+		header := fmt.Sprintf("%-12s  %-21s  %-21s  %12s  %8s  %8s  %8s  %10s  %10s",
+			"Time", "Src", "Dst (disc/deg)", "Disconnected", "MinLat", "MaxLat", "MedLat", "P%Lat", "ConnFail")
+		content.WriteString(headerStyle.Render(header))
+		content.WriteString("\n")
+
+		// Separator line
+		separator := strings.Repeat("─", 130)
+		content.WriteString(normalStyle.Render(separator))
+		content.WriteString("\n")
+
+		// Table rows (limit to screen size)
+		maxRows := m.height - 15 // Account for title, headers, help text
+		displayCount := len(degradedMetrics)
+		if displayCount > maxRows {
+			displayCount = maxRows
+		}
+
+		for i := 0; i < displayCount; i++ {
+			metric := degradedMetrics[i]
+			row := fmt.Sprintf("%-12s  %-21s  %-21s  %12s  %7.3fs  %7.3fs  %7.3fs  %9.3fs  %10d",
+				metric.Time,
+				truncateAddr(metric.Src, 21),
+				truncateAddr(metric.Dst, 21),
+				metric.Disconnected,
+				metric.MinLatency,
+				metric.MaxLatency,
+				metric.MedianLatency,
+				metric.CheckedPercentileLatency,
+				metric.ConnectionFailureCount)
+			content.WriteString(normalStyle.Render(row))
+			content.WriteString("\n")
+		}
+
+		if len(degradedMetrics) > displayCount {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("... and %d more entries", len(degradedMetrics)-displayCount)))
+			content.WriteString("\n")
+		}
+	}
+
+	// Sim2Connection and SimulatedDisconnection section
+	content.WriteString("\n")
+	content.WriteString(sectionStyle.Render("CONNECTIONS (Sim2Connection / SimulatedDisconnection)"))
+	content.WriteString("\n\n")
+
+	// Collect connection metrics
+	connMetrics := m.collectConnectionMetrics()
+
+	if len(connMetrics) == 0 {
+		content.WriteString(normalStyle.Render("  No Sim2Connection or SimulatedDisconnection events found"))
+		content.WriteString("\n")
+	} else {
+		// Table header
+		header := fmt.Sprintf("%-12s  %-21s  %-21s  %10s  %14s",
+			"Time", "Src", "Dst", "Latency", "Disconnection")
+		content.WriteString(headerStyle.Render(header))
+		content.WriteString("\n")
+
+		// Separator line
+		separator := strings.Repeat("─", 85)
+		content.WriteString(normalStyle.Render(separator))
+		content.WriteString("\n")
+
+		// Table rows (limit to screen size)
+		maxRows := m.height - 15 // Account for title, headers, help text
+		displayCount := len(connMetrics)
+		if displayCount > maxRows {
+			displayCount = maxRows
+		}
+
+		for i := 0; i < displayCount; i++ {
+			metric := connMetrics[i]
+			row := fmt.Sprintf("%-12s  %-21s  %-21s  %9.3fs  %14s",
+				metric.Time,
+				truncateAddr(metric.Src, 21),
+				truncateAddr(metric.Dst, 21),
+				metric.Latency,
+				metric.Disconnection)
+			content.WriteString(normalStyle.Render(row))
+			content.WriteString("\n")
+		}
+
+		if len(connMetrics) > displayCount {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("... and %d more entries", len(connMetrics)-displayCount)))
+			content.WriteString("\n")
+		}
+	}
+
+	// Split content into lines for scrolling
+	contentLines := strings.Split(content.String(), "\n")
+	totalLines := len(contentLines)
+
+	// Calculate available height for content
+	// Account for: title (1 line) + top margin (1) + help text (2) + bottom margin (1) + padding (2) + border (2) = 9 lines
+	maxContentHeight := m.height - 9
+	if maxContentHeight < 5 {
+		maxContentHeight = 5 // Minimum visible lines
+	}
+
+	// Clamp scroll offset
+	maxScrollOffset := totalLines - maxContentHeight
+	if maxScrollOffset < 0 {
+		maxScrollOffset = 0
+	}
+
+	displayScrollOffset := m.healthScrollOffset
+	if displayScrollOffset < 0 {
+		displayScrollOffset = 0
+	}
+	if displayScrollOffset > maxScrollOffset {
+		displayScrollOffset = maxScrollOffset
+	}
+
+	// Determine if we have more content above/below
+	hasMoreAbove := displayScrollOffset > 0
+	hasMoreBelow := displayScrollOffset < maxScrollOffset
+
+	// Calculate visible window
+	visibleLines := contentLines
+	if totalLines > maxContentHeight {
+		endIdx := displayScrollOffset + maxContentHeight
+		if endIdx > totalLines {
+			endIdx = totalLines
+		}
+		visibleLines = contentLines[displayScrollOffset:endIdx]
+	}
+
+	// Build content with scroll indicators
+	var scrollableContent strings.Builder
+
+	if hasMoreAbove {
+		scrollableContent.WriteString(scrollIndicatorStyle.Render("↑ more above"))
+		scrollableContent.WriteString("\n")
+	}
+
+	scrollableContent.WriteString(strings.Join(visibleLines, "\n"))
+
+	if hasMoreBelow {
+		scrollableContent.WriteString("\n")
+		scrollableContent.WriteString(scrollIndicatorStyle.Render("↓ more below"))
+	}
+
+	scrollableContent.WriteString("\n")
+	scrollableContent.WriteString(helpStyle.Render("\nPress q/x/Esc to close | Ctrl+N/P to scroll"))
+
+	popup := popupStyle.Render(scrollableContent.String())
 
 	// Center the popup
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
@@ -3402,7 +3764,7 @@ func (m model) renderHelpPopup(baseView string) string {
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  c                  Show full DB config JSON (Ctrl+N/P to scroll)"))
 	content.WriteString("\n")
-	content.WriteString(commandStyle.Render("  x                  Show health metrics (network latencies)"))
+	content.WriteString(commandStyle.Render("  x                  Show health metrics (network, degraded peers, connections)"))
 	content.WriteString("\n")
 	content.WriteString(commandStyle.Render("  h                  Show this help"))
 	content.WriteString("\n\n")
