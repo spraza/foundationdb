@@ -32,6 +32,9 @@
 #if VALGRIND
 #include <memcheck.h>
 #endif
+#ifdef __GNUG__
+#include <cxxabi.h>
+#endif
 
 #include <boost/unordered_map.hpp>
 
@@ -1176,6 +1179,46 @@ static bool checkCompatible(const PeerCompatibilityPolicy& policy, ProtocolVersi
 	}
 }
 
+// Helper function to extract RPC name from receiver type using demangling
+static std::string extractRpcName(NetworkMessageReceiver* receiver) {
+	std::string rpcName = "unknown";
+	std::string typeName = typeid(*receiver).name();
+
+#ifdef __GNUG__
+	int status = -1;
+	char* demangledName = abi::__cxa_demangle(typeName.c_str(), nullptr, nullptr, &status);
+	if (status == 0 && demangledName) {
+		std::string demangled(demangledName);
+		free(demangledName);
+
+		// Extract request type from "NetNotifiedQueue<RequestType, ...>"
+		size_t start = demangled.find('<');
+		if (start != std::string::npos) {
+			// It's a template type like NetNotifiedQueue<T>
+			size_t end = demangled.find(',', start); // Find first comma
+			if (end == std::string::npos) {
+				end = demangled.rfind('>'); // No comma, find closing >
+			}
+			if (end != std::string::npos && end > start) {
+				rpcName = demangled.substr(start + 1, end - start - 1);
+				// Remove leading/trailing whitespace
+				size_t first = rpcName.find_first_not_of(" \t");
+				size_t last = rpcName.find_last_not_of(" \t");
+				if (first != std::string::npos && last != std::string::npos) {
+					rpcName = rpcName.substr(first, last - first + 1);
+				}
+			}
+		} else {
+			// It's a simple class name like PingReceiver, EndpointNotFoundReceiver
+			// Just use the demangled name directly
+			rpcName = demangled;
+		}
+	}
+#endif
+
+	return rpcName;
+}
+
 // This actor looks up the task associated with an endpoint
 // and sends the message to it. The actual deserialization will
 // be done by that task (see NetworkMessageReceiver).
@@ -1203,6 +1246,25 @@ ACTOR static void deliver(TransportData* self,
 		if (!checkCompatible(receiver->peerCompatibilityPolicy(), reader.protocolVersion())) {
 			return;
 		}
+
+		// Trace network RPC message receive
+		if (FLOW_KNOBS->TRACE_NETWORK_MESSAGES) {
+			std::string rpcName = extractRpcName(receiver);
+			std::string typeName = typeid(*receiver).name();
+			// For debugging: log the raw type name to see the format
+			TraceEvent("NetworkMessageTypeDebug")
+			    .detail("RawTypeName", typeName)
+			    .detail("EndpointToken", destination.token.toString());
+
+			TraceEvent("NetworkMessageReceived")
+			    .detail("SrcAddr", peerAddress.toString())
+			    .detail("DstAddr", destination.getPrimaryAddress().toString())
+			    .detail("EndpointToken", destination.token.toString())
+			    .detail("RPCName", rpcName)
+			    .detail("Priority", static_cast<int>(priority))
+			    .detail("TrustedPeer", isTrustedPeer);
+		}
+
 		try {
 			ASSERT(g_currentDeliveryPeerAddress == NetworkAddressList());
 			ASSERT(!g_currentDeliverPeerAddressTrusted);
@@ -2099,6 +2161,18 @@ static ReliablePacket* sendPacket(TransportData* self,
 		checkbuf = checkbuf->next;
 	}
 #endif
+
+	// Trace network RPC message send
+	if (FLOW_KNOBS->TRACE_NETWORK_MESSAGES) {
+		std::string rpcName = what.getTypeName();
+		TraceEvent("NetworkMessageSent")
+		    .detail("SrcAddr", self->localAddresses.getAddressList().address.toString())
+		    .detail("DstAddr", peer->destination.toString())
+		    .detail("EndpointToken", destination.token.toString())
+		    .detail("RPCName", rpcName)
+		    .detail("PacketLen", len)
+		    .detail("Reliable", reliable);
+	}
 
 	peer->send(pb, rp, firstUnsent);
 	if (destination.token != Endpoint::wellKnownToken(WLTOKEN_PING_PACKET)) {

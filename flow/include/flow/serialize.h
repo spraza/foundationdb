@@ -29,6 +29,9 @@
 #include <deque>
 #include <set>
 #include <stdint.h>
+#ifdef __GNUG__
+#include <cxxabi.h>
+#endif
 
 #include "flow/Arena.h"
 #include "flow/Error.h"
@@ -953,6 +956,7 @@ private:
 struct ISerializeSource {
 	virtual void serializePacketWriter(PacketWriter&) const = 0;
 	virtual void serializeObjectWriter(ObjectWriter&) const = 0;
+	virtual std::string getTypeName() const = 0;
 };
 
 template <class T, class V>
@@ -982,6 +986,20 @@ struct SerializeSource : MakeSerializeSource<SerializeSource<T>, T> {
 	SerializeSource(T const& value) : value(value) {}
 	void serializeObjectWriter(ObjectWriter& w) const override { w.serialize(value); }
 	T const& get() const override { return value; }
+
+	std::string getTypeName() const override {
+		std::string typeName = typeid(T).name();
+#ifdef __GNUG__
+		int status = -1;
+		char* demangledName = abi::__cxa_demangle(typeName.c_str(), nullptr, nullptr, &status);
+		if (status == 0 && demangledName) {
+			std::string demangled(demangledName);
+			free(demangledName);
+			return demangled;
+		}
+#endif
+		return typeName;
+	}
 };
 
 #endif

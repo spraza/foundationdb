@@ -263,6 +263,7 @@ void FlowKnobs::initialize(Randomize randomize, IsSimulated isSimulated) {
 	init( SIM_SPEEDUP_AFTER_SECONDS,                           450 );
 	init( MAX_TRACE_LINES,                               1'000'000 );
 	init( CODE_COV_TRACE_EVENT_SEVERITY,                        10 ); // Code coverage TraceEvent severity level
+	init( TRACE_NETWORK_MESSAGES,                            true /* false */ ); // Trace all network RPC messages (send/receive)
 
 	//TDMetrics
 	init( MAX_METRICS,                                         600 );
