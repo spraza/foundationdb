@@ -3202,12 +3202,15 @@ func (m *model) collectNetworkMetrics() []NetworkMetric {
 		metrics = append(metrics, *metric)
 	}
 
-	// Sort by (TimeoutCount desc, MedianLatency desc)
+	// Sort by (MedianLatency desc, Src, Dst) for deterministic ordering
 	sort.Slice(metrics, func(i, j int) bool {
-		if metrics[i].TimeoutCount != metrics[j].TimeoutCount {
-			return metrics[i].TimeoutCount > metrics[j].TimeoutCount
+		if metrics[i].MedianLatency != metrics[j].MedianLatency {
+			return metrics[i].MedianLatency > metrics[j].MedianLatency
 		}
-		return metrics[i].MedianLatency > metrics[j].MedianLatency
+		if metrics[i].Src != metrics[j].Src {
+			return metrics[i].Src < metrics[j].Src
+		}
+		return metrics[i].Dst < metrics[j].Dst
 	})
 
 	return metrics
@@ -3284,8 +3287,14 @@ func (m *model) collectDegradedPeerMetrics() []DegradedPeerMetric {
 		metrics = append(metrics, *metric)
 	}
 
-	// Sort by dst
+	// Sort by (MedianLatency desc, Src, Dst) for deterministic ordering
 	sort.Slice(metrics, func(i, j int) bool {
+		if metrics[i].MedianLatency != metrics[j].MedianLatency {
+			return metrics[i].MedianLatency > metrics[j].MedianLatency
+		}
+		if metrics[i].Src != metrics[j].Src {
+			return metrics[i].Src < metrics[j].Src
+		}
 		return metrics[i].Dst < metrics[j].Dst
 	})
 
@@ -3370,9 +3379,15 @@ func (m *model) collectConnectionMetrics() []ConnectionMetric {
 		metrics = append(metrics, *metric)
 	}
 
-	// Sort by latency (descending)
+	// Sort by (Latency desc, Src, Dst) for deterministic ordering
 	sort.Slice(metrics, func(i, j int) bool {
-		return metrics[i].Latency > metrics[j].Latency
+		if metrics[i].Latency != metrics[j].Latency {
+			return metrics[i].Latency > metrics[j].Latency
+		}
+		if metrics[i].Src != metrics[j].Src {
+			return metrics[i].Src < metrics[j].Src
+		}
+		return metrics[i].Dst < metrics[j].Dst
 	})
 
 	return metrics
@@ -3417,7 +3432,7 @@ func (m model) renderHealthPopup(baseView string) string {
 	content.WriteString("\n\n")
 
 	// Network section
-	content.WriteString(sectionStyle.Render("NETWORK LATENCIES"))
+	content.WriteString(sectionStyle.Render("NETWORK LATENCIES (PingLatency)"))
 	content.WriteString("\n\n")
 
 	// Collect network metrics
@@ -3438,11 +3453,10 @@ func (m model) renderHealthPopup(baseView string) string {
 		content.WriteString(normalStyle.Render(separator))
 		content.WriteString("\n")
 
-		// Table rows (limit to screen size)
-		maxRows := m.height - 15 // Account for title, headers, help text
+		// Table rows (show top 5 only)
 		displayCount := len(metrics)
-		if displayCount > maxRows {
-			displayCount = maxRows
+		if displayCount > 5 {
+			displayCount = 5
 		}
 
 		for i := 0; i < displayCount; i++ {
@@ -3460,15 +3474,15 @@ func (m model) renderHealthPopup(baseView string) string {
 			content.WriteString("\n")
 		}
 
-		if len(metrics) > displayCount {
-			content.WriteString(normalStyle.Render(fmt.Sprintf("... and %d more entries", len(metrics)-displayCount)))
+		if len(metrics) > 5 {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("  ... %d more entries not shown", len(metrics)-5)))
 			content.WriteString("\n")
 		}
 	}
 
 	// Degraded Peers section
 	content.WriteString("\n")
-	content.WriteString(sectionStyle.Render("DEGRADED PEERS"))
+	content.WriteString(sectionStyle.Render("DEGRADED PEERS (HealthMonitorDetectDegradedPeer)"))
 	content.WriteString("\n\n")
 
 	// Collect degraded peer metrics
@@ -3489,11 +3503,10 @@ func (m model) renderHealthPopup(baseView string) string {
 		content.WriteString(normalStyle.Render(separator))
 		content.WriteString("\n")
 
-		// Table rows (limit to screen size)
-		maxRows := m.height - 15 // Account for title, headers, help text
+		// Table rows (show top 5 only)
 		displayCount := len(degradedMetrics)
-		if displayCount > maxRows {
-			displayCount = maxRows
+		if displayCount > 5 {
+			displayCount = 5
 		}
 
 		for i := 0; i < displayCount; i++ {
@@ -3512,8 +3525,8 @@ func (m model) renderHealthPopup(baseView string) string {
 			content.WriteString("\n")
 		}
 
-		if len(degradedMetrics) > displayCount {
-			content.WriteString(normalStyle.Render(fmt.Sprintf("... and %d more entries", len(degradedMetrics)-displayCount)))
+		if len(degradedMetrics) > 5 {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("  ... %d more entries not shown", len(degradedMetrics)-5)))
 			content.WriteString("\n")
 		}
 	}
@@ -3541,11 +3554,10 @@ func (m model) renderHealthPopup(baseView string) string {
 		content.WriteString(normalStyle.Render(separator))
 		content.WriteString("\n")
 
-		// Table rows (limit to screen size)
-		maxRows := m.height - 15 // Account for title, headers, help text
+		// Table rows (show top 5 only)
 		displayCount := len(connMetrics)
-		if displayCount > maxRows {
-			displayCount = maxRows
+		if displayCount > 5 {
+			displayCount = 5
 		}
 
 		for i := 0; i < displayCount; i++ {
@@ -3560,8 +3572,8 @@ func (m model) renderHealthPopup(baseView string) string {
 			content.WriteString("\n")
 		}
 
-		if len(connMetrics) > displayCount {
-			content.WriteString(normalStyle.Render(fmt.Sprintf("... and %d more entries", len(connMetrics)-displayCount)))
+		if len(connMetrics) > 5 {
+			content.WriteString(normalStyle.Render(fmt.Sprintf("  ... %d more entries not shown", len(connMetrics)-5)))
 			content.WriteString("\n")
 		}
 	}

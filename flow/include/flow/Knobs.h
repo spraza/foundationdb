@@ -331,6 +331,7 @@ public:
 	int MAX_TRACE_EVENT_LENGTH;
 	bool ALLOCATION_TRACING_ENABLED;
 	int CODE_COV_TRACE_EVENT_SEVERITY;
+	bool TRACE_NETWORK_MESSAGES; // Trace all network RPC messages (send/receive)
 
 	// TDMetrics
 	int64_t MAX_METRIC_SIZE;
