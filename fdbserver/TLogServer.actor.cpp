@@ -1256,8 +1256,10 @@ ACTOR Future<Void> tLogPopCore(TLogData* self, Tag inputTag, Version to, Referen
 	state Tag tag(tagLocality, inputTag.id);
 	auto tagData = logData->getTagData(tag);
 	if (!tagData) {
+		TraceEvent("Foo40").detail("PoppedVer", upTo).detail("ReqTag", tag.toString());
 		tagData = logData->createTagData(tag, upTo, true, true, false);
 	} else if (upTo > tagData->popped) {
+		TraceEvent("Foo41").detail("PoppedVer", upTo).detail("ReqTag", tag.toString());
 		tagData->popped = upTo;
 		tagData->poppedRecently = true;
 
@@ -1771,6 +1773,11 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 	state int sequence = -1;
 	state UID peekId;
 	state double queueStart = now();
+	state bool foodbg = reqBegin == 933355070;
+
+	if (foodbg) {
+		TraceEvent("Foo2");
+	}
 
 	if (reqTag.locality == tagLocalityTxs && reqTag.id >= logData->txsTags && logData->txsTags > 0) {
 		reqTag.id = reqTag.id % logData->txsTags;
@@ -1787,6 +1794,9 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 				// We must erase the newly inserted tracker to avoid leaking memory, since try_emplace
 				// has already created an empty entry in the map that will never be used.
 				logData->peekTracker.erase(trackerIt);
+				if (foodbg) {
+					TraceEvent("Foo3");
+				}
 				throw operation_obsolete();
 			}
 			auto& trackerData = trackerIt->second;
@@ -1809,6 +1819,9 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 			}
 
 			if (trackerData.sequence_version.size() && sequence < seqBegin->first) {
+				if (foodbg) {
+					TraceEvent("Foo4");
+				}
 				throw operation_obsolete();
 			}
 
@@ -1822,6 +1835,12 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 			}
 			trackerData.lastUpdate = now();
 			std::pair<Version, bool> prevPeekData = wait(fPrevPeekData);
+			if (foodbg) {
+				TraceEvent("Foo40")
+				    .detail("Tag", reqTag)
+				    .detail("ReqBegin", reqBegin)
+				    .detail("PrevPeekDataFirst", prevPeekData.first);
+			}
 			reqBegin = std::max(prevPeekData.first, reqBegin);
 			reqOnlySpilled = prevPeekData.second;
 			wait(yield());
@@ -1833,6 +1852,10 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 				throw;
 			}
 		}
+	}
+
+	if (foodbg) {
+		TraceEvent("Foo5");
 	}
 
 	state double blockStart = now();
@@ -1865,6 +1888,9 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 					sequenceData.send(std::make_pair(reqBegin, reqOnlySpilled));
 				}
 			}
+			if (foodbg) {
+				TraceEvent("Foo6");
+			}
 			return Void();
 		}
 	}
@@ -1878,6 +1904,9 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 	    .detail("ClusterRecovery", replyWithRecoveryVersion.present() ? replyWithRecoveryVersion.get() : -1);
 	// Wait until we have something to return that the caller doesn't already have
 	if (!replyWithRecoveryVersion.present() && logData->version.get() < reqBegin) {
+		if (foodbg) {
+			TraceEvent("Foo60").detail("LogDataVersion", logData->version.get()).detail("ReqBegin", reqBegin);
+		}
 		wait(logData->version.whenAtLeast(reqBegin));
 		wait(delay(SERVER_KNOBS->TLOG_PEEK_DELAY, g_network->getCurrentTask()));
 	}
@@ -1894,10 +1923,18 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 		// Older generation TLog has been stopped and doesn't wait here.
 		// Similarly during recovery, reading transaction state store
 		// doesn't wait here.
+		if (foodbg) {
+			TraceEvent("Foo61")
+			    .detail("LogDataRecoveryTxnVersion", logData->recoveryTxnVersion)
+			    .detail("ReqBegin", reqBegin);
+		}
 		wait(logData->version.whenAtLeast(logData->recoveryTxnVersion) || logData->stoppedPromise.getFuture());
 	}
 
 	if (logData->locality != tagLocalitySatellite && reqTag.locality == tagLocalityLogRouter) {
+		if (foodbg) {
+			TraceEvent("Foo62").detail("ReqBegin", reqBegin);
+		}
 		wait(self->concurrentLogRouterReads.take());
 		state FlowLock::Releaser globalReleaser(self->concurrentLogRouterReads);
 		wait(delay(0.0, TaskPriority::Low));
@@ -1909,7 +1946,13 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 		// slightly faster over keeping the rest of the cluster operating normally.
 		// txsTag is only ever peeked on recovery, and we would still wish to prioritize requests
 		// that impact recovery duration.
+		if (foodbg) {
+			TraceEvent("Foo63").detail("ReqBegin", reqBegin);
+		}
 		wait(delay(0, TaskPriority::TLogSpilledPeekReply));
+		if (foodbg) {
+			TraceEvent("Foo630").detail("ReqBegin", reqBegin);
+		}
 	}
 
 	state double workStart = now();
@@ -1920,7 +1963,16 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 	// Run the peek logic in a loop to account for the case where there is no data to return to the caller, and we may
 	// want to wait a little bit instead of just sending back an empty message. This feature is controlled by a knob.
 	loop {
+		if (foodbg) {
+			TraceEvent("Foo631").detail("ReqBegin", reqBegin);
+		}
 		poppedVer = poppedVersion(logData, reqTag);
+		if (foodbg) {
+			TraceEvent("Foo632")
+			    .detail("ReqBegin", reqBegin)
+			    .detail("PoppedVer", poppedVer)
+			    .detail("ReqTag", reqTag.toString());
+		}
 
 		auto tagData = logData->getTagData(reqTag);
 		bool tagRecovered = tagData && !tagData->unpoppedRecovered;
@@ -1928,6 +1980,9 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 		    reqBegin > logData->persistentDataDurableVersion && !reqOnlySpilled && reqTag.locality >= 0 &&
 		    !reqReturnIfBlocked && tagRecovered) {
 			state double startTime = now();
+			if (foodbg) {
+				TraceEvent("Foo64").detail("ReqBegin", reqBegin);
+			}
 			wait(waitForMessagesForTag(logData, reqTag, reqBegin, SERVER_KNOBS->BLOCKING_PEEK_TIMEOUT));
 			double latency = now() - startTime;
 			auto [it, inserted] =
@@ -1939,6 +1994,9 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 			LatencySample& sample = it->second;
 			sample.addMeasurement(latency);
 			poppedVer = poppedVersion(logData, reqTag);
+			if (foodbg) {
+				TraceEvent("Foo65").detail("ReqBegin", reqBegin).detail("PoppedVer", poppedVer);
+			}
 		}
 
 		DebugLogTraceEvent("TLogPeekMessages2", self->dbgid)
@@ -1953,6 +2011,10 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 			rep.popped = poppedVer;
 			rep.end = poppedVer;
 			rep.onlySpilled = false;
+
+			if (foodbg) {
+				TraceEvent("Foo66").detail("ReqBegin", reqBegin).detail("PoppedVer", poppedVer);
+			}
 
 			if (reqSequence.present()) {
 				auto [trackerIt, _] = logData->peekTracker.try_emplace(peekId);
@@ -1979,8 +2041,18 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 				rep.begin = reqBegin;
 			}
 
+			if (foodbg) {
+				TraceEvent("Foo7").detail("ReqBegin", reqBegin).detail("PoppedVer", poppedVer);
+			}
 			replyPromise.send(rep);
 			return Void();
+		}
+
+		if (foodbg) {
+			TraceEvent("Foo8")
+			    .detail("ReqBegin", reqBegin)
+			    .detail("PoppedVer", poppedVer)
+			    .detail("ReqTag", reqTag.toString());
 		}
 
 		ASSERT(reqBegin >= poppedVersion(logData, reqTag));
@@ -1993,6 +2065,13 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 		    .detail("ReqBegin", reqBegin)
 		    .detail("Tag", reqTag.toString());
 		if (reqBegin <= logData->persistentDataDurableVersion) {
+			if (foodbg) {
+				TraceEvent("Foo9")
+				    .detail("ReqBegin", reqBegin)
+				    .detail("PoppedVer", poppedVer)
+				    .detail("ReqTag", reqTag.toString())
+				    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+			}
 			// Just in case the durable version changes while we are waiting for the read, we grab this data from
 			// memory. We may or may not actually send it depending on whether we get enough data from disk. SOMEDAY:
 			// Only do this if an initial attempt to read from disk results in insufficient data and the required data
@@ -2000,8 +2079,22 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 			// the size of the result?
 
 			if (reqOnlySpilled) {
+				if (foodbg) {
+					TraceEvent("Foo10")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 				endVersion = logData->persistentDataDurableVersion + 1;
 			} else {
+				if (foodbg) {
+					TraceEvent("Foo11")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 				peekMessagesFromMemory(logData, reqTag, reqBegin, messages2, endVersion);
 			}
 
@@ -2026,6 +2119,13 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 					messages.serializeBytes(messages2.toValue());
 				}
 			} else {
+				if (foodbg) {
+					TraceEvent("Foo12")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 				// FIXME: Limit to approximately DESIRED_TOTATL_BYTES somehow.
 				RangeResult kvrefs = wait(self->persistentData->readRange(
 				    KeyRangeRef(
@@ -2064,6 +2164,13 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 						break;
 				}
 				earlyEnd = earlyEnd || (kvrefs.size() >= SERVER_KNOBS->TLOG_SPILL_REFERENCE_MAX_BATCHES_PER_PEEK + 1);
+				if (foodbg) {
+					TraceEvent("Foo13")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 				wait(self->peekMemoryLimiter.take(TaskPriority::TLogSpilledPeekReply, commitBytes));
 				state FlowLock::Releaser memoryReservation(self->peekMemoryLimiter, commitBytes);
 				state std::vector<Future<Standalone<StringRef>>> messageReads;
@@ -2072,7 +2179,21 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 					messageReads.push_back(self->rawPersistentQueue->read(pair.first, pair.second, CheckHashes::True));
 				}
 				commitLocations.clear();
+				if (foodbg) {
+					TraceEvent("Foo14")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 				wait(waitForAll(messageReads));
+				if (foodbg) {
+					TraceEvent("Foo15")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 
 				state Version lastRefMessageVersion = 0;
 				state int index = 0;
@@ -2091,8 +2212,22 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 
 					messages << VERSION_HEADER << entry.version;
 
+					if (foodbg) {
+						TraceEvent("Foo16")
+						    .detail("ReqBegin", reqBegin)
+						    .detail("PoppedVer", poppedVer)
+						    .detail("ReqTag", reqTag.toString())
+						    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+					}
 					std::vector<StringRef> rawMessages =
 					    wait(parseMessagesForTag(entry.messages, reqTag, logData->logRouterTags));
+					if (foodbg) {
+						TraceEvent("Foo17")
+						    .detail("ReqBegin", reqBegin)
+						    .detail("PoppedVer", poppedVer)
+						    .detail("ReqTag", reqTag.toString())
+						    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+					}
 					for (const StringRef& msg : rawMessages) {
 						messages.serializeBytes(msg);
 						DEBUG_TAGS_AND_MESSAGE("TLogPeekFromDisk", entry.version, msg, logData->logId)
@@ -2115,13 +2250,42 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 				}
 			}
 		} else {
+			if (foodbg) {
+				TraceEvent("Foo18")
+				    .detail("ReqBegin", reqBegin)
+				    .detail("PoppedVer", poppedVer)
+				    .detail("ReqTag", reqTag.toString())
+				    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+			}
 			if (reqOnlySpilled) {
+				if (foodbg) {
+					TraceEvent("Foo19")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 				endVersion = logData->persistentDataDurableVersion + 1;
 			} else {
+				if (foodbg) {
+					TraceEvent("Foo20")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 				peekMessagesFromMemory(logData, reqTag, reqBegin, messages, endVersion);
 			}
 
 			//TraceEvent("TLogPeekResults", self->dbgid).detail("ForAddress", replyPromise.getEndpoint().getPrimaryAddress()).detail("MessageBytes", messages.getLength()).detail("NextEpoch", next_pos.epoch).detail("NextSeq", next_pos.sequence).detail("NowSeq", self->sequence.getNextSequence());
+		}
+
+		if (foodbg) {
+			TraceEvent("Foo21")
+			    .detail("ReqBegin", reqBegin)
+			    .detail("PoppedVer", poppedVer)
+			    .detail("ReqTag", reqTag.toString())
+			    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
 		}
 
 		// Reply the peek request when
@@ -2137,8 +2301,22 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 
 		// Currently, from `reqBegin` to logData->version are all empty peeks. Wait for more versions, or the empty
 		// batching interval has expired.
+		if (foodbg) {
+			TraceEvent("Foo22")
+			    .detail("ReqBegin", reqBegin)
+			    .detail("PoppedVer", poppedVer)
+			    .detail("ReqTag", reqTag.toString())
+			    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+		}
 		wait(logData->version.whenAtLeast(waitUntilVersion) ||
 		     delay(SERVER_KNOBS->PEEK_BATCHING_EMPTY_MSG_INTERVAL - (now() - blockStart)));
+		if (foodbg) {
+			TraceEvent("Foo23")
+			    .detail("ReqBegin", reqBegin)
+			    .detail("PoppedVer", poppedVer)
+			    .detail("ReqTag", reqTag.toString())
+			    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+		}
 		if (logData->version.get() < waitUntilVersion) {
 			break; // We know that from `reqBegin` to logData->version are all empty messages. Skip re-executing the
 			       // peek logic.
@@ -2156,6 +2334,14 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 		reply.end = replyWithRecoveryVersion.get();
 	}
 	reply.onlySpilled = onlySpilled;
+
+	if (foodbg) {
+		TraceEvent("Foo24")
+		    .detail("ReqBegin", reqBegin)
+		    .detail("PoppedVer", poppedVer)
+		    .detail("ReqTag", reqTag.toString())
+		    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+	}
 
 	DebugLogTraceEvent("TLogPeekMessages4", self->dbgid)
 	    .detail("LogId", logData->logId)
@@ -2188,6 +2374,13 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 
 		auto& sequenceData = trackerData.sequence_version[sequence + 1];
 		if (trackerData.sequence_version.size() && sequence + 1 < trackerData.sequence_version.begin()->first) {
+			if (foodbg) {
+				TraceEvent("Foo27")
+				    .detail("ReqBegin", reqBegin)
+				    .detail("PoppedVer", poppedVer)
+				    .detail("ReqTag", reqTag.toString())
+				    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+			}
 			replyPromise.sendError(operation_obsolete());
 			if (!sequenceData.isSet()) {
 				// It would technically be more correct to .send({reqBegin, reqOnlySpilled}), as the next
@@ -2196,12 +2389,26 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 				// response will probably be a waste of CPU.
 				sequenceData.sendError(operation_obsolete());
 			}
+			if (foodbg) {
+				TraceEvent("Foo28")
+				    .detail("ReqBegin", reqBegin)
+				    .detail("PoppedVer", poppedVer)
+				    .detail("ReqTag", reqTag.toString())
+				    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+			}
 			return Void();
 		}
 		if (sequenceData.isSet()) {
 			trackerData.duplicatePeeks++;
 			if (sequenceData.getFuture().get().first != reply.end) {
 				CODE_PROBE(true, "tlog peek second attempt ended at a different version (2)");
+				if (foodbg) {
+					TraceEvent("Foo29")
+					    .detail("ReqBegin", reqBegin)
+					    .detail("PoppedVer", poppedVer)
+					    .detail("ReqTag", reqTag.toString())
+					    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion);
+				}
 				replyPromise.sendError(operation_obsolete());
 				return Void();
 			}
@@ -2211,6 +2418,15 @@ Future<Void> tLogPeekMessages(PromiseType replyPromise,
 		reply.begin = reqBegin;
 	}
 
+	if (foodbg) {
+		TraceEvent("Foo30")
+		    .detail("ReqBegin", reqBegin)
+		    .detail("PoppedVer", poppedVer)
+		    .detail("ReqTag", reqTag.toString())
+		    .detail("PersistentDataDurableVersion", logData->persistentDataDurableVersion)
+		    .detail("MsgsSize", reply.messages.size())
+		    .detail("MsgsExpectedSize", reply.messages.expectedSize());
+	}
 	replyPromise.send(reply);
 	return Void();
 }
@@ -2864,6 +3080,19 @@ ACTOR Future<Void> serveTLogInterface(TLogData* self,
 			logData->addActor.send(tLogPeekStream(self, req, logData));
 		}
 		when(TLogPeekRequest req = waitNext(tli.peekMessages.getFuture())) {
+			bool foodbg = req.begin == 933355070;
+			if (foodbg) {
+				TraceEvent("Foo1")
+				    .detail("ReqBegin", req.begin)
+				    .detail("ReqEnd", req.end)
+				    .detail("ReqTag", req.tag)
+				    .detail("ReqReturnIfBlocked", req.returnIfBlocked)
+				    .detail("ReqOnlySpilled", req.onlySpilled)
+				    .detail("ReqSequence",
+				            req.sequence.present()
+				                ? req.sequence->first.toString() + ", " + std::to_string(req.sequence->second)
+				                : "NotPresent");
+			}
 			logData->addActor.send(tLogPeekMessages(req.reply,
 			                                        self,
 			                                        logData,
