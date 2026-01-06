@@ -827,6 +827,7 @@ void ServerKnobs::initialize(Randomize randomize, ClientKnobs* clientKnobs, IsSi
 	init( CC_DEGRADED_PEER_DEGREE_TO_EXCLUDE_MIN,                  1 );
 	init( CC_MAX_EXCLUSION_DUE_TO_HEALTH,                          2 );
 	init( CC_HEALTH_TRIGGER_RECOVERY,                          false );
+	init( CC_BME_TRIGGER_RECOVERY,                              true );
 	init( CC_TRACKING_HEALTH_RECOVERY_INTERVAL,               3600.0 );
 	init( CC_MAX_HEALTH_RECOVERY_COUNT,                            5 );
 	init( CC_HEALTH_TRIGGER_FAILOVER,                          false );

@@ -953,8 +953,14 @@ ACTOR Future<Void> doCheckOutstandingRequests(ClusterControllerData* self) {
 
 		self->checkRecoveryStalled();
 		if (self->betterMasterExists()) {
-			self->db.forceMasterFailure.trigger();
-			TraceEvent("MasterRegistrationKill", self->id).detail("MasterId", self->db.serverInfo->get().master.id());
+			if (!isGeneralBuggifyEnabled() && !SERVER_KNOBS->CC_BME_TRIGGER_RECOVERY) {
+				TraceEvent("BetterMasterExistsSuppressed", self->id)
+				    .detail("MasterId", self->db.serverInfo->get().master.id());
+			} else {
+				self->db.forceMasterFailure.trigger();
+				TraceEvent("MasterRegistrationKill", self->id)
+				    .detail("MasterId", self->db.serverInfo->get().master.id());
+			}
 		}
 	} catch (Error& e) {
 		if (e.code() != error_code_no_more_servers) {

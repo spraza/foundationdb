@@ -816,6 +816,9 @@ public:
 	                                    // degraded health.
 	bool CC_HEALTH_TRIGGER_RECOVERY; // If true, cluster controller will kill the master to trigger recovery when
 	                                 // detecting degraded servers. If false, cluster controller only prints a warning.
+	bool CC_BME_TRIGGER_RECOVERY; // If true, cluster controller will kill the master to trigger recovery when
+	                              // betterMasterExists detects improved fitness. If false, the check still runs
+	                              // (so checkRegions is called) but forceMasterFailure is not triggered.
 	double CC_TRACKING_HEALTH_RECOVERY_INTERVAL; // The number of recovery count should not exceed
 	                                             // CC_MAX_HEALTH_RECOVERY_COUNT within
 	                                             // CC_TRACKING_HEALTH_RECOVERY_INTERVAL.
