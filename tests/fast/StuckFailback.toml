@@ -9,7 +9,7 @@ minimumRegions = 2
 [[test]]
 testTitle = 'StuckFailback'
 
-    [[test.workload]]    
+    [[test.workload]]
     testName = 'StuckFailback'
     testDuration = 500.0
 
