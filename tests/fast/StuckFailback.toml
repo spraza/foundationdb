@@ -1,5 +1,21 @@
+# todo: in non-fast directory?
+
+[configuration]
+generateFearless = true
+processesPerMachine = 1
+machineCount = 20
+minimumRegions = 2
+
 [[test]]
 testTitle = 'StuckFailback'
 
-    [[test.workload]]
+    [[test.workload]]    
     testName = 'StuckFailback'
+    testDuration = 500.0
+
+    [[test.workload]]
+    testName = 'Cycle'
+    nodeCount = 3000
+    transactionsPerSecond = 250.0
+    testDuration = 200.0
+    expectedRate = 0
