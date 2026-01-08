@@ -61,6 +61,16 @@ struct StuckFailbackWorkload : TestWorkload {
 		return testSuccess;
 	}
 
+	ACTOR static Future<Void> originalDbConfig(StuckFailbackWorkload* self, Database cx) {
+		// At the start of your workload, enable both regions:
+		TraceEvent("StuckFailbackWorkload_OriginalBegin");
+		wait(success(ManagementAPI::changeConfig(cx.getReference(), g_simulator->originalRegions, true)));
+		TraceEvent("StuckFailbackWorkload_OriginalChanged");
+		wait(waitForFullReplication(cx)); // Make sure both regions are ready
+		TraceEvent("StuckFailbackWorkload_OriginalReplicated");
+		return Void();
+	}
+
 	ACTOR static Future<Void> doFailover(StuckFailbackWorkload* self, Database cx) {
 		TraceEvent("StuckFailbackWorkload_FailoverVerify");
 
@@ -79,6 +89,22 @@ struct StuckFailbackWorkload : TestWorkload {
 		return Void();
 	}
 
+	ACTOR static Future<Void> doFailback(StuckFailbackWorkload* self, Database cx) {
+		TraceEvent("StuckFailbackWorkload_FailbackVerify");
+
+		wait(waitForPrimaryDC(cx, "1"_sr));
+
+		TraceEvent("StuckFailbackWorkload_FailbackBegin");
+
+		wait(success(ManagementAPI::changeConfig(cx.getReference(), g_simulator->originalRegions, true)));
+		TraceEvent("StuckFailbackWorkload_FailbackWait");
+
+		wait(waitForPrimaryDC(cx, "0"_sr));
+
+		TraceEvent("StuckFailbackWorkload_FailbackComplete");
+		return Void();
+	}
+
 	ACTOR Future<Void> client(StuckFailbackWorkload* self, Database cx) {
 		TraceEvent("StuckFailbackWorkload_ClientBegin");
 		while (self->dbInfo->get().recoveryState < RecoveryState::FULLY_RECOVERED) {
@@ -87,9 +113,9 @@ struct StuckFailbackWorkload : TestWorkload {
 		}
 		TraceEvent("StuckFailbackWorkload_ClientFullyRecovered");
 
+		wait(self->originalDbConfig(self, cx));
 		wait(self->doFailover(self, cx));
-
-		// todo: failback
+		wait(self->doFailback(self, cx));
 
 		TraceEvent("StuckFailbackWorkload_ClientEnd");
 
