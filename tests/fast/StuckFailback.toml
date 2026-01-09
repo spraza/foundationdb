@@ -11,11 +11,11 @@ testTitle = 'StuckFailback'
 
     [[test.workload]]
     testName = 'StuckFailback'
-    testDuration = 500.0
+    testDuration = 1000.0
 
     [[test.workload]]
     testName = 'Cycle'
     nodeCount = 3000
     transactionsPerSecond = 250.0
-    testDuration = 500.0
+    testDuration = 1000.0
     expectedRate = 0

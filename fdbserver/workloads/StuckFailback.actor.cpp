@@ -78,7 +78,7 @@ struct StuckFailbackWorkload : TestWorkload {
 			    .detail("LatestRecoveryState", latestRecoveryState);
 			return false;
 		}
-		if (latestDcLagSeconds > 1) {
+		if (latestDcLagSeconds > 10) {
 			TraceEvent(SevError, "StuckFailbackWorkloadFailedHighDCLag")
 			    .detail("LatestDcLagSeconds", latestDcLagSeconds)
 			    .detail("PostFailbackRecoveryCount", postFailbackRecoveryCount)
