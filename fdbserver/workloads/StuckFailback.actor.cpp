@@ -22,6 +22,7 @@
 #include "fdbclient/ManagementAPI.actor.h"
 #include "fdbclient/NativeAPI.actor.h"
 #include "fdbclient/StatusClient.h"
+#include "fdbserver/MasterInterface.h"
 #include "fdbserver/RecoveryState.h"
 #include "fdbserver/ServerDBInfo.actor.h"
 #include "fdbserver/workloads/workloads.actor.h"
@@ -33,15 +34,21 @@ struct StuckFailbackWorkload : TestWorkload {
 	static constexpr auto NAME = "StuckFailback";
 	bool enabled;
 	double testDuration;
-	bool testSuccess;
+	bool testFinished;
 	double latestDcLagSeconds;
+	DBRecoveryCount postFailbackRecoveryCount;
+	DBRecoveryCount latestFailbackRecoveryCount;
+	RecoveryState latestRecoveryState;
 
 	StuckFailbackWorkload(WorkloadContext const& wcx) : TestWorkload(wcx) {
 		enabled =
 		    !clientId && g_network->isSimulated(); // only do this on the "first" client, and only when in simulation
 		testDuration = getOption(options, "testDuration"_sr, 300.0);
-		testSuccess = false;
+		testFinished = false;
 		latestDcLagSeconds = 0;
+		postFailbackRecoveryCount = 0;
+		latestFailbackRecoveryCount = 0;
+		latestRecoveryState = RecoveryState::UNINITIALIZED;
 		g_simulator->usableRegions = 2; // is this needed? similar code in toml file
 	}
 
@@ -61,12 +68,46 @@ struct StuckFailbackWorkload : TestWorkload {
 		if (!enabled) {
 			return true;
 		}
-		if (!testSuccess) {
-			TraceEvent(SevError, "StuckFailbackWorkloadFailed").detail("LatestDcLagSeconds", latestDcLagSeconds);
-		} else {
-			TraceEvent("StuckFailbackWorkloadPassed").detail("LatestDcLagSeconds", latestDcLagSeconds);
+		// recoveryState = fully_recovered
+		// recovery after failback = 1 (just failback one)
+		if (!testFinished) {
+			TraceEvent(SevError, "StuckFailbackWorkloadFailedUnfinished")
+			    .detail("LatestDcLagSeconds", latestDcLagSeconds)
+			    .detail("PostFailbackRecoveryCount", postFailbackRecoveryCount)
+			    .detail("LatestFailbackRecoveryCount", latestFailbackRecoveryCount)
+			    .detail("LatestRecoveryState", latestRecoveryState);
+			return false;
 		}
-		return testSuccess;
+		if (latestDcLagSeconds > 1) {
+			TraceEvent(SevError, "StuckFailbackWorkloadFailedHighDCLag")
+			    .detail("LatestDcLagSeconds", latestDcLagSeconds)
+			    .detail("PostFailbackRecoveryCount", postFailbackRecoveryCount)
+			    .detail("LatestFailbackRecoveryCount", latestFailbackRecoveryCount)
+			    .detail("LatestRecoveryState", latestRecoveryState);
+			return false;
+		}
+		if (latestFailbackRecoveryCount - postFailbackRecoveryCount > 2) {
+			TraceEvent(SevError, "StuckFailbackWorkloadFailedTooManyRecoveries")
+			    .detail("LatestDcLagSeconds", latestDcLagSeconds)
+			    .detail("PostFailbackRecoveryCount", postFailbackRecoveryCount)
+			    .detail("LatestFailbackRecoveryCount", latestFailbackRecoveryCount)
+			    .detail("LatestRecoveryState", latestRecoveryState);
+			return false;
+		}
+		if (latestRecoveryState != RecoveryState::FULLY_RECOVERED) {
+			TraceEvent(SevError, "StuckFailbackWorkloadFailedClusterNotFullyRecovered")
+			    .detail("LatestDcLagSeconds", latestDcLagSeconds)
+			    .detail("PostFailbackRecoveryCount", postFailbackRecoveryCount)
+			    .detail("LatestFailbackRecoveryCount", latestFailbackRecoveryCount)
+			    .detail("LatestRecoveryState", latestRecoveryState);
+			return false;
+		}
+		TraceEvent("StuckFailbackWorkloadPassed")
+		    .detail("LatestDcLagSeconds", latestDcLagSeconds)
+		    .detail("PostFailbackRecoveryCount", postFailbackRecoveryCount)
+		    .detail("LatestFailbackRecoveryCount", latestFailbackRecoveryCount)
+		    .detail("LatestRecoveryState", latestRecoveryState);
+		return true;
 	}
 
 	void disableFailureInjectionWorkloads(std::set<std::string>& out) const override { out.insert("all"); }
@@ -173,11 +214,14 @@ struct StuckFailbackWorkload : TestWorkload {
 		wait(self->doFailover(self, cx));
 		wait(delay(100));
 		wait(self->doFailback(self, cx));
+		self->postFailbackRecoveryCount = self->dbInfo->get().recoveryCount;
 		wait(delay(100));
 
 		TraceEvent("StuckFailbackWorkload_ClientEnd");
 
-		self->testSuccess = true;
+		self->latestFailbackRecoveryCount = self->dbInfo->get().recoveryCount;
+		self->latestRecoveryState = self->dbInfo->get().recoveryState;
+		self->testFinished = true;
 
 		return Void();
 	}
