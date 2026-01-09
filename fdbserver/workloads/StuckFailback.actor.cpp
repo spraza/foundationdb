@@ -21,6 +21,7 @@
 #include "fdbclient/GenericManagementAPI.actor.h"
 #include "fdbclient/ManagementAPI.actor.h"
 #include "fdbclient/NativeAPI.actor.h"
+#include "fdbclient/StatusClient.h"
 #include "fdbserver/RecoveryState.h"
 #include "fdbserver/ServerDBInfo.actor.h"
 #include "fdbserver/workloads/workloads.actor.h"
@@ -33,12 +34,14 @@ struct StuckFailbackWorkload : TestWorkload {
 	bool enabled;
 	double testDuration;
 	bool testSuccess;
+	double latestDcLagSeconds;
 
 	StuckFailbackWorkload(WorkloadContext const& wcx) : TestWorkload(wcx) {
 		enabled =
 		    !clientId && g_network->isSimulated(); // only do this on the "first" client, and only when in simulation
 		testDuration = getOption(options, "testDuration"_sr, 300.0);
 		testSuccess = false;
+		latestDcLagSeconds = 0;
 		g_simulator->usableRegions = 2; // is this needed? similar code in toml file
 	}
 
@@ -59,12 +62,59 @@ struct StuckFailbackWorkload : TestWorkload {
 			return true;
 		}
 		if (!testSuccess) {
-			TraceEvent(SevError, "StuckFailbackWorkloadFailed");
+			TraceEvent(SevError, "StuckFailbackWorkloadFailed").detail("LatestDcLagSeconds", latestDcLagSeconds);
+		} else {
+			TraceEvent("StuckFailbackWorkloadPassed").detail("LatestDcLagSeconds", latestDcLagSeconds);
 		}
 		return testSuccess;
 	}
 
 	void disableFailureInjectionWorkloads(std::set<std::string>& out) const override { out.insert("all"); }
+
+	// Fetches details (versions and seconds) of the specified type of lag (tlog/storage server/data center lag) from
+	// the given status json document.
+	bool fetchLagFromStatusObject(std::string path, StatusObjectReader& statusObj, Version& versions, double& seconds) {
+		StatusObjectReader lagObject;
+		if (!statusObj.get(path, lagObject)) {
+			return false;
+		}
+
+		if (!lagObject.get("versions", versions)) {
+			return false;
+		}
+
+		if (!lagObject.get("seconds", seconds)) {
+			return false;
+		}
+
+		return true;
+	}
+
+	ACTOR static Future<Void> reportDCLag(StuckFailbackWorkload* self, Database cx) {
+		loop {
+			wait(delay(15));
+			TraceEvent("StuckFailbackWorkload_ReportDCLagStartAttempt");
+
+			StatusObject result = wait(StatusClient::statusFetcher(cx));
+			StatusObjectReader statusObj(result);
+			StatusObjectReader statusObjCluster;
+			if (!statusObj.get("cluster", statusObjCluster)) {
+				TraceEvent("StuckFailbackWorkload_ReportDCLagNoCluster");
+				continue;
+			}
+
+			// Fetch the lag between primary and remote data centers.
+			Version dcLagInVersions = 0;
+			double dcLagInSeconds = 0;
+			if (!self->fetchLagFromStatusObject("datacenter_lag", statusObjCluster, dcLagInVersions, dcLagInSeconds)) {
+				TraceEvent("StuckFailbackWorkload_ReportDCLagNoLagData");
+				continue;
+			}
+			(void)dcLagInVersions;
+			TraceEvent("StuckFailbackWorkload_ReportDCLagData").detail("DcLagSeconds", dcLagInSeconds);
+			self->latestDcLagSeconds = dcLagInSeconds;
+		}
+	}
 
 	ACTOR static Future<Void> originalDbConfig(StuckFailbackWorkload* self, Database cx) {
 		// At the start of your workload, enable both regions:
@@ -118,9 +168,12 @@ struct StuckFailbackWorkload : TestWorkload {
 		}
 		TraceEvent("StuckFailbackWorkload_ClientFullyRecovered");
 
+		state Future<Void> reportDCLagActor = reportDCLag(self, cx);
 		wait(self->originalDbConfig(self, cx));
 		wait(self->doFailover(self, cx));
+		wait(delay(100));
 		wait(self->doFailback(self, cx));
+		wait(delay(100));
 
 		TraceEvent("StuckFailbackWorkload_ClientEnd");
 
