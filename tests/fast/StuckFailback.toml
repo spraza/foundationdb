@@ -8,6 +8,7 @@ minimumRegions = 2
 
 [[test]]
 testTitle = 'StuckFailback'
+connectionFailuresDisableDuration = 100000 # disable any network connection failures which can happen outside buggify or fault injection workloads
 
     [[test.workload]]
     testName = 'StuckFailback'
