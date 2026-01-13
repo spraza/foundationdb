@@ -889,7 +889,11 @@ Future<Void> checkRemoved(Reference<AsyncVar<ServerDBInfo> const> db,
 		bool isDisplaced =
 		    ((db->get().recoveryCount > recoveryCount && db->get().recoveryState != RecoveryState::UNINITIALIZED) ||
 		     (db->get().recoveryCount == recoveryCount && db->get().recoveryState == RecoveryState::FULLY_RECOVERED));
-		isDisplaced = isDisplaced && !db->get().logSystemConfig.hasLogRouter(myInterface.id());
+		// Use hasLogRouterInCurrentEpoch instead of hasLogRouter to ensure old epoch
+		// log routers are displaced when a new epoch starts. Old log routers that remain
+		// in oldTLogs can get stuck trying to peek from locked/stopped TLogs, causing
+		// DC lag to grow indefinitely after failback.
+		isDisplaced = isDisplaced && !db->get().logSystemConfig.hasLogRouterInCurrentEpoch(myInterface.id());
 		if (isDisplaced) {
 			throw worker_removed();
 		}

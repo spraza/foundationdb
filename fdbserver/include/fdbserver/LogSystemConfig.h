@@ -216,6 +216,10 @@ struct LogSystemConfig {
 
 	bool hasLogRouter(UID rid) const;
 
+	// Check if a log router is in the current epoch's log system (not oldTLogs).
+	// Used for displacement checks where old epoch log routers should be displaced.
+	bool hasLogRouterInCurrentEpoch(UID rid) const;
+
 	bool hasBackupWorker(UID bid) const;
 
 	Version getEpochEndVersion(LogEpoch epoch) const;

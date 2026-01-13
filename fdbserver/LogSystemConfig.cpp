@@ -317,6 +317,17 @@ bool LogSystemConfig::hasLogRouter(UID rid) const {
 	return false;
 }
 
+bool LogSystemConfig::hasLogRouterInCurrentEpoch(UID rid) const {
+	// Only check current epoch's tLogs, not oldTLogs.
+	// Old epoch log routers should be displaced after a new epoch starts.
+	for (const auto& log : tLogs) {
+		if (std::find(log.logRouters.begin(), log.logRouters.end(), rid) != log.logRouters.end()) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool LogSystemConfig::hasBackupWorker(UID bid) const {
 	for (const auto& log : tLogs) {
 		if (std::find(log.backupWorkers.begin(), log.backupWorkers.end(), bid) != log.backupWorkers.end()) {
