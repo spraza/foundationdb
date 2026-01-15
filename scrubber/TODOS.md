@@ -1,1 +1,2 @@
 - have history tab e.g. past recovery history, db config history, epoch history, etc. genearlly my principle has been "as of now" state, and no memory... but I guess I can extend this to "history as of now" and deem it as acceptable given its potential productivity gains
+- have epoch associated with txn interfaces. useful to understand what generation they belong to, especially useful during recovery.
