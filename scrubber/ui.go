@@ -1042,6 +1042,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// formatNumberWithCommas formats an int64 with comma separators for readability
+// e.g., 53407865 -> "53,407,865"
+func formatNumberWithCommas(n int64) string {
+	if n < 0 {
+		return "-" + formatNumberWithCommas(-n)
+	}
+	str := fmt.Sprintf("%d", n)
+	if len(str) <= 3 {
+		return str
+	}
+
+	// Insert commas from right to left
+	var result strings.Builder
+	for i, c := range str {
+		if i > 0 && (len(str)-i)%3 == 0 {
+			result.WriteRune(',')
+		}
+		result.WriteRune(c)
+	}
+	return result.String()
+}
+
 // formatTraceEvent formats a trace event for display with config.fish field ordering and colors
 func formatTraceEvent(event *TraceEvent, isCurrent bool, searchPattern string) string {
 	// Skip fields as per config.fish and fields shown in topology
@@ -2635,12 +2657,12 @@ func (m model) View() string {
 		// Format KCV - show "n/a" if not available
 		kcvStr := "n/a"
 		if epochInfo.HasKCV && epochInfo.KCV > 0 {
-			kcvStr = fmt.Sprintf("%d", epochInfo.KCV)
+			kcvStr = formatNumberWithCommas(epochInfo.KCV)
 		}
 
 		epochContent := epochTitleStyle.Render(fmt.Sprintf("Epoch (t=%.6fs)", epochInfo.Time)) + " "
-		epochContent += epochValueStyle.Render(fmt.Sprintf("epoch=%d | KCV=%s | RV=%d | recoveryTxnVersion=%d",
-			epochInfo.Epoch, kcvStr, epochInfo.RV, epochInfo.RecoveryTxnVersion))
+		epochContent += epochValueStyle.Render(fmt.Sprintf("epoch=%d | KCV=%s | RV=%s | recoveryTxnVersion=%s",
+			epochInfo.Epoch, kcvStr, formatNumberWithCommas(epochInfo.RV), formatNumberWithCommas(epochInfo.RecoveryTxnVersion)))
 
 		bottomSection.WriteString(epochStyle.Render(epochContent))
 		bottomSection.WriteString("\n")
