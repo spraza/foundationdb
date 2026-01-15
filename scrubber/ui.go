@@ -1042,6 +1042,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// formatRoleLabel formats a role label with ID and epoch (if applicable)
+// For TLog, LogRouter, BackupWorker: shows "RoleName [ID] (e=Epoch)"
+// For other roles: shows "RoleName [ID]" or just "RoleName"
+func formatRoleLabel(role RoleInfo) string {
+	roleLabel := role.Name
+	if role.ID != "" {
+		roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
+	}
+	// Add epoch for TLog, LogRouter, and BackupWorker roles
+	if role.Epoch != "" && (role.Name == "TLog" || role.Name == "LogRouter" || role.Name == "BackupWorker") {
+		roleLabel = fmt.Sprintf("%s (e=%s)", roleLabel, role.Epoch)
+	}
+	return roleLabel
+}
+
 // formatNumberWithCommas formats an int64 with comma separators for readability
 // e.g., 53407865 -> "53,407,865"
 func formatNumberWithCommas(n int64) string {
@@ -2145,10 +2160,7 @@ func (m model) View() string {
 
 						// Show each role, highlighting the one with matching ID
 						for _, role := range worker.Roles {
-							roleLabel := role.Name
-							if role.ID != "" {
-								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-							}
+							roleLabel := formatRoleLabel(role)
 							if role.ID == currentID {
 								// Highlight this specific role
 								allTopologyLines = append(allTopologyLines, roleStyleCurrent.Render("    → "+roleLabel))
@@ -2175,10 +2187,7 @@ func (m model) View() string {
 
 						// Show all roles normally
 						for _, role := range worker.Roles {
-							roleLabel := role.Name
-							if role.ID != "" {
-								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-							}
+							roleLabel := formatRoleLabel(role)
 							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					} else if worker.HasNonWorkerRoles() {
@@ -2198,10 +2207,7 @@ func (m model) View() string {
 						}
 
 						for _, role := range worker.Roles {
-							roleLabel := role.Name
-							if role.ID != "" {
-								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-							}
+							roleLabel := formatRoleLabel(role)
 							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					} else {
@@ -2222,10 +2228,7 @@ func (m model) View() string {
 
 						// Show all roles (including Worker if present)
 						for _, role := range worker.Roles {
-							roleLabel := role.Name
-							if role.ID != "" {
-								roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-							}
+							roleLabel := formatRoleLabel(role)
 							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					}
@@ -2283,10 +2286,7 @@ func (m model) View() string {
 
 					// Show each role, highlighting the one with matching ID
 					for _, role := range worker.Roles {
-						roleLabel := role.Name
-						if role.ID != "" {
-							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-						}
+						roleLabel := formatRoleLabel(role)
 						if role.ID == currentID {
 							// Highlight this specific role
 							allTopologyLines = append(allTopologyLines, roleStyleCurrent.Render("    → "+roleLabel))
@@ -2313,10 +2313,7 @@ func (m model) View() string {
 
 					// Show all roles normally
 					for _, role := range worker.Roles {
-						roleLabel := role.Name
-						if role.ID != "" {
-							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-						}
+						roleLabel := formatRoleLabel(role)
 						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				} else if worker.HasNonWorkerRoles() {
@@ -2336,10 +2333,7 @@ func (m model) View() string {
 					}
 
 					for _, role := range worker.Roles {
-						roleLabel := role.Name
-						if role.ID != "" {
-							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-						}
+						roleLabel := formatRoleLabel(role)
 						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				} else {
@@ -2360,10 +2354,7 @@ func (m model) View() string {
 
 					// Show all roles (including Worker if present)
 					for _, role := range worker.Roles {
-						roleLabel := role.Name
-						if role.ID != "" {
-							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-						}
+						roleLabel := formatRoleLabel(role)
 						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				}
@@ -3236,10 +3227,7 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 				// Add role lines
 				if item.Worker != nil {
 					for _, role := range item.Worker.Roles {
-						roleLabel := role.Name
-						if role.ID != "" {
-							roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
-						}
+						roleLabel := formatRoleLabel(role)
 						content.WriteString(roleStyle.Render(fmt.Sprintf("        %s", roleLabel)))
 						content.WriteString("\n")
 					}

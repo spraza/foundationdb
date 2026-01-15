@@ -7,8 +7,9 @@ import (
 
 // RoleInfo represents a role with its ID
 type RoleInfo struct {
-	Name string // e.g., "StorageServer", "Coordinator"
-	ID   string // e.g., "f5f3670ef3675364"
+	Name  string // e.g., "StorageServer", "Coordinator"
+	ID    string // e.g., "f5f3670ef3675364"
+	Epoch string // Generation/Epoch for TLog, LogRouter, BackupWorker (empty for others)
 }
 
 // Worker represents a process in the cluster
@@ -82,7 +83,44 @@ func parseAddress(address string) (machineType string, dcID string) {
 func BuildClusterState(events []TraceEvent) *ClusterState {
 	state := NewClusterState()
 
+	// Map to track epoch info by role ID (from metrics events)
+	epochByID := make(map[string]string)
+
 	for _, event := range events {
+		// Extract epoch info from start events (preferred - happens at initialization)
+		// and metrics events (fallback - happens periodically)
+		switch event.Type {
+		case "TLogStart":
+			// TLog epoch is in the "RecoveryCount" attribute
+			if recoveryCount, ok := event.Attrs["RecoveryCount"]; ok && event.ID != "" {
+				epochByID[event.ID] = recoveryCount
+			}
+		case "LogRouterStart":
+			// LogRouter epoch is in the "Epoch" attribute
+			if epoch, ok := event.Attrs["Epoch"]; ok && event.ID != "" {
+				epochByID[event.ID] = epoch
+			}
+		case "BackupWorkerStart":
+			// BackupWorker recruited epoch is in "LogEpoch" attribute
+			if logEpoch, ok := event.Attrs["LogEpoch"]; ok && event.ID != "" {
+				epochByID[event.ID] = logEpoch
+			}
+		case "TLogMetrics":
+			// TLog epoch from metrics (fallback if start event missed)
+			if generation, ok := event.Attrs["Generation"]; ok && event.ID != "" {
+				if _, exists := epochByID[event.ID]; !exists {
+					epochByID[event.ID] = generation
+				}
+			}
+		case "LogRouterMetrics":
+			// LogRouter epoch from metrics (fallback if start event missed)
+			if generation, ok := event.Attrs["Generation"]; ok && event.ID != "" {
+				if _, exists := epochByID[event.ID]; !exists {
+					epochByID[event.ID] = generation
+				}
+			}
+		}
+
 		if event.Type == "Role" && event.Machine != "0.0.0.0:0" {
 			transition := event.Attrs["Transition"]
 			roleName := event.Attrs["As"]
@@ -118,8 +156,9 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 				}
 				if !hasRole {
 					worker.Roles = append(worker.Roles, RoleInfo{
-						Name: roleName,
-						ID:   roleID,
+						Name:  roleName,
+						ID:    roleID,
+						Epoch: epochByID[roleID], // May be empty if metrics not seen yet
 					})
 				}
 			} else if transition == "End" {
@@ -133,6 +172,17 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 				worker.Roles = newRoles
 			}
 			// "Refresh" transitions don't change state, just skip them
+		}
+	}
+
+	// Second pass: Update roles with epoch info that may have arrived after the Role event
+	for _, worker := range state.Workers {
+		for i := range worker.Roles {
+			if worker.Roles[i].Epoch == "" {
+				if epoch, ok := epochByID[worker.Roles[i].ID]; ok {
+					worker.Roles[i].Epoch = epoch
+				}
+			}
 		}
 	}
 
