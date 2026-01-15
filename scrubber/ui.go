@@ -2630,7 +2630,7 @@ func (m model) View() string {
 			Bold(true)
 
 		epochValueStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("214")) // Orange for epoch info
+			Foreground(lipgloss.Color("252")) // Same gray/white as config values
 
 		// Format KCV - show "n/a" if not available
 		kcvStr := "n/a"
