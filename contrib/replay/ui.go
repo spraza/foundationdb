@@ -1055,8 +1055,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // For TLog with LogRouters: shows "TLog [ID] (e=Epoch v=Version ←LR:id1,id2,id3)"
 // Buddy references only shown if the buddy exists in current topology (no dangling refs)
 // For other roles: shows "RoleName [ID]" or just "RoleName"
-// currentTime is used to detect stale versions (versions captured more than 5 seconds ago)
-func formatRoleLabel(role RoleInfo, currentTime float64) string {
+func formatRoleLabel(role RoleInfo) string {
 	roleLabel := role.Name
 	if role.ID != "" {
 		roleLabel = fmt.Sprintf("%s [%s]", role.Name, role.ID)
@@ -1071,17 +1070,9 @@ func formatRoleLabel(role RoleInfo, currentTime float64) string {
 	}
 
 	// Add version for roles that process versions
-	// If version is stale (>5 seconds old), style it in darker gray
 	if role.Version > 0 {
-		versionStr := formatNumberWithCommas(role.Version)
-		isStale := role.VersionTime > 0 && (currentTime-role.VersionTime) > 5.0
-		if isStale {
-			// Darker gray for stale versions
-			staleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-			info = append(info, fmt.Sprintf("v=%s", staleStyle.Render(versionStr)))
-		} else {
-			info = append(info, fmt.Sprintf("v=%s", versionStr))
-		}
+		// Format version with commas for readability
+		info = append(info, fmt.Sprintf("v=%s", formatNumberWithCommas(role.Version)))
 	}
 
 	// Add buddy info for StorageServer and LogRouter (who they peek from, 1:1)
@@ -2219,7 +2210,7 @@ func (m model) View() string {
 
 						// Show each role, highlighting the one with matching ID
 						for _, role := range worker.Roles {
-							roleLabel := formatRoleLabel(role, m.currentTime)
+							roleLabel := formatRoleLabel(role)
 							if role.ID == currentID {
 								// Highlight this specific role
 								allTopologyLines = append(allTopologyLines, roleStyleCurrent.Render("    → "+roleLabel))
@@ -2246,7 +2237,7 @@ func (m model) View() string {
 
 						// Show all roles normally
 						for _, role := range worker.Roles {
-							roleLabel := formatRoleLabel(role, m.currentTime)
+							roleLabel := formatRoleLabel(role)
 							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					} else if worker.HasNonWorkerRoles() {
@@ -2266,7 +2257,7 @@ func (m model) View() string {
 						}
 
 						for _, role := range worker.Roles {
-							roleLabel := formatRoleLabel(role, m.currentTime)
+							roleLabel := formatRoleLabel(role)
 							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					} else {
@@ -2287,7 +2278,7 @@ func (m model) View() string {
 
 						// Show all roles (including Worker if present)
 						for _, role := range worker.Roles {
-							roleLabel := formatRoleLabel(role, m.currentTime)
+							roleLabel := formatRoleLabel(role)
 							allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 						}
 					}
@@ -2345,7 +2336,7 @@ func (m model) View() string {
 
 					// Show each role, highlighting the one with matching ID
 					for _, role := range worker.Roles {
-						roleLabel := formatRoleLabel(role, m.currentTime)
+						roleLabel := formatRoleLabel(role)
 						if role.ID == currentID {
 							// Highlight this specific role
 							allTopologyLines = append(allTopologyLines, roleStyleCurrent.Render("    → "+roleLabel))
@@ -2372,7 +2363,7 @@ func (m model) View() string {
 
 					// Show all roles normally
 					for _, role := range worker.Roles {
-						roleLabel := formatRoleLabel(role, m.currentTime)
+						roleLabel := formatRoleLabel(role)
 						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				} else if worker.HasNonWorkerRoles() {
@@ -2392,7 +2383,7 @@ func (m model) View() string {
 					}
 
 					for _, role := range worker.Roles {
-						roleLabel := formatRoleLabel(role, m.currentTime)
+						roleLabel := formatRoleLabel(role)
 						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				} else {
@@ -2413,7 +2404,7 @@ func (m model) View() string {
 
 					// Show all roles (including Worker if present)
 					for _, role := range worker.Roles {
-						roleLabel := formatRoleLabel(role, m.currentTime)
+						roleLabel := formatRoleLabel(role)
 						allTopologyLines = append(allTopologyLines, roleStyle.Render("      "+roleLabel))
 					}
 				}
@@ -3328,7 +3319,7 @@ func (m model) renderMachineSelectionPopup(baseView string) string {
 				// Add role lines
 				if item.Worker != nil {
 					for _, role := range item.Worker.Roles {
-						roleLabel := formatRoleLabel(role, m.currentTime)
+						roleLabel := formatRoleLabel(role)
 						content.WriteString(roleStyle.Render(fmt.Sprintf("        %s", roleLabel)))
 						content.WriteString("\n")
 					}
