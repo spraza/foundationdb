@@ -7,4 +7,3 @@
 - control plane metadata (srcs: system key space, commit proxy txn state store, role specific code, etc.)
       --- range maps (key to shard, shard to key range, shard to ss, ss to shard)
       --- buddies in txn (ss <-> tlog on primary and remote, remote tlog <-> LR, LR <-> primary/satellite tlog)
-      --- dd operations, even on dst ss, we can tell which ss it's fetching from

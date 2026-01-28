@@ -1071,10 +1071,10 @@ func formatRoleLabel(role RoleInfo, currentTime float64) string {
 	}
 
 	// Add version for roles that process versions
-	// If version is stale (>=1 second old), style it in darker gray
+	// If version is stale (>5 seconds old), style it in darker gray
 	if role.Version > 0 {
 		versionStr := formatNumberWithCommas(role.Version)
-		isStale := role.VersionTime > 0 && (currentTime-role.VersionTime) >= 1.0
+		isStale := role.VersionTime > 0 && (currentTime-role.VersionTime) > 5.0
 		if isStale {
 			// Darker gray for stale versions
 			staleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
