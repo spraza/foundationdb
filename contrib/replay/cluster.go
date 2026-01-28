@@ -8,12 +8,13 @@ import (
 
 // RoleInfo represents a role with its ID
 type RoleInfo struct {
-	Name       string   // e.g., "StorageServer", "Coordinator"
-	ID         string   // e.g., "f5f3670ef3675364"
-	Epoch      string   // Generation/Epoch for TLog, LogRouter, BackupWorker (empty for others)
-	Version    int64    // Latest processed version for TLog, StorageServer, LogRouter (0 if unknown)
-	BuddyID    string   // Buddy relationship: SS->TLog, LogRouter->TLog it peeks from (empty if unknown)
-	BuddyIDs   []string // For Remote TLog: list of LogRouter IDs it pulls from (1:N relationship)
+	Name        string   // e.g., "StorageServer", "Coordinator"
+	ID          string   // e.g., "f5f3670ef3675364"
+	Epoch       string   // Generation/Epoch for TLog, LogRouter, BackupWorker (empty for others)
+	Version     int64    // Latest processed version for TLog, StorageServer, LogRouter (0 if unknown)
+	VersionTime float64  // Time when Version was captured (for staleness detection)
+	BuddyID     string   // Buddy relationship: SS->TLog, LogRouter->TLog it peeks from (empty if unknown)
+	BuddyIDs    []string // For Remote TLog: list of LogRouter IDs it pulls from (1:N relationship)
 }
 
 // Worker represents a process in the cluster
@@ -89,8 +90,12 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 
 	// Map to track epoch info by role ID (from metrics events)
 	epochByID := make(map[string]string)
-	// Map to track version by role ID (from metrics events)
-	versionByID := make(map[string]int64)
+	// Map to track version by role ID (from metrics events) - stores version and timestamp
+	type versionInfo struct {
+		version int64
+		time    float64
+	}
+	versionByID := make(map[string]versionInfo)
 	// Map to track buddy ID by role ID (SS->TLog, LogRouter->TLog)
 	buddyByID := make(map[string]string)
 	// Map to track buddy IDs list by role ID (Remote TLog->LogRouters, 1:N)
@@ -125,7 +130,7 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 			// TLog version from metrics
 			if version, ok := event.Attrs["Version"]; ok && event.ID != "" {
 				if v, err := strconv.ParseInt(version, 10, 64); err == nil {
-					versionByID[event.ID] = v
+					versionByID[event.ID] = versionInfo{version: v, time: event.TimeValue}
 				}
 			}
 		case "LogRouterMetrics":
@@ -138,7 +143,7 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 			// LogRouter version from metrics
 			if version, ok := event.Attrs["Version"]; ok && event.ID != "" {
 				if v, err := strconv.ParseInt(version, 10, 64); err == nil {
-					versionByID[event.ID] = v
+					versionByID[event.ID] = versionInfo{version: v, time: event.TimeValue}
 				}
 			}
 			// LogRouter buddy from metrics (PrimaryPeekLocation)
@@ -151,7 +156,7 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 			// StorageServer version from metrics
 			if version, ok := event.Attrs["Version"]; ok && event.ID != "" {
 				if v, err := strconv.ParseInt(version, 10, 64); err == nil {
-					versionByID[event.ID] = v
+					versionByID[event.ID] = versionInfo{version: v, time: event.TimeValue}
 				}
 			}
 		case "StorageServerSourceTLogID":
@@ -262,8 +267,9 @@ func BuildClusterState(events []TraceEvent) *ClusterState {
 				}
 			}
 			// Update version from metrics
-			if version, ok := versionByID[worker.Roles[i].ID]; ok {
-				worker.Roles[i].Version = version
+			if vInfo, ok := versionByID[worker.Roles[i].ID]; ok {
+				worker.Roles[i].Version = vInfo.version
+				worker.Roles[i].VersionTime = vInfo.time
 			}
 			// Update buddy info (1:1 relationships: SS->TLog, LogRouter->TLog)
 			// Only if the buddy still exists in topology
