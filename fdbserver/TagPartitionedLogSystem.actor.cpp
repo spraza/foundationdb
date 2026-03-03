@@ -3051,9 +3051,24 @@ ACTOR Future<Void> TagPartitionedLogSystem::newRemoteEpoch(TagPartitionedLogSyst
 	}
 
 	state std::vector<Future<TLogInterface>> logRouterInitializationReplies;
-	const Version startVersion = oldLogSystem->logRouterTags == 0
-	                                 ? oldLogSystem->recoverAt.get() + 1
-	                                 : std::max(self->tLogs[0]->startVersion, logSet->startVersion);
+	// Compute start version for log routers. The start version must be at least as high as:
+	// 1. Primary TLog's start version (self->tLogs[0]->startVersion)
+	// 2. Remote TLog's start version (logSet->startVersion)
+	// 3. Satellite's start version (self->tLogs[1]->startVersion, if satellites exist)
+	// The satellite constraint is critical because log routers peek from satellites (when TLogVersion >= V4),
+	// and satellites only have data from their startVersion onwards. Without this constraint, during failback
+	// the log router's startVersion could be lower than the satellite's startVersion (because primary TLog's
+	// startVersion is lowered based on old primary DC's lock results), causing log routers to be stuck waiting
+	// for data that satellites don't have.
+	Version startVersion = oldLogSystem->logRouterTags == 0
+	                           ? oldLogSystem->recoverAt.get() + 1
+	                           : std::max(self->tLogs[0]->startVersion, logSet->startVersion);
+	// If satellites exist (usableRegions > 1) and TLogVersion >= V4, log routers will peek from satellites,
+	// so their startVersion must be at least as high as the satellite's startVersion.
+	if (self->tLogs.size() > 1 && self->tLogs[1]->locality == tagLocalitySatellite &&
+	    self->tLogs[1]->tLogVersion >= TLogVersion::V4) {
+		startVersion = std::max(startVersion, self->tLogs[1]->startVersion);
+	}
 	TraceEvent("LogRouterInitReqSent3").detail("Locality", remoteLocality).detail("LogRouterTags", self->logRouterTags);
 	for (int i = 0; i < self->logRouterTags; i++) {
 		InitializeLogRouterRequest req;
