@@ -5,9 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func main() {
+	// Force 256 color support - some terminals don't advertise it correctly
+	lipgloss.SetColorProfile(termenv.ANSI256)
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
