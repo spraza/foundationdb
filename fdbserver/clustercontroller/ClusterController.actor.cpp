@@ -519,6 +519,11 @@ ACTOR Future<Void> clusterWatchDatabase(ClusterControllerData* cluster,
 			                              // the "first" recovery after more than a second of normal operation
 
 			TraceEvent("CCWDB", cluster->id).detail("Watching", iMaster.id());
+			if (db->recoveryData.isValid() && db->recoveryData->logSystem.isValid()) {
+				TraceEvent("CCRecoveryDataReplaced")
+				    .detail("OldRecoveryDataRefCount", db->recoveryData->debugGetReferenceCount())
+				    .detail("OldLogSystemPresent", db->recoveryData->logSystem.isValid());
+			}
 			db->recoveryData = makeReference<ClusterRecoveryData>(cluster,
 			                                                      db->serverInfo,
 			                                                      db->serverInfo->get().master,

@@ -2336,6 +2336,28 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 						notUpdated = interf.updateServerDBInfo.getEndpoint();
 					} else if (localInfo.infoGeneration > dbInfo->get().infoGeneration ||
 					           dbInfo->get().clusterInterface != ccInterface->get().get()) {
+						std::string oldTLogAddrs;
+						for (const auto& old : localInfo.logSystemConfig.oldTLogs) {
+							for (const auto& tlogSet : old.tLogs) {
+								for (const auto& tlog : tlogSet.tLogs) {
+									if (tlog.present()) {
+										if (!oldTLogAddrs.empty())
+											oldTLogAddrs += ",";
+										oldTLogAddrs += tlog.interf().address().toString();
+									}
+								}
+							}
+						}
+						std::string currentTLogAddrs;
+						for (const auto& tlogSet : localInfo.logSystemConfig.tLogs) {
+							for (const auto& tlog : tlogSet.tLogs) {
+								if (tlog.present()) {
+									if (!currentTLogAddrs.empty())
+										currentTLogAddrs += ",";
+									currentTLogAddrs += tlog.interf().address().toString();
+								}
+							}
+						}
 						TraceEvent("GotServerDBInfoChange")
 						    .detail("ChangeID", localInfo.id)
 						    .detail("InfoGeneration", localInfo.infoGeneration)
@@ -2343,7 +2365,12 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 						    .detail("RatekeeperID",
 						            localInfo.ratekeeper.present() ? localInfo.ratekeeper.get().id() : UID())
 						    .detail("DataDistributorID",
-						            localInfo.distributor.present() ? localInfo.distributor.get().id() : UID());
+						            localInfo.distributor.present() ? localInfo.distributor.get().id() : UID())
+						    .detail("OldTLogsCount", localInfo.logSystemConfig.oldTLogs.size())
+						    .detail("OldTLogAddresses", oldTLogAddrs.empty() ? "none" : oldTLogAddrs)
+						    .detail("CurrentTLogsCount", localInfo.logSystemConfig.tLogs.size())
+						    .detail("CurrentTLogAddresses", currentTLogAddrs)
+						    .detail("RecoveryState", (int)localInfo.recoveryState);
 						dbInfo->set(localInfo);
 					}
 					errorForwarders.add(

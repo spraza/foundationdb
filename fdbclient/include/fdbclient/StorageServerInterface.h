@@ -135,6 +135,15 @@ private:
 public:
 	explicit StorageServerInterface(UID uid) : uniqueID(uid) { acceptingRequests = false; }
 	StorageServerInterface() : uniqueID(deterministicRandom()->randomUniqueID()) { acceptingRequests = false; }
+	~StorageServerInterface() {
+		if (getValue.getEndpoint().isValid()) {
+			FlowTransport::transport().interfaceTracker.deleted(getValue.getEndpoint().getPrimaryAddress());
+			TraceEvent("SSInterfaceDestructor")
+			    .suppressFor(2.0)
+			    .detail("Address", getValue.getEndpoint().getPrimaryAddress())
+			    .detail("UID", uniqueID);
+		}
+	}
 	NetworkAddress address() const { return getValue.getEndpoint().getPrimaryAddress(); }
 	NetworkAddress stableAddress() const { return getValue.getEndpoint().getStableAddress(); }
 	Optional<NetworkAddress> secondaryAddress() const { return getValue.getEndpoint().addresses.secondaryAddress; }

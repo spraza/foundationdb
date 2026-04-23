@@ -52,6 +52,15 @@ struct TLogInterface {
 	RequestStream<struct TrackTLogRecoveryRequest> trackRecovery;
 
 	TLogInterface() {}
+	~TLogInterface() {
+		if (peekMessages.getEndpoint().isValid()) {
+			FlowTransport::transport().interfaceTracker.deleted(peekMessages.getEndpoint().getPrimaryAddress());
+			TraceEvent("TLogInterfaceDestructor")
+			    .suppressFor(2.0)
+			    .detail("Address", peekMessages.getEndpoint().getPrimaryAddress())
+			    .detail("UID", uniqueID);
+		}
+	}
 	explicit TLogInterface(const LocalityData& locality)
 	  : filteredLocality(locality), uniqueID(deterministicRandom()->randomUniqueID()) {
 		sharedTLogID = uniqueID;
@@ -94,6 +103,7 @@ struct TLogInterface {
 		}
 		serializer(ar, uniqueID, sharedTLogID, filteredLocality, peekMessages);
 		if (Ar::isDeserializing) {
+			FlowTransport::transport().interfaceTracker.created(peekMessages.getEndpoint().getPrimaryAddress(), "TLog");
 			popMessages = RequestStream<struct TLogPopRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(1));
 			commit = RequestStream<struct TLogCommitRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(2));
 			lock =

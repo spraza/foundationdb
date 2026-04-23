@@ -414,6 +414,11 @@ Reference<StorageServerInfo> StorageServerInfo::getInterface(DatabaseContext* cx
 
 	Reference<StorageServerInfo> loc(new StorageServerInfo(cx, ssi, locality));
 	cx->server_interf[ssi.id()] = loc.getPtr();
+	TraceEvent("SSInterfaceCached")
+	    .suppressFor(5.0)
+	    .detail("Address", ssi.address())
+	    .detail("UID", ssi.id())
+	    .detail("ServerInterfCacheSize", cx->server_interf.size());
 	return loc;
 }
 
@@ -728,6 +733,77 @@ ACTOR static Future<Void> delExcessClntTxnEntriesActor(Transaction* tr, int64_t 
 
 			wait(tr->onError(e));
 		}
+	}
+}
+
+ACTOR static Future<Void> watchPeerForLocationCacheEviction(DatabaseContext* cx, NetworkAddress address) {
+	loop {
+		if (!IFailureMonitor::failureMonitor().getState(address).isFailed()) {
+			wait(IFailureMonitor::failureMonitor().onDisconnect(address));
+		}
+
+		wait(delay(CLIENT_KNOBS->LOCATION_CACHE_PEER_FAILURE_EVICTION_DELAY));
+
+		if (IFailureMonitor::failureMonitor().getState(address).isFailed()) {
+			cx->invalidateCacheByAddress(address);
+		}
+
+		// Check if any server_interf entry or locationCache entry still references this address
+		bool stillRelevant = false;
+		for (const auto& [uid, ssInfo] : cx->server_interf) {
+			if (ssInfo->interf.address() == address) {
+				stillRelevant = true;
+				break;
+			}
+		}
+		if (!stillRelevant) {
+			auto ranges = cx->locationCache.ranges();
+			for (auto iter = ranges.begin(); iter != ranges.end(); ++iter) {
+				if (!iter->value())
+					continue;
+				for (int i = 0; i < iter->value()->size(); i++) {
+					if (iter->value()->getInterface(i).address() == address) {
+						stillRelevant = true;
+						break;
+					}
+				}
+				if (stillRelevant)
+					break;
+			}
+		}
+		if (!stillRelevant) {
+			cx->watchedPeerAddresses.erase(address);
+			return Void();
+		}
+	}
+}
+
+ACTOR static Future<Void> locationCachePeerWatcherActor(DatabaseContext* cx) {
+	state std::vector<Future<Void>> watchers;
+	loop {
+		// Discover addresses from server_interf
+		for (const auto& [uid, ssInfo] : cx->server_interf) {
+			NetworkAddress addr = ssInfo->interf.address();
+			if (cx->watchedPeerAddresses.count(addr) == 0) {
+				cx->watchedPeerAddresses.insert(addr);
+				watchers.push_back(watchPeerForLocationCacheEviction(cx, addr));
+			}
+		}
+		// Also discover addresses from locationCache (covers entries cached
+		// via a different DatabaseContext's getInterface path)
+		auto ranges = cx->locationCache.ranges();
+		for (auto iter = ranges.begin(); iter != ranges.end(); ++iter) {
+			if (!iter->value())
+				continue;
+			for (int i = 0; i < iter->value()->size(); i++) {
+				NetworkAddress addr = iter->value()->getInterface(i).address();
+				if (cx->watchedPeerAddresses.count(addr) == 0) {
+					cx->watchedPeerAddresses.insert(addr);
+					watchers.push_back(watchPeerForLocationCacheEviction(cx, addr));
+				}
+			}
+		}
+		wait(delay(1.0));
 	}
 }
 
@@ -1245,6 +1321,7 @@ DatabaseContext::DatabaseContext(Reference<AsyncVar<Reference<IClusterConnection
 	clientDBInfoMonitor = monitorClientDBInfoChange(this, clientInfo, &proxiesChangeTrigger);
 	tssMismatchHandler = handleTssMismatches(this);
 	clientStatusUpdater.actor = clientStatusUpdateActor(this);
+	locationCachePeerWatcher = locationCachePeerWatcherActor(this);
 
 	smoothMidShardSize.reset(CLIENT_KNOBS->INIT_MID_SHARD_BYTES);
 	globalConfig = std::make_unique<GlobalConfig>(this);
@@ -1538,6 +1615,7 @@ DatabaseContext::~DatabaseContext() {
 	clientDBInfoMonitor.cancel();
 	monitorTssInfoChange.cancel();
 	tssMismatchHandler.cancel();
+	locationCachePeerWatcher.cancel();
 
 	if (grvUpdateHandler.isValid()) {
 		grvUpdateHandler.cancel();

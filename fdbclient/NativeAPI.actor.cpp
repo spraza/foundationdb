@@ -199,6 +199,17 @@ Reference<LocationInfo> DatabaseContext::setCachedLocation(const KeyRangeRef& ab
 		serverRefs.push_back(StorageServerInfo::getInterface(this, interf, clientLocality));
 	}
 
+	for (const auto& interf : servers) {
+		bool wasEvicted = watchedPeerAddresses.count(interf.address()) > 0;
+		TraceEvent(wasEvicted ? "LocationCacheRepopulated" : "LocationCachePut")
+		    .suppressFor(5.0)
+		    .detail("Address", interf.address())
+		    .detail("UID", interf.id())
+		    .detail("KeyRangeBegin", absoluteKeys.begin)
+		    .detail("KeyRangeEnd", absoluteKeys.end)
+		    .detail("LocationCacheSize", locationCache.size());
+	}
+
 	int maxEvictionAttempts = 100, attempts = 0;
 	auto loc = makeReference<LocationInfo>(serverRefs);
 	while (locationCache.size() > locationCacheSize && attempts < maxEvictionAttempts) {
@@ -230,6 +241,31 @@ void DatabaseContext::invalidateCache(const KeyRangeRef& keys) {
 	Key begin = rs.begin().begin(),
 	    end = rs.end().begin(); // insert invalidates rs, so can't be passed a mere reference into it
 	locationCache.insert(KeyRangeRef(begin, end), Reference<LocationInfo>());
+}
+
+void DatabaseContext::invalidateCacheByAddress(const NetworkAddress& address) {
+	std::vector<KeyRange> rangesToInvalidate;
+	auto ranges = locationCache.ranges();
+	for (auto iter = ranges.begin(); iter != ranges.end(); ++iter) {
+		if (!iter->value())
+			continue;
+		auto& loc = iter->value();
+		for (int i = 0; i < loc->size(); i++) {
+			if (loc->getInterface(i).address() == address) {
+				rangesToInvalidate.push_back(KeyRange(KeyRangeRef(iter->begin(), iter->end())));
+				break;
+			}
+		}
+	}
+
+	for (const auto& range : rangesToInvalidate) {
+		locationCache.insert(range, Reference<LocationInfo>());
+	}
+
+	TraceEvent("LocationCacheInvalidatedByAddress")
+	    .detail("Address", address)
+	    .detail("InvalidatedRanges", rangesToInvalidate.size())
+	    .detail("ServerInterfSize", server_interf.size());
 }
 
 void DatabaseContext::setFailedEndpointOnHealthyServer(const Endpoint& endpoint) {

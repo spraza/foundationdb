@@ -24,6 +24,8 @@
 
 #include <algorithm>
 #include <map>
+#include <unordered_map>
+#include <string>
 
 #include "fdbrpc/DDSketch.h"
 #include "fdbrpc/HealthMonitor.h"
@@ -34,6 +36,27 @@
 #include "flow/Net2Packet.h"
 #include "flow/Arena.h"
 #include "flow/PKey.h"
+
+struct InterfaceTracker {
+	struct Entry {
+		std::string role;
+		int64_t numCreated = 0;
+		int64_t numDeleted = 0;
+	};
+	std::unordered_map<NetworkAddress, Entry> map;
+
+	void created(const NetworkAddress& addr, const std::string& role) {
+		auto& e = map[addr];
+		if (e.role.empty())
+			e.role = role;
+		e.numCreated++;
+	}
+	void deleted(const NetworkAddress& addr) {
+		auto it = map.find(addr);
+		if (it != map.end())
+			it->second.numDeleted++;
+	}
+};
 
 class IConnection;
 
@@ -309,6 +332,8 @@ public:
 
 	// Periodically read JWKS (RFC 7517) public key file to refresh public key set.
 	void watchPublicKeyFile(const std::string& publicKeyFilePath);
+
+	InterfaceTracker interfaceTracker;
 
 private:
 	class TransportData* self;

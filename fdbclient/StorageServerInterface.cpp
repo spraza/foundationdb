@@ -30,6 +30,7 @@
 // New StorageServerInterface reply types must be added here or it won't compile.
 
 void StorageServerInterface::initEndpointsFromGetValue() {
+	FlowTransport::transport().interfaceTracker.created(getValue.getEndpoint().getPrimaryAddress(), "SS");
 	getKey = PublicRequestStream<struct GetKeyRequest>(getValue.getEndpoint().getAdjustedEndpoint(1));
 	getKeyValues = PublicRequestStream<struct GetKeyValuesRequest>(getValue.getEndpoint().getAdjustedEndpoint(2));
 	getShardState = RequestStream<struct GetShardStateRequest>(getValue.getEndpoint().getAdjustedEndpoint(3));

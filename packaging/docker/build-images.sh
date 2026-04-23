@@ -274,7 +274,7 @@ if [ -n "${OKTETO_NAMESPACE+x}" ]; then
     if [ "${CLANG:-0}" -eq 1 ]; then
         build_output_directory="${HOME}/cbuild_output"
     else
-        build_output_directory="${HOME}/build_output"
+        build_output_directory="${HOME}/cnd_build_output"
     fi
     fdb_library_versions=( "${fdb_version}" )
     registry="${aws_account_id}.dkr.ecr.${aws_region}.amazonaws.com"
