@@ -7,4 +7,5 @@
 - control plane metadata (srcs: system key space, commit proxy txn state store, role specific code, etc.)
       --- range maps (key to shard, shard to key range, shard to ss, ss to shard)
       --- buddies in txn (ss <-> tlog on primary and remote, remote tlog <-> LR, LR <-> primary/satellite tlog)
-      --- dd operations, even on dst ss, we can tell which ss it's fetching from      
+      --- dd operations, even on dst ss, we can tell which ss it's fetching from
+- when machine/process dies, e.g. via fault injection workloads which make calls like g_simulator->killProcess, reflect that in the TUI. Typically I've done this based on Role=End that the worker emits, but certain kill types are immediate, and therefore worker will not get a chance to emit that trace event, user would see "green" in the TUI topology and be confused.
