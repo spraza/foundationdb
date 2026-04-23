@@ -285,9 +285,29 @@ Reference<ILogSystem> TagPartitionedLogSystem::fromLogSystemConfig(UID const& db
 
 	for (const auto& oldTlogConf : lsConf.oldTLogs) {
 		logSystem->oldLogData.emplace_back(oldTlogConf);
-		//TraceEvent("BWFromLSConf")
-		//    .detail("Epoch", logSystem->oldLogData.back().epoch)
-		//    .detail("Version", logSystem->oldLogData.back().epochEnd);
+	}
+
+	// Log oldLogData details for stale peer debugging
+	if (!lsConf.oldTLogs.empty()) {
+		TraceEvent evt("FromLogSystemConfigOldTLogs", dbgid);
+		evt.detail("Epoch", lsConf.epoch);
+		evt.detail("OldTLogsCount", lsConf.oldTLogs.size());
+		int totalOldInterfaces = 0;
+		std::string oldAddresses;
+		for (int i = 0; i < lsConf.oldTLogs.size(); i++) {
+			const auto& oldConf = lsConf.oldTLogs[i];
+			for (const auto& tLogSet : oldConf.tLogs) {
+				for (const auto& tlog : tLogSet.tLogs) {
+					totalOldInterfaces++;
+					if (tlog.present()) {
+						if (!oldAddresses.empty()) oldAddresses += ",";
+						oldAddresses += tlog.interf().address().toString();
+					}
+				}
+			}
+		}
+		evt.detail("TotalOldInterfaces", totalOldInterfaces);
+		evt.detail("OldInterfaceAddresses", oldAddresses);
 	}
 
 	logSystem->logSystemType = lsConf.logSystemType;
@@ -1850,6 +1870,15 @@ LogSystemConfig TagPartitionedLogSystem::getLogSystemConfig() const {
 			logSystemConfig.oldTLogs.push_back(toOldTLogConf(oldData));
 		}
 	}
+
+	TraceEvent("GetLogSystemConfig", dbgid)
+	    .suppressFor(2.0)
+	    .detail("Epoch", epoch)
+	    .detail("RecoveryCompleteWritten", recoveryCompleteWrittenToCoreState.get())
+	    .detail("OldLogDataSize", oldLogData.size())
+	    .detail("ConfigOldTLogsSize", logSystemConfig.oldTLogs.size())
+	    .detail("Stopped", stopped);
+
 	return logSystemConfig;
 }
 

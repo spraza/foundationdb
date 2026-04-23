@@ -398,6 +398,7 @@ public:
 	bool disableTss = false;
 	// 7.1 cannot be downgraded to 7.0 and below after enabling hostname, so disable hostname for 7.0 downgrade tests
 	bool disableHostname = false;
+	bool forceHostname = false;
 	// Storage Engine Types: Verify match with SimulationConfig::generateNormalConfig
 	//	0 = "ssd"
 	//	1 = "memory"
@@ -473,6 +474,7 @@ public:
 		    .add("maxTLogVersion", &maxTLogVersion)
 		    .add("disableTss", &disableTss)
 		    .add("disableHostname", &disableHostname)
+		    .add("forceHostname", &forceHostname)
 		    .add("simpleConfig", &simpleConfig)
 		    .add("singleRegion", &singleRegion)
 		    .add("generateFearless", &generateFearless)
@@ -2230,8 +2232,9 @@ void setupSimulatedSystem(std::vector<Future<Void>>* systemActors,
 	CODE_PROBE(useIPv6, "Use IPv6");
 	CODE_PROBE(!useIPv6, "Use IPv4");
 
-	// Use hostname 25% of the time, unless it is disabled
-	bool useHostname = !testConfig.disableHostname && deterministicRandom()->random01() < 0.25;
+	// Use hostname 25% of the time, unless it is disabled or forced
+	bool useHostname = testConfig.forceHostname ||
+	                   (!testConfig.disableHostname && deterministicRandom()->random01() < 0.25);
 	CODE_PROBE(useHostname, "Use hostname");
 	CODE_PROBE(!useHostname, "Use IP address");
 	NetworkAddressFromHostname fromHostname =

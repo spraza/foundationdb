@@ -1169,6 +1169,11 @@ Future<Void> grvProxyServerCore(GrvProxyInterface proxy,
 
 		if (masterLifetime.isEqual(grvProxyData.db->get().masterLifetime) &&
 		    grvProxyData.db->get().recoveryState >= RecoveryState::RECOVERY_TRANSACTION) {
+			TraceEvent("GrvProxyNewLogSystem", proxy.id())
+			    .detail("OldTLogsCount", grvProxyData.db->get().logSystemConfig.oldTLogs.size())
+			    .detail("CurrentTLogsCount", grvProxyData.db->get().logSystemConfig.tLogs.size())
+			    .detail("Epoch", grvProxyData.db->get().logSystemConfig.epoch)
+			    .detail("RecoveryState", (int)grvProxyData.db->get().recoveryState);
 			grvProxyData.logSystem = makeLogSystemFromServerDBInfo(proxy.id(), grvProxyData.db->get(), false, addActor);
 		}
 		grvProxyData.updateLatencyBandConfig(grvProxyData.db->get().latencyBandConfig);

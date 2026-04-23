@@ -66,14 +66,18 @@ struct MasterInterface {
 		}
 		serializer(ar, locality, waitFailure);
 		if (Archive::isDeserializing) {
-			getCommitVersion =
-			    RequestStream<struct GetCommitVersionRequest>(waitFailure.getEndpoint().getAdjustedEndpoint(1));
-			getLiveCommittedVersion =
-			    RequestStream<struct GetRawCommittedVersionRequest>(waitFailure.getEndpoint().getAdjustedEndpoint(2));
+			getCommitVersion = RequestStream<struct GetCommitVersionRequest>(
+			    waitFailure.getEndpoint().getAdjustedEndpoint(1),
+			    RequestStream<struct GetCommitVersionRequest>::Lazy::Yes);
+			getLiveCommittedVersion = RequestStream<struct GetRawCommittedVersionRequest>(
+			    waitFailure.getEndpoint().getAdjustedEndpoint(2),
+			    RequestStream<struct GetRawCommittedVersionRequest>::Lazy::Yes);
 			reportLiveCommittedVersion = RequestStream<struct ReportRawCommittedVersionRequest>(
-			    waitFailure.getEndpoint().getAdjustedEndpoint(3));
-			updateRecoveryData =
-			    RequestStream<struct UpdateRecoveryDataRequest>(waitFailure.getEndpoint().getAdjustedEndpoint(4));
+			    waitFailure.getEndpoint().getAdjustedEndpoint(3),
+			    RequestStream<struct ReportRawCommittedVersionRequest>::Lazy::Yes);
+			updateRecoveryData = RequestStream<struct UpdateRecoveryDataRequest>(
+			    waitFailure.getEndpoint().getAdjustedEndpoint(4),
+			    RequestStream<struct UpdateRecoveryDataRequest>::Lazy::Yes);
 		}
 	}
 

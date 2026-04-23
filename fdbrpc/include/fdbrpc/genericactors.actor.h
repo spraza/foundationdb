@@ -88,7 +88,7 @@ Future<ErrorOr<REPLY_TYPE(Req)>> tryGetReplyFromHostname(Req request, Hostname h
 	if (!address.present()) {
 		return ErrorOr<REPLY_TYPE(Req)>(lookup_failed());
 	}
-	RequestStream<Req> to(Endpoint::wellKnown({ address.get() }, token));
+	RequestStream<Req> to(Endpoint::wellKnown({ address.get() }, token), RequestStream<Req>::Lazy::Yes);
 	state ErrorOr<REPLY_TYPE(Req)> reply = wait(to.tryGetReply(request));
 	if (reply.isError()) {
 		resetReply(request);
@@ -112,7 +112,7 @@ Future<ErrorOr<REPLY_TYPE(Req)>> tryGetReplyFromHostname(Req request,
 	if (!address.present()) {
 		return ErrorOr<REPLY_TYPE(Req)>(lookup_failed());
 	}
-	RequestStream<Req> to(Endpoint::wellKnown({ address.get() }, token));
+	RequestStream<Req> to(Endpoint::wellKnown({ address.get() }, token), RequestStream<Req>::Lazy::Yes);
 	state ErrorOr<REPLY_TYPE(Req)> reply = wait(to.tryGetReply(request, taskID));
 	if (reply.isError()) {
 		resetReply(request);
@@ -133,9 +133,8 @@ Future<REPLY_TYPE(Req)> retryGetReplyFromHostname(Req request, Hostname hostname
 	state std::unique_ptr<RequestStream<Req>> to;
 	loop {
 		NetworkAddress address = wait(hostname.resolveWithRetry());
-		if (to == nullptr || to->getEndpoint().getPrimaryAddress() != address) {
-			to = std::make_unique<RequestStream<Req>>(Endpoint::wellKnown({ address }, token));
-		}
+		to = std::make_unique<RequestStream<Req>>(Endpoint::wellKnown({ address }, token),
+		                                          RequestStream<Req>::Lazy::Yes);
 		state ErrorOr<REPLY_TYPE(Req)> reply = wait(to->tryGetReply(request));
 		if (reply.isError()) {
 			resetReply(request);
@@ -165,9 +164,8 @@ Future<REPLY_TYPE(Req)> retryGetReplyFromHostname(Req request,
 	state std::unique_ptr<RequestStream<Req>> to;
 	loop {
 		NetworkAddress address = wait(hostname.resolveWithRetry());
-		if (to == nullptr || to->getEndpoint().getPrimaryAddress() != address) {
-			to = std::make_unique<RequestStream<Req>>(Endpoint::wellKnown({ address }, token));
-		}
+		to = std::make_unique<RequestStream<Req>>(Endpoint::wellKnown({ address }, token),
+		                                          RequestStream<Req>::Lazy::Yes);
 		state ErrorOr<REPLY_TYPE(Req)> reply = wait(to->tryGetReply(request, taskID));
 		if (reply.isError()) {
 			resetReply(request);

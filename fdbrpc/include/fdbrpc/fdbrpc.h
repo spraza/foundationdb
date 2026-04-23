@@ -39,19 +39,36 @@ class FlowReceiver : public NetworkMessageReceiver, public NonCopyable {
 	Endpoint endpoint;
 	bool m_isLocalEndpoint;
 	bool m_stream;
+	bool m_peerRefAdded;
 
 protected:
-	FlowReceiver() : m_isLocalEndpoint(false), m_stream(false) {}
+	FlowReceiver() : m_isLocalEndpoint(false), m_stream(false), m_peerRefAdded(false) {}
 
 	FlowReceiver(Endpoint const& remoteEndpoint, bool stream)
-	  : endpoint(remoteEndpoint), m_isLocalEndpoint(false), m_stream(stream) {
+	  : endpoint(remoteEndpoint), m_isLocalEndpoint(false), m_stream(stream), m_peerRefAdded(true) {
 		FlowTransport::transport().addPeerReference(endpoint, m_stream);
 	}
+
+public:
+	// Deferred construction: stores endpoint but does NOT call addPeerReference.
+	// Call ensurePeerReference() before first use to register the peer.
+	enum class Deferred { Yes };
+
+	void ensurePeerReference() {
+		if (!m_peerRefAdded && !m_isLocalEndpoint && m_stream && endpoint.getPrimaryAddress().isValid()) {
+			FlowTransport::transport().addPeerReference(endpoint, m_stream);
+			m_peerRefAdded = true;
+		}
+	}
+
+protected:
+	FlowReceiver(Endpoint const& remoteEndpoint, bool stream, Deferred)
+	  : endpoint(remoteEndpoint), m_isLocalEndpoint(false), m_stream(stream), m_peerRefAdded(false) {}
 
 	~FlowReceiver() {
 		if (m_isLocalEndpoint) {
 			FlowTransport::transport().removeEndpoint(endpoint, this);
-		} else {
+		} else if (m_peerRefAdded) {
 			FlowTransport::transport().removePeerReference(endpoint, m_stream);
 		}
 	}
@@ -697,6 +714,9 @@ struct NetNotifiedQueue final : NotifiedQueue<T>, FlowReceiver, FastAllocated<Ne
 	NetNotifiedQueue(int futures, int promises) : NotifiedQueue<T>(futures, promises) {}
 	NetNotifiedQueue(int futures, int promises, const Endpoint& remoteEndpoint)
 	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, true) {}
+	// Deferred: stores endpoint but does NOT call addPeerReference until first use
+	NetNotifiedQueue(int futures, int promises, const Endpoint& remoteEndpoint, FlowReceiver::Deferred)
+	  : NotifiedQueue<T>(futures, promises), FlowReceiver(remoteEndpoint, true, FlowReceiver::Deferred::Yes) {}
 
 	void destroy() override { delete this; }
 	void receive(ArenaObjectReader& reader) override {
@@ -732,6 +752,7 @@ public:
 
 	template <class U>
 	void send(U&& value) const {
+		queue->ensurePeerReference();
 		if (queue->isRemoteEndpoint()) {
 			FlowTransport::transport().sendUnreliable(SerializeSource<T>(std::forward<U>(value)), getEndpoint(), true);
 		} else
@@ -753,6 +774,7 @@ public:
 	Future<REPLY_TYPE(X)> getReply(const X& value) const {
 		// Ensure the same request isn't used multiple times
 		ASSERT(!getReplyPromise(value).getFuture().isReady());
+		queue->ensurePeerReference();
 		if (queue->isRemoteEndpoint()) {
 			return sendCanceler(getReplyPromise(value),
 			                    FlowTransport::transport().sendReliable(SerializeSource<T>(value), getEndpoint()),
@@ -785,6 +807,7 @@ public:
 	template <class X>
 	Future<ErrorOr<REPLY_TYPE(X)>> tryGetReply(const X& value, TaskPriority taskID) const {
 		setReplyPriority(value, taskID);
+		queue->ensurePeerReference();
 		if (queue->isRemoteEndpoint()) {
 			Future<Void> disc =
 			    makeDependent<T>(IFailureMonitor::failureMonitor()).onDisconnectOrFailure(getEndpoint(taskID));
@@ -806,6 +829,7 @@ public:
 
 	template <class X>
 	Future<ErrorOr<REPLY_TYPE(X)>> tryGetReply(const X& value) const {
+		queue->ensurePeerReference();
 		if (queue->isRemoteEndpoint()) {
 			Future<Void> disc =
 			    makeDependent<T>(IFailureMonitor::failureMonitor()).onDisconnectOrFailure(getEndpoint());
@@ -834,6 +858,7 @@ public:
 
 	template <class X>
 	ReplyPromiseStream<REPLYSTREAM_TYPE(X)> getReplyStream(const X& value) const {
+		queue->ensurePeerReference();
 		if (queue->isRemoteEndpoint()) {
 			Future<Void> disc =
 			    makeDependent<T>(IFailureMonitor::failureMonitor()).onDisconnectOrFailure(getEndpoint());
@@ -896,6 +921,13 @@ public:
 	}
 
 	explicit RequestStream(const Endpoint& endpoint) : queue(new NetNotifiedQueue<T, IsPublic>(0, 1, endpoint)) {}
+
+	// Deferred construction: does not call addPeerReference until first use.
+	// Used by deserialization paths to avoid creating stale peer references
+	// for interfaces that are only read for metadata (address, ID, etc.).
+	enum class Lazy { Yes };
+	RequestStream(const Endpoint& endpoint, Lazy)
+	  : queue(new NetNotifiedQueue<T, IsPublic>(0, 1, endpoint, FlowReceiver::Deferred::Yes)) {}
 
 	SWIFT_CXX_IMPORT_UNSAFE FutureStream<T> getFuture() const {
 		queue->addFutureRef();
@@ -966,7 +998,7 @@ template <class Ar, class T, bool P>
 void load(Ar& ar, RequestStream<T, P>& value) {
 	Endpoint endpoint;
 	ar >> endpoint;
-	value = RequestStream<T, P>(endpoint);
+	value = RequestStream<T, P>(endpoint, RequestStream<T, P>::Lazy::Yes);
 }
 
 template <class T, bool P>
@@ -976,7 +1008,7 @@ struct serializable_traits<RequestStream<T, P>> : std::true_type {
 		if constexpr (Archiver::isDeserializing) {
 			Endpoint endpoint;
 			serializer(ar, endpoint);
-			stream = RequestStream<T, P>(endpoint);
+			stream = RequestStream<T, P>(endpoint, RequestStream<T, P>::Lazy::Yes);
 		} else {
 			const auto& ep = stream.getEndpoint();
 			serializer(ar, ep);

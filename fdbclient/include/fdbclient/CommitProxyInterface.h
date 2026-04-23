@@ -73,24 +73,36 @@ struct CommitProxyInterface {
 	void serialize(Archive& ar) {
 		serializer(ar, processId, provisional, commit);
 		if (Archive::isDeserializing) {
-			getConsistentReadVersion =
-			    PublicRequestStream<struct GetReadVersionRequest>(commit.getEndpoint().getAdjustedEndpoint(1));
-			getKeyServersLocations =
-			    PublicRequestStream<struct GetKeyServerLocationsRequest>(commit.getEndpoint().getAdjustedEndpoint(2));
-			getStorageServerRejoinInfo =
-			    RequestStream<struct GetStorageServerRejoinInfoRequest>(commit.getEndpoint().getAdjustedEndpoint(3));
-			waitFailure = RequestStream<ReplyPromise<Void>>(commit.getEndpoint().getAdjustedEndpoint(4));
-			txnState = RequestStream<struct TxnStateRequest>(commit.getEndpoint().getAdjustedEndpoint(5));
-			getHealthMetrics =
-			    RequestStream<struct GetHealthMetricsRequest>(commit.getEndpoint().getAdjustedEndpoint(6));
-			proxySnapReq = RequestStream<struct ProxySnapRequest>(commit.getEndpoint().getAdjustedEndpoint(7));
-			exclusionSafetyCheckReq =
-			    RequestStream<struct ExclusionSafetyCheckRequest>(commit.getEndpoint().getAdjustedEndpoint(8));
-			getDDMetrics = RequestStream<struct GetDDMetricsRequest>(commit.getEndpoint().getAdjustedEndpoint(9));
-			expireIdempotencyId =
-			    PublicRequestStream<struct ExpireIdempotencyIdRequest>(commit.getEndpoint().getAdjustedEndpoint(10));
-			setThrottledShard =
-			    RequestStream<struct SetThrottledShardRequest>(commit.getEndpoint().getAdjustedEndpoint(13));
+			getConsistentReadVersion = PublicRequestStream<struct GetReadVersionRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(1),
+			    PublicRequestStream<struct GetReadVersionRequest>::Lazy::Yes);
+			getKeyServersLocations = PublicRequestStream<struct GetKeyServerLocationsRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(2),
+			    PublicRequestStream<struct GetKeyServerLocationsRequest>::Lazy::Yes);
+			getStorageServerRejoinInfo = RequestStream<struct GetStorageServerRejoinInfoRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(3),
+			    RequestStream<struct GetStorageServerRejoinInfoRequest>::Lazy::Yes);
+			waitFailure = RequestStream<ReplyPromise<Void>>(commit.getEndpoint().getAdjustedEndpoint(4),
+			                                                RequestStream<ReplyPromise<Void>>::Lazy::Yes);
+			txnState = RequestStream<struct TxnStateRequest>(commit.getEndpoint().getAdjustedEndpoint(5),
+			                                                 RequestStream<struct TxnStateRequest>::Lazy::Yes);
+			getHealthMetrics = RequestStream<struct GetHealthMetricsRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(6),
+			    RequestStream<struct GetHealthMetricsRequest>::Lazy::Yes);
+			proxySnapReq = RequestStream<struct ProxySnapRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(7), RequestStream<struct ProxySnapRequest>::Lazy::Yes);
+			exclusionSafetyCheckReq = RequestStream<struct ExclusionSafetyCheckRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(8),
+			    RequestStream<struct ExclusionSafetyCheckRequest>::Lazy::Yes);
+			getDDMetrics = RequestStream<struct GetDDMetricsRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(9),
+			    RequestStream<struct GetDDMetricsRequest>::Lazy::Yes);
+			expireIdempotencyId = PublicRequestStream<struct ExpireIdempotencyIdRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(10),
+			    PublicRequestStream<struct ExpireIdempotencyIdRequest>::Lazy::Yes);
+			setThrottledShard = RequestStream<struct SetThrottledShardRequest>(
+			    commit.getEndpoint().getAdjustedEndpoint(13),
+			    RequestStream<struct SetThrottledShardRequest>::Lazy::Yes);
 		}
 	}
 

@@ -56,12 +56,15 @@ struct GrvProxyInterface {
 	void serialize(Archive& ar) {
 		serializer(ar, processId, provisional, getConsistentReadVersion);
 		if (Archive::isDeserializing) {
-			waitFailure =
-			    RequestStream<ReplyPromise<Void>>(getConsistentReadVersion.getEndpoint().getAdjustedEndpoint(1));
+			waitFailure = RequestStream<ReplyPromise<Void>>(
+			    getConsistentReadVersion.getEndpoint().getAdjustedEndpoint(1),
+			    RequestStream<ReplyPromise<Void>>::Lazy::Yes);
 			getHealthMetrics = RequestStream<struct GetHealthMetricsRequest>(
-			    getConsistentReadVersion.getEndpoint().getAdjustedEndpoint(2));
+			    getConsistentReadVersion.getEndpoint().getAdjustedEndpoint(2),
+			    RequestStream<struct GetHealthMetricsRequest>::Lazy::Yes);
 			refreshGlobalConfig = PublicRequestStream<struct GlobalConfigRefreshRequest>(
-			    getConsistentReadVersion.getEndpoint().getAdjustedEndpoint(3));
+			    getConsistentReadVersion.getEndpoint().getAdjustedEndpoint(3),
+			    PublicRequestStream<struct GlobalConfigRefreshRequest>::Lazy::Yes);
 		}
 	}
 

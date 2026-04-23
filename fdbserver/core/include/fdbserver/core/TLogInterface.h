@@ -94,26 +94,38 @@ struct TLogInterface {
 		}
 		serializer(ar, uniqueID, sharedTLogID, filteredLocality, peekMessages);
 		if (Ar::isDeserializing) {
-			popMessages = RequestStream<struct TLogPopRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(1));
-			commit = RequestStream<struct TLogCommitRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(2));
-			lock =
-			    RequestStream<ReplyPromise<struct TLogLockResult>>(peekMessages.getEndpoint().getAdjustedEndpoint(3));
-			getQueuingMetrics =
-			    RequestStream<struct TLogQueuingMetricsRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(4));
-			confirmRunning =
-			    RequestStream<struct TLogConfirmRunningRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(5));
-			waitFailure = RequestStream<ReplyPromise<Void>>(peekMessages.getEndpoint().getAdjustedEndpoint(6));
-			recoveryFinished =
-			    RequestStream<struct TLogRecoveryFinishedRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(7));
-			disablePopRequest =
-			    RequestStream<struct TLogDisablePopRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(8));
-			enablePopRequest =
-			    RequestStream<struct TLogEnablePopRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(9));
-			snapRequest = RequestStream<struct TLogSnapRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(10));
-			peekStreamMessages =
-			    RequestStream<struct TLogPeekStreamRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(11));
-			trackRecovery =
-			    RequestStream<struct TrackTLogRecoveryRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(12));
+			popMessages = RequestStream<struct TLogPopRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(1),
+			                                                   RequestStream<struct TLogPopRequest>::Lazy::Yes);
+			commit = RequestStream<struct TLogCommitRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(2),
+			                                                 RequestStream<struct TLogCommitRequest>::Lazy::Yes);
+			lock = RequestStream<ReplyPromise<struct TLogLockResult>>(
+			    peekMessages.getEndpoint().getAdjustedEndpoint(3),
+			    RequestStream<ReplyPromise<struct TLogLockResult>>::Lazy::Yes);
+			getQueuingMetrics = RequestStream<struct TLogQueuingMetricsRequest>(
+			    peekMessages.getEndpoint().getAdjustedEndpoint(4),
+			    RequestStream<struct TLogQueuingMetricsRequest>::Lazy::Yes);
+			confirmRunning = RequestStream<struct TLogConfirmRunningRequest>(
+			    peekMessages.getEndpoint().getAdjustedEndpoint(5),
+			    RequestStream<struct TLogConfirmRunningRequest>::Lazy::Yes);
+			waitFailure = RequestStream<ReplyPromise<Void>>(peekMessages.getEndpoint().getAdjustedEndpoint(6),
+			                                                RequestStream<ReplyPromise<Void>>::Lazy::Yes);
+			recoveryFinished = RequestStream<struct TLogRecoveryFinishedRequest>(
+			    peekMessages.getEndpoint().getAdjustedEndpoint(7),
+			    RequestStream<struct TLogRecoveryFinishedRequest>::Lazy::Yes);
+			disablePopRequest = RequestStream<struct TLogDisablePopRequest>(
+			    peekMessages.getEndpoint().getAdjustedEndpoint(8),
+			    RequestStream<struct TLogDisablePopRequest>::Lazy::Yes);
+			enablePopRequest = RequestStream<struct TLogEnablePopRequest>(
+			    peekMessages.getEndpoint().getAdjustedEndpoint(9),
+			    RequestStream<struct TLogEnablePopRequest>::Lazy::Yes);
+			snapRequest = RequestStream<struct TLogSnapRequest>(peekMessages.getEndpoint().getAdjustedEndpoint(10),
+			                                                    RequestStream<struct TLogSnapRequest>::Lazy::Yes);
+			peekStreamMessages = RequestStream<struct TLogPeekStreamRequest>(
+			    peekMessages.getEndpoint().getAdjustedEndpoint(11),
+			    RequestStream<struct TLogPeekStreamRequest>::Lazy::Yes);
+			trackRecovery = RequestStream<struct TrackTLogRecoveryRequest>(
+			    peekMessages.getEndpoint().getAdjustedEndpoint(12),
+			    RequestStream<struct TrackTLogRecoveryRequest>::Lazy::Yes);
 		}
 	}
 };

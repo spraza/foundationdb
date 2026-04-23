@@ -30,40 +30,67 @@
 // New StorageServerInterface reply types must be added here or it won't compile.
 
 void StorageServerInterface::initEndpointsFromGetValue() {
-	getKey = PublicRequestStream<struct GetKeyRequest>(getValue.getEndpoint().getAdjustedEndpoint(1));
-	getKeyValues = PublicRequestStream<struct GetKeyValuesRequest>(getValue.getEndpoint().getAdjustedEndpoint(2));
-	getShardState = RequestStream<struct GetShardStateRequest>(getValue.getEndpoint().getAdjustedEndpoint(3));
-	waitMetrics = PublicRequestStream<struct WaitMetricsRequest>(getValue.getEndpoint().getAdjustedEndpoint(4));
-	splitMetrics = RequestStream<struct SplitMetricsRequest>(getValue.getEndpoint().getAdjustedEndpoint(5));
-	getStorageMetrics = RequestStream<struct GetStorageMetricsRequest>(getValue.getEndpoint().getAdjustedEndpoint(6));
-	waitFailure = RequestStream<ReplyPromise<Void>>(getValue.getEndpoint().getAdjustedEndpoint(7));
-	getQueuingMetrics =
-	    RequestStream<struct StorageQueuingMetricsRequest>(getValue.getEndpoint().getAdjustedEndpoint(8));
-	getKeyValueStoreType =
-	    RequestStream<ReplyPromise<KeyValueStoreType>>(getValue.getEndpoint().getAdjustedEndpoint(9));
-	watchValue = PublicRequestStream<struct WatchValueRequest>(getValue.getEndpoint().getAdjustedEndpoint(10));
-	getReadHotRanges = RequestStream<struct ReadHotSubRangeRequest>(getValue.getEndpoint().getAdjustedEndpoint(11));
-	getRangeSplitPoints = RequestStream<struct SplitRangeRequest>(getValue.getEndpoint().getAdjustedEndpoint(12));
-	getKeyValuesStream =
-	    PublicRequestStream<struct GetKeyValuesStreamRequest>(getValue.getEndpoint().getAdjustedEndpoint(13));
-	getMappedKeyValues =
-	    PublicRequestStream<struct GetMappedKeyValuesRequest>(getValue.getEndpoint().getAdjustedEndpoint(14));
-	changeFeedStream = RequestStream<struct ChangeFeedStreamRequest>(getValue.getEndpoint().getAdjustedEndpoint(15));
-	overlappingChangeFeeds =
-	    RequestStream<struct OverlappingChangeFeedsRequest>(getValue.getEndpoint().getAdjustedEndpoint(16));
-	changeFeedPop = RequestStream<struct ChangeFeedPopRequest>(getValue.getEndpoint().getAdjustedEndpoint(17));
-	changeFeedVersionUpdate =
-	    RequestStream<struct ChangeFeedVersionUpdateRequest>(getValue.getEndpoint().getAdjustedEndpoint(18));
-	checkpoint = RequestStream<struct GetCheckpointRequest>(getValue.getEndpoint().getAdjustedEndpoint(19));
-	fetchCheckpoint = RequestStream<struct FetchCheckpointRequest>(getValue.getEndpoint().getAdjustedEndpoint(20));
-	fetchCheckpointKeyValues =
-	    RequestStream<struct FetchCheckpointKeyValuesRequest>(getValue.getEndpoint().getAdjustedEndpoint(21));
-	updateCommitCostRequest =
-	    RequestStream<struct UpdateCommitCostRequest>(getValue.getEndpoint().getAdjustedEndpoint(22));
-	auditStorage = RequestStream<struct AuditStorageRequest>(getValue.getEndpoint().getAdjustedEndpoint(23));
-	getHotShards = RequestStream<struct GetHotShardsRequest>(getValue.getEndpoint().getAdjustedEndpoint(24));
-	getCheckSum = RequestStream<struct GetStorageCheckSumRequest>(getValue.getEndpoint().getAdjustedEndpoint(25));
-	bulkdump = RequestStream<struct BulkDumpRequest>(getValue.getEndpoint().getAdjustedEndpoint(26));
+	// Use lazy construction to avoid creating peer references during deserialization.
+	// Peer references will be created on first actual use (send/getReply).
+	getKey = PublicRequestStream<struct GetKeyRequest>(getValue.getEndpoint().getAdjustedEndpoint(1),
+	                                                   PublicRequestStream<struct GetKeyRequest>::Lazy::Yes);
+	getKeyValues = PublicRequestStream<struct GetKeyValuesRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(2),
+	    PublicRequestStream<struct GetKeyValuesRequest>::Lazy::Yes);
+	getShardState = RequestStream<struct GetShardStateRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(3), RequestStream<struct GetShardStateRequest>::Lazy::Yes);
+	waitMetrics = PublicRequestStream<struct WaitMetricsRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(4), PublicRequestStream<struct WaitMetricsRequest>::Lazy::Yes);
+	splitMetrics = RequestStream<struct SplitMetricsRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(5), RequestStream<struct SplitMetricsRequest>::Lazy::Yes);
+	getStorageMetrics = RequestStream<struct GetStorageMetricsRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(6), RequestStream<struct GetStorageMetricsRequest>::Lazy::Yes);
+	waitFailure = RequestStream<ReplyPromise<Void>>(getValue.getEndpoint().getAdjustedEndpoint(7),
+	                                                 RequestStream<ReplyPromise<Void>>::Lazy::Yes);
+	getQueuingMetrics = RequestStream<struct StorageQueuingMetricsRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(8),
+	    RequestStream<struct StorageQueuingMetricsRequest>::Lazy::Yes);
+	getKeyValueStoreType = RequestStream<ReplyPromise<KeyValueStoreType>>(
+	    getValue.getEndpoint().getAdjustedEndpoint(9), RequestStream<ReplyPromise<KeyValueStoreType>>::Lazy::Yes);
+	watchValue = PublicRequestStream<struct WatchValueRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(10), PublicRequestStream<struct WatchValueRequest>::Lazy::Yes);
+	getReadHotRanges = RequestStream<struct ReadHotSubRangeRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(11), RequestStream<struct ReadHotSubRangeRequest>::Lazy::Yes);
+	getRangeSplitPoints = RequestStream<struct SplitRangeRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(12), RequestStream<struct SplitRangeRequest>::Lazy::Yes);
+	getKeyValuesStream = PublicRequestStream<struct GetKeyValuesStreamRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(13),
+	    PublicRequestStream<struct GetKeyValuesStreamRequest>::Lazy::Yes);
+	getMappedKeyValues = PublicRequestStream<struct GetMappedKeyValuesRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(14),
+	    PublicRequestStream<struct GetMappedKeyValuesRequest>::Lazy::Yes);
+	changeFeedStream = RequestStream<struct ChangeFeedStreamRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(15), RequestStream<struct ChangeFeedStreamRequest>::Lazy::Yes);
+	overlappingChangeFeeds = RequestStream<struct OverlappingChangeFeedsRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(16),
+	    RequestStream<struct OverlappingChangeFeedsRequest>::Lazy::Yes);
+	changeFeedPop = RequestStream<struct ChangeFeedPopRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(17), RequestStream<struct ChangeFeedPopRequest>::Lazy::Yes);
+	changeFeedVersionUpdate = RequestStream<struct ChangeFeedVersionUpdateRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(18),
+	    RequestStream<struct ChangeFeedVersionUpdateRequest>::Lazy::Yes);
+	checkpoint = RequestStream<struct GetCheckpointRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(19), RequestStream<struct GetCheckpointRequest>::Lazy::Yes);
+	fetchCheckpoint = RequestStream<struct FetchCheckpointRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(20), RequestStream<struct FetchCheckpointRequest>::Lazy::Yes);
+	fetchCheckpointKeyValues = RequestStream<struct FetchCheckpointKeyValuesRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(21),
+	    RequestStream<struct FetchCheckpointKeyValuesRequest>::Lazy::Yes);
+	updateCommitCostRequest = RequestStream<struct UpdateCommitCostRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(22), RequestStream<struct UpdateCommitCostRequest>::Lazy::Yes);
+	auditStorage = RequestStream<struct AuditStorageRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(23), RequestStream<struct AuditStorageRequest>::Lazy::Yes);
+	getHotShards = RequestStream<struct GetHotShardsRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(24), RequestStream<struct GetHotShardsRequest>::Lazy::Yes);
+	getCheckSum = RequestStream<struct GetStorageCheckSumRequest>(
+	    getValue.getEndpoint().getAdjustedEndpoint(25), RequestStream<struct GetStorageCheckSumRequest>::Lazy::Yes);
+	bulkdump = RequestStream<struct BulkDumpRequest>(getValue.getEndpoint().getAdjustedEndpoint(26),
+	                                                  RequestStream<struct BulkDumpRequest>::Lazy::Yes);
 }
 
 void StorageServerInterface::initEndpoints() {

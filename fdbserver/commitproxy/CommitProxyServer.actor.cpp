@@ -2925,6 +2925,11 @@ ACTOR Future<Void> commitProxyServerCore(CommitProxyInterface proxy,
 			dbInfoChange = commitData.db->onChange();
 			if (masterLifetime.isEqual(commitData.db->get().masterLifetime) &&
 			    commitData.db->get().recoveryState >= RecoveryState::RECOVERY_TRANSACTION) {
+				TraceEvent("CommitProxyNewLogSystem", proxy.id())
+				    .detail("OldTLogsCount", commitData.db->get().logSystemConfig.oldTLogs.size())
+				    .detail("CurrentTLogsCount", commitData.db->get().logSystemConfig.tLogs.size())
+				    .detail("Epoch", commitData.db->get().logSystemConfig.epoch)
+				    .detail("RecoveryState", (int)commitData.db->get().recoveryState);
 				commitData.logSystem = makeLogSystemFromServerDBInfo(proxy.id(), commitData.db->get(), false, addActor);
 				for (auto it : commitData.tag_popped) {
 					commitData.logSystem->pop(it.second, it.first);
