@@ -1,0 +1,11 @@
+[configuration]
+buggify = false
+
+[[test]]
+testTitle = 'StalePeerTest'
+
+    [[test.workload]]
+    testName = 'StalePeerTest'
+    processesToKill = 1
+    waitAfterKill = 60.0
+    waitBetweenKills = 15.0
