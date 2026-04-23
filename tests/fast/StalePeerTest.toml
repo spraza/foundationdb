@@ -1,0 +1,15 @@
+[configuration]
+buggify = false
+machineCount = 10
+desiredTLogCount = 6
+generateFearless = false
+config = 'triple'
+
+[[test]]
+testTitle = 'StalePeerTest'
+
+    [[test.workload]]
+    testName = 'StalePeerTest'
+    processesToKill = 1
+    waitAfterKill = 60.0
+    waitBetweenKills = 15.0

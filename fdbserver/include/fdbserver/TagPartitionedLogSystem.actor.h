@@ -154,6 +154,37 @@ struct TagPartitionedLogSystem final : ILogSystem, ReferenceCounted<TagPartition
 	    recoveryCompleteWrittenToCoreState(false), remoteLogsWrittenToCoreState(false), hasRemoteServers(false),
 	    locality(locality), addActor(addActor), popActors(false) {}
 
+	~TagPartitionedLogSystem() {
+		std::string currentAddrs;
+		for (const auto& logSet : tLogs) {
+			for (const auto& log : logSet->logServers) {
+				if (log->get().present()) {
+					if (!currentAddrs.empty())
+						currentAddrs += ",";
+					currentAddrs += log->get().interf().address().toString();
+				}
+			}
+		}
+		std::string oldAddrs;
+		for (const auto& old : oldLogData) {
+			for (const auto& logSet : old.tLogs) {
+				for (const auto& log : logSet->logServers) {
+					if (log->get().present()) {
+						if (!oldAddrs.empty())
+							oldAddrs += ",";
+						oldAddrs += log->get().interf().address().toString();
+					}
+				}
+			}
+		}
+		TraceEvent("TPLSDestroyed")
+		    .detail("DBGID", dbgid)
+		    .detail("Epoch", epoch)
+		    .detail("CurrentTLogAddrs", currentAddrs.empty() ? "none" : currentAddrs)
+		    .detail("OldTLogAddrs", oldAddrs.empty() ? "none" : oldAddrs)
+		    .detail("OldGenerations", oldLogData.size());
+	}
+
 	void stopRejoins() final;
 
 	void addref() final;
@@ -205,6 +236,10 @@ struct TagPartitionedLogSystem final : ILogSystem, ReferenceCounted<TagPartition
 	Future<Void> onCoreStateChanged() const final;
 
 	void coreStateWritten(DBCoreState const& newState) final;
+
+	int32_t debugGetReferenceCount() const final {
+		return ReferenceCounted<TagPartitionedLogSystem>::debugGetReferenceCount();
+	}
 
 	Future<Void> onError() const final;
 

@@ -857,7 +857,13 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 					TraceEvent("ConnectionTimedOut", conn ? conn->getDebugID() : UID())
 					    .suppressFor(1.0)
 					    .detail("PeerAddr", self->destination)
-					    .detail("PeerAddress", self->destination);
+					    .detail("PeerAddress", self->destination)
+					    .detail("PeerReferences", self->peerReferences)
+					    .detail("ReliableEmpty", self->reliable.empty())
+					    .detail("UnsentEmpty", self->unsent.empty())
+					    .detail("OutstandingReplies", self->outstandingReplies)
+					    .detail("ConnectFailedCount", self->connectFailedCount)
+					    .detail("Connected", self->connected);
 
 					throw;
 				}
@@ -1006,11 +1012,21 @@ ACTOR Future<Void> connectionKeeper(Reference<Peer> self,
 				    .errorUnsuppressed(e)
 				    .suppressFor(1.0)
 				    .detail("PeerAddr", self->destination)
-				    .detail("PeerAddress", self->destination);
+				    .detail("PeerAddress", self->destination)
+				    .detail("PeerReferences", self->peerReferences);
 				self->connect.cancel();
 				self->transport->peers.erase(self->destination);
 				self->transport->orderedAddresses.erase(self->destination);
 				return Void();
+			} else {
+				TraceEvent("PeerNotDestroyed")
+				    .suppressFor(1.0)
+				    .detail("PeerAddr", self->destination)
+				    .detail("PeerAddress", self->destination)
+				    .detail("PeerReferences", self->peerReferences)
+				    .detail("ReliableEmpty", self->reliable.empty())
+				    .detail("UnsentEmpty", self->unsent.empty())
+				    .detail("OutstandingReplies", self->outstandingReplies);
 			}
 		}
 	}
@@ -1786,6 +1802,11 @@ FlowTransport::FlowTransport(uint64_t transportId, int maxWellKnownEndpoints, IP
 			self->publicKeys.emplace(p.first, p.second.toPublic());
 		}
 	}
+	g_futureRefReleasedCallback = [](int64_t id) {
+		if (g_network && g_network->global(INetwork::enFlowTransport)) {
+			FlowTransport::transport().interfaceTracker.futureRefReleased(id);
+		}
+	};
 }
 
 FlowTransport::~FlowTransport() {
@@ -1868,6 +1889,31 @@ void FlowTransport::addPeerReference(const Endpoint& endpoint, bool isStream) {
 	} else {
 		peer->peerReferences++;
 	}
+	interfaceTracker.peerRefAdded(endpoint.getPrimaryAddress());
+	TraceEvent("PeerRefAdded")
+	    .suppressFor(5.0)
+	    .detail("PeerAddr", endpoint.getPrimaryAddress())
+	    .detail("Token", endpoint.token)
+	    .detail("PeerReferences", peer->peerReferences)
+	    .detail("Connected", peer->connected);
+	// Backtrace for well-known coordinator endpoints from hostname resolution
+	if (endpoint.token.first() == -1ULL && endpoint.getPrimaryAddress().fromHostname) {
+		TraceEvent("PeerRefAddedBacktrace")
+		    .suppressFor(2.0)
+		    .detail("PeerAddr", endpoint.getPrimaryAddress())
+		    .detail("Token", endpoint.token)
+		    .detail("PeerReferences", peer->peerReferences)
+		    .detail("Backtrace", platform::get_backtrace());
+	}
+	// Backtrace for IP-based addresses with high ref counts
+	if (peer->peerReferences > 50 && !endpoint.getPrimaryAddress().fromHostname) {
+		TraceEvent("PeerRefAddedHighCountBacktrace")
+		    .suppressFor(2.0)
+		    .detail("PeerAddr", endpoint.getPrimaryAddress())
+		    .detail("Token", endpoint.token)
+		    .detail("PeerReferences", peer->peerReferences)
+		    .detail("Backtrace", platform::get_backtrace());
+	}
 }
 
 void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream) {
@@ -1876,6 +1922,23 @@ void FlowTransport::removePeerReference(const Endpoint& endpoint, bool isStream)
 	Reference<Peer> peer = self->getPeer(endpoint.getPrimaryAddress());
 	if (peer) {
 		peer->peerReferences--;
+		interfaceTracker.peerRefRemovedRaw(endpoint.getPrimaryAddress());
+		interfaceTracker.peerRefRemoved(endpoint.getPrimaryAddress(), endpoint.token);
+		TraceEvent("PeerRefRemoved")
+		    .suppressFor(5.0)
+		    .detail("PeerAddr", endpoint.getPrimaryAddress())
+		    .detail("Token", endpoint.token)
+		    .detail("PeerReferences", peer->peerReferences)
+		    .detail("Connected", peer->connected);
+		// Backtrace for well-known coordinator endpoints from hostname resolution
+		if (endpoint.token.first() == -1ULL && endpoint.getPrimaryAddress().fromHostname) {
+			TraceEvent("PeerRefRemovedBacktrace")
+			    .suppressFor(2.0)
+			    .detail("PeerAddr", endpoint.getPrimaryAddress())
+			    .detail("Token", endpoint.token)
+			    .detail("PeerReferences", peer->peerReferences)
+			    .detail("Backtrace", platform::get_backtrace());
+		}
 		if (peer->peerReferences < 0) {
 			TraceEvent(SevError, "InvalidPeerReferences")
 			    .detail("References", peer->peerReferences)

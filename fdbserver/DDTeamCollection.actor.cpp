@@ -21,6 +21,7 @@
 #include <climits>
 
 #include "fdbclient/SystemData.h"
+#include "fdbrpc/FlowTransport.h"
 #include "fdbrpc/simulator.h"
 #include "fdbserver/BlobMigratorInterface.h"
 #include "fdbserver/DDTeamCollection.h"
@@ -3229,6 +3230,7 @@ public:
 				when(wait(checkSignal)) {
 					checkSignal = Never();
 					isFetchingResults = true;
+					FlowTransport::transport().interfaceTracker.currentCallerTag = "DD::monitorServerListChange";
 					serverListAndProcessClasses = self->db->getServerListAndProcessClasses();
 				}
 				when(ServerWorkerInfos infos = wait(serverListAndProcessClasses)) {
@@ -3269,6 +3271,7 @@ public:
 				}
 				when(waitNext(serverRemoved)) {
 					if (isFetchingResults) {
+						FlowTransport::transport().interfaceTracker.currentCallerTag = "DD::monitorServerListChange(serverRemoved)";
 						serverListAndProcessClasses = self->db->getServerListAndProcessClasses();
 					}
 				}

@@ -4101,6 +4101,12 @@ ACTOR Future<Void> commitProxyServerCore(CommitProxyInterface proxy,
 			dbInfoChange = commitData.db->onChange();
 			if (masterLifetime.isEqual(commitData.db->get().masterLifetime) &&
 			    commitData.db->get().recoveryState >= RecoveryState::RECOVERY_TRANSACTION) {
+				if (commitData.logSystem) {
+					TraceEvent("CPLogSystemReplaced")
+					    .detail("ProxyID", proxy.id())
+					    .detail("NewRecoveryState", (int)commitData.db->get().recoveryState)
+					    .detail("OldLogSystemRefCount", commitData.logSystem->debugGetReferenceCount());
+				}
 				commitData.logSystem = ILogSystem::fromServerDBInfo(proxy.id(), commitData.db->get(), false, addActor);
 				for (auto it : commitData.tag_popped) {
 					commitData.logSystem->pop(it.second, it.first);
@@ -4181,6 +4187,7 @@ ACTOR Future<Void> updateLocalDbInfo(Reference<AsyncVar<ServerDBInfo> const> in,
 		bool isIncluded =
 		    std::count(in->get().client.commitProxies.begin(), in->get().client.commitProxies.end(), myInterface);
 		if (in->get().recoveryCount >= recoveryCount && !isIncluded) {
+			out->set(in->get());
 			throw worker_removed();
 		}
 
@@ -4191,11 +4198,12 @@ ACTOR Future<Void> updateLocalDbInfo(Reference<AsyncVar<ServerDBInfo> const> in,
 		// only update the db info if this is the current CP, or before we received first one including current CP.
 		// Several db infos at the beginning just contain the provisional CP
 		if (isIncluded || !firstValidDbInfo) {
-			DisabledTraceEvent("UpdateLocalDbInfo", myInterface.id())
+			TraceEvent("UpdateLocalDbInfo", myInterface.id())
 			    .detail("Provisional", myInterface.provisional)
 			    .detail("Included", isIncluded)
 			    .detail("FirstValid", firstValidDbInfo)
 			    .detail("ReceivedRC", in->get().recoveryCount)
+			    .detail("RC2", out->get().recoveryCount)
 			    .detail("RecoveryCount", recoveryCount)
 			    .detail("TenantMode", (int)in->get().client.tenantMode);
 			if (in->get().recoveryCount >= out->get().recoveryCount) {
@@ -4207,12 +4215,28 @@ ACTOR Future<Void> updateLocalDbInfo(Reference<AsyncVar<ServerDBInfo> const> in,
 	}
 }
 
+struct CPFrameDestroyLogger {
+	UID id;
+	Reference<AsyncVar<ServerDBInfo>> ref;
+	~CPFrameDestroyLogger() {
+		int refCount = ref ? ref->debugGetReferenceCount() : -1;
+		TraceEvent("CommitProxyFrameDestroyed", id).detail("LocalDbRefCount", refCount);
+		if (ref) {
+			ref->dumpLeakedRefs(id.toString());
+		}
+	}
+};
+
 ACTOR Future<Void> commitProxyServer(CommitProxyInterface proxy,
                                      InitializeCommitProxyRequest req,
                                      Reference<AsyncVar<ServerDBInfo> const> db,
                                      std::string whitelistBinPaths) {
+	state CPFrameDestroyLogger frameLogger;
+	state Reference<AsyncVar<ServerDBInfo>> localDb = makeReference<AsyncVar<ServerDBInfo>>();
+	localDb->debugTrackRefs = true;
+	frameLogger.id = proxy.id();
+	frameLogger.ref = localDb;
 	try {
-		state Reference<AsyncVar<ServerDBInfo>> localDb = makeReference<AsyncVar<ServerDBInfo>>();
 		state Future<Void> core = commitProxyServerCore(proxy,
 		                                                req.master,
 		                                                req.masterLifetime,
@@ -4227,7 +4251,9 @@ ACTOR Future<Void> commitProxyServer(CommitProxyInterface proxy,
 		wait(core || updateLocalDbInfo(db, localDb, req.recoveryCount, proxy));
 	} catch (Error& e) {
 		Severity sev = e.code() == error_code_failed_to_progress ? SevWarnAlways : SevInfo;
-		TraceEvent(sev, "CommitProxyTerminated", proxy.id()).errorUnsuppressed(e);
+		TraceEvent(sev, "CommitProxyTerminated", proxy.id())
+		    .errorUnsuppressed(e)
+		    .detail("LocalDbRefCount", localDb ? localDb->debugGetReferenceCount() : -1);
 
 		if (e.code() != error_code_worker_removed && e.code() != error_code_tlog_stopped &&
 		    e.code() != error_code_tlog_failed && e.code() != error_code_coordinators_changed &&

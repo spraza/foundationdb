@@ -156,6 +156,14 @@ public:
 		serializer(ar, uniqueID, locality, getValue, tssPairID, acceptingRequests);
 
 		if (Ar::isDeserializing) {
+			{
+				std::vector<UID> tokens;
+				tokens.push_back(getValue.getEndpoint().token);
+				for (int i = 1; i <= 26; i++)
+					tokens.push_back(getValue.getEndpoint().getAdjustedEndpoint(i).token);
+				FlowTransport::transport().interfaceTracker.created(
+				    getValue.getEndpoint().getPrimaryAddress(), "SS", tokens);
+			}
 			getKey = PublicRequestStream<struct GetKeyRequest>(getValue.getEndpoint().getAdjustedEndpoint(1));
 			getKeyValues =
 			    PublicRequestStream<struct GetKeyValuesRequest>(getValue.getEndpoint().getAdjustedEndpoint(2));

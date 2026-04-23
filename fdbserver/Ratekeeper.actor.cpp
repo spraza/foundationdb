@@ -19,6 +19,7 @@
  */
 
 #include "fdbclient/ClientKnobs.h"
+#include "fdbrpc/FlowTransport.h"
 #include "fdbserver/DataDistribution.actor.h"
 #include "fdbserver/Knobs.h"
 #include "fdbserver/Ratekeeper.h"
@@ -119,6 +120,7 @@ public:
 					    .detail("Latency", now() - self->lastSSListFetchedTimestamp);
 				}
 				tr.setOption(FDBTransactionOptions::PRIORITY_SYSTEM_IMMEDIATE);
+				FlowTransport::transport().interfaceTracker.currentCallerTag = "RK::monitorServerListChange";
 				std::vector<std::pair<StorageServerInterface, ProcessClass>> results =
 				    wait(NativeAPI::getServerListAndProcessClasses(&tr));
 				self->lastSSListFetchedTimestamp = now();
@@ -222,6 +224,7 @@ public:
 				tr.setOption(FDBTransactionOptions::PRIORITY_SYSTEM_IMMEDIATE);
 				tr.setOption(FDBTransactionOptions::READ_SYSTEM_KEYS);
 				tr.setOption(FDBTransactionOptions::LOCK_AWARE);
+				FlowTransport::transport().interfaceTracker.currentCallerTag = "RK::monitorStorageServerQueueSizeInSim";
 				std::vector<std::pair<StorageServerInterface, ProcessClass>> results =
 				    wait(NativeAPI::getServerListAndProcessClasses(&tr));
 				state int serverListSize = results.size();

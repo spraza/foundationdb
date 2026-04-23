@@ -1429,6 +1429,7 @@ ACTOR Future<Optional<PrimaryAndRemoteAddresses>> getStorageServers(Database db,
 		tr.setOption(FDBTransactionOptions::READ_SYSTEM_KEYS);
 		tr.setOption(FDBTransactionOptions::PRIORITY_SYSTEM_IMMEDIATE);
 		tr.setOption(FDBTransactionOptions::LOCK_AWARE);
+		FlowTransport::transport().interfaceTracker.currentCallerTag = "Worker::getStorageServers";
 		std::vector<std::pair<StorageServerInterface, ProcessClass>> results =
 		    wait(NativeAPI::getServerListAndProcessClasses(&tr));
 		PrimaryAndRemoteAddresses storageServers;
@@ -2666,6 +2667,28 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 						notUpdated = interf.updateServerDBInfo.getEndpoint();
 					} else if (localInfo.infoGeneration > dbInfo->get().infoGeneration ||
 					           dbInfo->get().clusterInterface != ccInterface->get().get()) {
+						std::string oldTLogAddrs;
+						for (const auto& old : localInfo.logSystemConfig.oldTLogs) {
+							for (const auto& tlogSet : old.tLogs) {
+								for (const auto& tlog : tlogSet.tLogs) {
+									if (tlog.present()) {
+										if (!oldTLogAddrs.empty())
+											oldTLogAddrs += ",";
+										oldTLogAddrs += tlog.interf().address().toString();
+									}
+								}
+							}
+						}
+						std::string currentTLogAddrs;
+						for (const auto& tlogSet : localInfo.logSystemConfig.tLogs) {
+							for (const auto& tlog : tlogSet.tLogs) {
+								if (tlog.present()) {
+									if (!currentTLogAddrs.empty())
+										currentTLogAddrs += ",";
+									currentTLogAddrs += tlog.interf().address().toString();
+								}
+							}
+						}
 						TraceEvent("GotServerDBInfoChange")
 						    .detail("ChangeID", localInfo.id)
 						    .detail("InfoGeneration", localInfo.infoGeneration)
@@ -2681,7 +2704,50 @@ ACTOR Future<Void> workerServer(Reference<IClusterConnectionRecord> connRecord,
 						    .detail("EncryptKeyProxyID",
 						            localInfo.client.encryptKeyProxy.present()
 						                ? localInfo.client.encryptKeyProxy.get().id()
-						                : UID());
+						                : UID())
+						    .detail("OldTLogsCount", localInfo.logSystemConfig.oldTLogs.size())
+						    .detail("OldTLogAddresses", oldTLogAddrs.empty() ? "none" : oldTLogAddrs)
+						    .detail("CurrentTLogsCount", localInfo.logSystemConfig.tLogs.size())
+						    .detail("CurrentTLogAddresses", currentTLogAddrs)
+						    .detail("RecoveryState", (int)localInfo.recoveryState);
+
+						// Instrument B: log old ServerDBInfo's TLog addresses before replacement
+						{
+							std::string oldCurrentAddrs;
+							for (const auto& tlogSet : dbInfo->get().logSystemConfig.tLogs) {
+								for (const auto& tlog : tlogSet.tLogs) {
+									if (tlog.present()) {
+										if (!oldCurrentAddrs.empty())
+											oldCurrentAddrs += ",";
+										oldCurrentAddrs += tlog.interf().address().toString();
+									}
+								}
+							}
+							std::string oldOldAddrs;
+							for (const auto& old : dbInfo->get().logSystemConfig.oldTLogs) {
+								for (const auto& tlogSet : old.tLogs) {
+									for (const auto& tlog : tlogSet.tLogs) {
+										if (tlog.present()) {
+											if (!oldOldAddrs.empty())
+												oldOldAddrs += ",";
+											oldOldAddrs += tlog.interf().address().toString();
+										}
+									}
+								}
+							}
+							TraceEvent("ServerDBInfoReplacing")
+							    .detail("OldGeneration", dbInfo->get().infoGeneration)
+							    .detail("NewGeneration", localInfo.infoGeneration)
+							    .detail("PreviousCurrentTLogs",
+							            oldCurrentAddrs.empty() ? "none" : oldCurrentAddrs)
+							    .detail("PreviousOldTLogs",
+							            oldOldAddrs.empty() ? "none" : oldOldAddrs)
+							    .detail("NewCurrentTLogs",
+							            currentTLogAddrs.empty() ? "none" : currentTLogAddrs)
+							    .detail("NewOldTLogs",
+							            oldTLogAddrs.empty() ? "none" : oldTLogAddrs);
+						}
+
 						dbInfo->set(localInfo);
 					}
 					errorForwarders.add(

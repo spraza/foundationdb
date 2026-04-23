@@ -43,6 +43,8 @@
 #include "flow/CoroUtils.h"
 #include "flow/Knobs.h"
 #include "flow/Util.h"
+#include "flow/Platform.h"
+#include "flow/Trace.h"
 #include "flow/IndexedSet.h"
 #include "flow/actorcompiler.h" // This must be the last #include.
 
@@ -790,6 +792,47 @@ public:
 		Promise<Void> t;
 		this->nextChange.swap(t);
 		t.send(Void());
+	}
+
+	// Debug ref tracking: when enabled, records addref/delref with backtraces.
+	// Only enable on specific instances. Does not affect determinism (backtrace
+	// capture is read-only stack walk, no allocator interaction).
+	bool debugTrackRefs = false;
+	struct RefTrackRecord {
+		int64_t id;
+		bool isAdd;
+		double time;
+		std::string backtrace;
+	};
+	int64_t nextRefTrackId = 0;
+	std::vector<RefTrackRecord> refTrackRecords;
+
+	void addref() const {
+		ReferenceCounted<AsyncVar<V>>::addref();
+		if (debugTrackRefs) {
+			auto* self = const_cast<AsyncVar<V>*>(this);
+			self->refTrackRecords.push_back(RefTrackRecord{
+			    self->nextRefTrackId++, true, g_network ? g_network->now() : 0.0, platform::get_backtrace() });
+		}
+	}
+	void delref() const {
+		if (debugTrackRefs) {
+			auto* self = const_cast<AsyncVar<V>*>(this);
+			self->refTrackRecords.push_back(RefTrackRecord{
+			    self->nextRefTrackId++, false, g_network ? g_network->now() : 0.0, platform::get_backtrace() });
+		}
+		ReferenceCounted<AsyncVar<V>>::delref();
+	}
+
+	void dumpLeakedRefs(const std::string& label) const {
+		for (const auto& rec : refTrackRecords) {
+			TraceEvent(rec.isAdd ? "AsyncVarRefAdd" : "AsyncVarRefDel")
+			    .detail("Label", label)
+			    .detail("RefId", rec.id)
+			    .detail("RefTime", format("%.6f", rec.time))
+			    .detail("CurrentRefCount", this->debugGetReferenceCount())
+			    .detail("RefBacktrace", rec.backtrace);
+		}
 	}
 
 private:

@@ -15305,6 +15305,12 @@ ACTOR Future<Void> storageServerCore(StorageServer* self, StorageServerInterface
 				CODE_PROBE(self->logSystem, "shardServer dbInfo changed");
 				dbInfoChange = self->db->onChange();
 				if (self->db->get().recoveryState >= RecoveryState::ACCEPTING_COMMITS) {
+					if (self->logSystem) {
+						TraceEvent("SSLogSystemReplaced")
+						    .detail("SSID", self->thisServerID)
+						    .detail("NewRecoveryState", (int)self->db->get().recoveryState)
+						    .detail("OldLogSystemRefCount", self->logSystem->debugGetReferenceCount());
+					}
 					self->logSystem = ILogSystem::fromServerDBInfo(self->thisServerID, self->db->get());
 					if (self->logSystem) {
 						if (self->db->get().logSystemConfig.recoveredAt.present()) {
@@ -15318,7 +15324,13 @@ ACTOR Future<Void> storageServerCore(StorageServer* self, StorageServerInterface
 					// cancelled.  But if it is waiting later, cancelling it could cause problems (e.g. fetchKeys
 					// that already committed to transitioning to waiting state)
 					if (!updateReceived) {
+						TraceEvent("SSUpdateCancelledForNewLogSystem")
+						    .detail("SSID", self->thisServerID);
 						doUpdate = Void();
+					} else {
+						TraceEvent("SSUpdateNotCancelled")
+						    .detail("SSID", self->thisServerID)
+						    .detail("UpdateReceived", updateReceived);
 					}
 				}
 
