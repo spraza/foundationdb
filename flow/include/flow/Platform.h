@@ -211,6 +211,11 @@ THREAD_HANDLE startThread(void*(func)(void*), void* arg, int stackSize = 0, cons
 
 void waitThread(THREAD_HANDLE thread);
 
+// Releases the OS resources associated with a thread that will never be
+// waitThread()'d - i.e. one that is known to have already finished running.
+// Unlike waitThread(), this does not block.
+void detachThread(THREAD_HANDLE thread);
+
 // Linux-only for now.  Set thread priority.
 void setThreadPriority(int pri);
 

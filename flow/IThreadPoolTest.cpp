@@ -231,6 +231,43 @@ TEST_CASE("/flow/IThreadPool/ImplicitStop") {
 	co_await future;
 }
 
+// Simulates the scenario fixed by fafdbeddc0: something running inside a worker
+// thread's own dispatched action calls stop() on the very pool that thread belongs
+// to, before that thread has returned from run(). In the field this happens when
+// Net2::onMainThread() silently drops a completion hand-off because the network was
+// already told to stop, and the abandoned promise's destructor cascades - inline, on
+// the worker thread - into closing the pool. Without the fix, ThreadPool::stop()'s
+// loop reaches this thread's own entry and calls waitThread() on its own handle;
+// pthread_join() detects the self-join and returns EDEADLK immediately rather than
+// blocking, so stop() proceeds straight into deleting a Thread whose userObject
+// hasn't been cleared yet, tripping ~Thread()'s ASSERT_ABORT(!userObject).
+struct ReentrantStopTask final : public ThreadAction {
+	Reference<IThreadPool> pool;
+	ThreadReturnPromise<Void> promise;
+
+	explicit ReentrantStopTask(Reference<IThreadPool> pool) : pool(pool) {}
+
+	void operator()(IThreadPoolReceiver*) final {
+		pool->stop();
+		promise.send(Void());
+		delete this;
+	}
+
+	void cancel() final {}
+
+	double getTimeEstimate() const final { return 0; }
+};
+
+TEST_CASE("/flow/IThreadPool/ReentrantStop") {
+	noUnseed = true;
+
+	Reference<IThreadPool> pool = initTestPool();
+	auto task = new ReentrantStopTask(pool);
+	auto future = task->promise.getFuture();
+	pool->post(task);
+	co_await future;
+}
+
 #else
 void forceLinkIThreadPoolTests() {}
 #endif
