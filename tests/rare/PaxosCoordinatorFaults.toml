@@ -1,0 +1,32 @@
+testPriority = '1'
+
+[configuration]
+generateFearless = false
+config = 'triple'
+coordinators = 3
+processesPerMachine = 2
+machineCount = 6
+
+[[test]]
+testTitle = 'PaxosCoordinatorFaults'
+useDB = true
+
+    [[test.workload]]
+    testName = 'PaxosCoordinatorCorrectness'
+    actorCount = 4
+    operationsPerActor = 8
+    testDuration = 30.0
+
+    [[test.workload]]
+    testName = 'RandomClogging'
+    testDuration = 30.0
+    scale = 0.1
+    clogginess = 2.0
+
+    [[test.workload]]
+    testName = 'Attrition'
+    testDuration = 30.0
+    machinesToKill = 1
+    machinesToLeave = 3
+    reboot = true
+    killMachine = true

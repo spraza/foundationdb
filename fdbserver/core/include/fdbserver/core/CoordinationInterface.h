@@ -24,6 +24,7 @@
 
 #include "fdbclient/CoordinationInterface.h"
 #include "fdbclient/WellKnownEndpoints.h"
+#include "fdbserver/core/SingleDecreePaxos.h"
 
 struct GenerationRegInterface {
 	constexpr static FileIdentifier file_identifier = 16726744;
@@ -224,7 +225,7 @@ public:
 	explicit ServerCoordinators(Reference<IClusterConnectionRecord> ccr);
 
 	std::vector<LeaderElectionRegInterface> leaderElectionServers;
-	std::vector<GenerationRegInterface> stateServers;
+	std::vector<PaxosAcceptorInterface> stateServers;
 };
 
 // Read a value of MovableValue and if the old cluster key is nested in it, update it to the new key

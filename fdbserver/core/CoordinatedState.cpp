@@ -25,190 +25,58 @@
 #include "fdbserver/core/Knobs.h"
 #include "flow/ActorCollection.h"
 #include "fdbserver/core/LeaderElection.h"
+#include "fdbserver/core/PaxosSequence.h"
 #include "flow/CoroUtils.h"
-
-Future<GenerationRegReadReply> waitAndSendRead(GenerationRegInterface stateServer, GenerationRegReadRequest req) {
-	if (SERVER_KNOBS->BUGGIFY_ALL_COORDINATION || buggify())
-		co_await delay(SERVER_KNOBS->BUGGIFIED_EVENTUAL_CONSISTENCY * deterministicRandom()->random01());
-	GenerationRegReadReply reply;
-	if (stateServer.hostname.present()) {
-		reply = co_await retryGetReplyFromHostname(req, stateServer.hostname.get(), WLTOKEN_GENERATIONREG_READ);
-	} else {
-		reply = co_await retryBrokenPromise(stateServer.read, req);
-	}
-	if (SERVER_KNOBS->BUGGIFY_ALL_COORDINATION || buggify())
-		co_await delay(SERVER_KNOBS->BUGGIFIED_EVENTUAL_CONSISTENCY * deterministicRandom()->random01());
-	co_return reply;
-}
-
-Future<UniqueGeneration> waitAndSendWrite(GenerationRegInterface stateServer, GenerationRegWriteRequest req) {
-	if (SERVER_KNOBS->BUGGIFY_ALL_COORDINATION || buggify())
-		co_await delay(SERVER_KNOBS->BUGGIFIED_EVENTUAL_CONSISTENCY * deterministicRandom()->random01());
-	UniqueGeneration reply;
-	if (stateServer.hostname.present()) {
-		reply = co_await retryGetReplyFromHostname(req, stateServer.hostname.get(), WLTOKEN_GENERATIONREG_WRITE);
-	} else {
-		reply = co_await retryBrokenPromise(stateServer.write, req);
-	}
-	if (SERVER_KNOBS->BUGGIFY_ALL_COORDINATION || buggify())
-		co_await delay(SERVER_KNOBS->BUGGIFIED_EVENTUAL_CONSISTENCY * deterministicRandom()->random01());
-	co_return reply;
-}
-
-Future<GenerationRegReadReply> emptyToNever(Future<GenerationRegReadReply> f) {
-	GenerationRegReadReply r = co_await f;
-	if (r.gen.generation == 0)
-		co_await Future<Void>(Never());
-	co_return r;
-}
-
-Future<GenerationRegReadReply> nonemptyToNever(Future<GenerationRegReadReply> f) {
-	GenerationRegReadReply r = co_await f;
-	if (r.gen.generation != 0)
-		co_await Future<Void>(Never());
-	co_return r;
-}
 
 struct CoordinatedStateImpl {
 	ServerCoordinators coordinators;
-	int stage;
-	UniqueGeneration gen;
-	uint64_t conflictGen;
-	bool doomed;
-	ActorCollection ac; // Errors are not reported
-	bool initial;
+	int stage{ 0 };
+	uint64_t conflictGen{ 0 };
+	Optional<PaxosSequenceReservation> reservation;
 
-	explicit CoordinatedStateImpl(ServerCoordinators const& c)
-	  : coordinators(c), stage(0), conflictGen(0), doomed(false), ac(false), initial(false) {}
+	explicit CoordinatedStateImpl(ServerCoordinators const& c) : coordinators(c) {}
 	uint64_t getConflict() const { return conflictGen; }
-
-	bool isDoomed(GenerationRegReadReply const& rep) const {
-		return rep.gen > gen;
-		// setExclusive is doomed, because there was a write at least started at a higher
-		// generation, which means a read completed at that higher generation
-		// || rep.rgen > gen // setExclusive isn't absolutely doomed, but it may/probably will fail
-	}
 
 	Future<Value> read() {
 		ASSERT(stage == 0);
-
-		{
-			stage = 1;
-			GenerationRegReadReply rep =
-			    co_await replicatedRead(GenerationRegReadRequest(coordinators.clusterKey, UniqueGeneration()));
-			conflictGen = std::max(conflictGen, std::max(rep.gen.generation, rep.rgen.generation)) + 1;
-			gen = UniqueGeneration(conflictGen, deterministicRandom()->randomUniqueID());
-		}
-
-		{
-			stage = 2;
-			GenerationRegReadReply rep =
-			    co_await replicatedRead(GenerationRegReadRequest(coordinators.clusterKey, gen));
-			stage = 3;
-			conflictGen = std::max(conflictGen, std::max(rep.gen.generation, rep.rgen.generation));
-			if (isDoomed(rep))
-				doomed = true;
-			initial = rep.gen.generation == 0;
-
-			stage = 4;
-			co_return rep.value.present() ? rep.value.get() : Value();
-		}
+		stage = 1;
+		reservation = co_await paxosSequenceRead(
+		    coordinators.stateServers, coordinators.clusterKey, deterministicRandom()->randomUniqueID());
+		conflictGen = reservation.get().instance;
+		stage = 4;
+		co_return reservation.get().currentValue;
 	}
+
 	Future<Void> onConflict() {
 		ASSERT(stage == 4);
-		if (doomed)
+		ASSERT(reservation.present());
+		co_await paxosSequenceOnConflict(
+		    coordinators.stateServers, reservation.get(), SERVER_KNOBS->COORDINATED_STATE_ONCONFLICT_POLL_INTERVAL);
+		if (stage == 4) {
 			co_return;
-		while (true) {
-			co_await delay(SERVER_KNOBS->COORDINATED_STATE_ONCONFLICT_POLL_INTERVAL);
-			GenerationRegReadReply rep =
-			    co_await replicatedRead(GenerationRegReadRequest(coordinators.clusterKey, UniqueGeneration()));
-			if (stage > 4)
-				break;
-			conflictGen = std::max(conflictGen, std::max(rep.gen.generation, rep.rgen.generation));
-			if (isDoomed(rep))
-				co_return;
 		}
 		co_await Future<Void>(Never());
 	}
+
 	Future<Void> setExclusive(Value v) {
 		ASSERT(stage == 4);
+		ASSERT(reservation.present());
 		stage = 5;
 
-		UniqueGeneration wgen =
-		    co_await replicatedWrite(GenerationRegWriteRequest(KeyValueRef(coordinators.clusterKey, v), gen));
+		PaxosAcceptQuorum result = co_await paxosSequenceSet(coordinators.stateServers, reservation.get(), v);
 		stage = 6;
 
-		TraceEvent("CoordinatedStateSet")
-		    .detail("Gen", gen.generation)
-		    .detail("Wgen", wgen.generation)
-		    .detail("Genu", gen.uid)
-		    .detail("Wgenu", wgen.uid)
-		    .detail("Cgen", conflictGen);
+		TraceEvent("CoordinatedStateSetPaxos")
+		    .detail("Instance", reservation.get().instance)
+		    .detail("BallotRound", reservation.get().ballot.round)
+		    .detail("Proposer", reservation.get().ballot.proposer)
+		    .detail("Chosen", result.chosen)
+		    .detail("HighestPromisedRound", result.highestPromised.round);
 
-		if (wgen != gen) {
-			conflictGen = std::max(conflictGen, wgen.generation);
+		if (!result.chosen) {
+			conflictGen = std::max(conflictGen, result.highestPromised.round);
 			throw coordinated_state_conflict();
 		}
-	}
-
-	Future<GenerationRegReadReply> replicatedRead(GenerationRegReadRequest req) {
-		std::vector<GenerationRegInterface>& replicas = coordinators.stateServers;
-		std::vector<Future<GenerationRegReadReply>> rep_empty_reply;
-		std::vector<Future<GenerationRegReadReply>> rep_reply;
-		for (int i = 0; i < replicas.size(); i++) {
-			Future<GenerationRegReadReply> reply =
-			    waitAndSendRead(replicas[i], GenerationRegReadRequest(req.key, req.gen));
-			rep_empty_reply.push_back(nonemptyToNever(reply));
-			rep_reply.push_back(emptyToNever(reply));
-			ac.add(success(reply));
-		}
-
-		Future<Void> majorityEmpty =
-		    quorum(rep_empty_reply,
-		           (replicas.size() + 1) / 2); // enough empty to ensure we cannot achieve a majority non-empty
-		co_await (quorum(rep_reply, replicas.size() / 2 + 1) || majorityEmpty);
-
-		if (majorityEmpty.isReady()) {
-			int best = -1;
-			for (int i = 0; i < rep_empty_reply.size(); i++) {
-				if (rep_empty_reply[i].isReady() && !rep_empty_reply[i].isError()) {
-					if (best < 0 || rep_empty_reply[i].get().rgen > rep_empty_reply[best].get().rgen)
-						best = i;
-				}
-			}
-			ASSERT(best >= 0);
-			co_return rep_empty_reply[best].get();
-		} else {
-			int best = -1;
-			for (int i = 0; i < rep_reply.size(); i++) {
-				if (rep_reply[i].isReady() && !rep_reply[i].isError()) {
-					if (best < 0 || rep_reply[i].get().gen > rep_reply[best].get().gen ||
-					    (rep_reply[i].get().gen == rep_reply[best].get().gen &&
-					     rep_reply[i].get().rgen > rep_reply[best].get().rgen))
-						best = i;
-				}
-			}
-			ASSERT(best >= 0);
-			co_return rep_reply[best].get();
-		}
-	}
-
-	Future<UniqueGeneration> replicatedWrite(GenerationRegWriteRequest req) {
-		std::vector<GenerationRegInterface>& replicas = coordinators.stateServers;
-		std::vector<Future<UniqueGeneration>> wrep_reply;
-		for (int i = 0; i < replicas.size(); i++) {
-			Future<UniqueGeneration> reply = waitAndSendWrite(replicas[i], GenerationRegWriteRequest(req.kv, req.gen));
-			wrep_reply.push_back(reply);
-			ac.add(success(reply));
-		}
-
-		co_await quorum(wrep_reply, initial ? replicas.size() : replicas.size() / 2 + 1);
-
-		UniqueGeneration maxGen;
-		for (int i = 0; i < wrep_reply.size(); i++)
-			if (wrep_reply[i].isReady())
-				maxGen = std::max(maxGen, wrep_reply[i].get());
-		co_return maxGen;
 	}
 };
 

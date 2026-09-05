@@ -21,6 +21,15 @@
 #include "fdbserver/core/CoordinationInterface.h"
 #include "fdbclient/WellKnownEndpoints.h"
 
+PaxosAcceptorInterface::PaxosAcceptorInterface(NetworkAddress const& remote)
+  : prepare(Endpoint::wellKnown({ remote }, WLTOKEN_GENERATIONREG_READ)),
+    accept(Endpoint::wellKnown({ remote }, WLTOKEN_GENERATIONREG_WRITE)) {}
+
+PaxosAcceptorInterface::PaxosAcceptorInterface(INetwork* local) {
+	prepare.makeWellKnownEndpoint(WLTOKEN_GENERATIONREG_READ, TaskPriority::Coordination);
+	accept.makeWellKnownEndpoint(WLTOKEN_GENERATIONREG_WRITE, TaskPriority::Coordination);
+}
+
 GenerationRegInterface::GenerationRegInterface(NetworkAddress const& remote)
   : read(Endpoint::wellKnown({ remote }, WLTOKEN_GENERATIONREG_READ)),
     write(Endpoint::wellKnown({ remote }, WLTOKEN_GENERATIONREG_WRITE)) {}

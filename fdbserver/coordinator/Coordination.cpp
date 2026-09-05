@@ -19,6 +19,7 @@
  */
 
 #include <cstdint>
+#include <map>
 
 #include "fdbserver/coordinator/CoordinationServer.h"
 #include "fdbserver/core/FDBSimulationPolicy.h"
@@ -61,142 +62,147 @@ public:
 	}
 };
 
-struct GenerationRegVal {
+static KeyRef const paxosStatePrefix = "\xff/paxos/"_sr;
+
+struct PaxosPersistentState {
+	std::map<uint64_t, PaxosAcceptorState> instances;
+
+	// Experimental format in a separate key namespace; not an upgrade of generation-register state.
+	template <class Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, instances);
+	}
+};
+
+// Retained only so changeClusterDescription can rewrite stores created by the
+// pre-experiment coordinator implementation.
+struct LegacyGenerationRegVal {
 	UniqueGeneration readGen, writeGen;
 	Optional<Value> val;
 
-	// To change this serialization, ProtocolVersion::GenerationRegVal must be updated, and downgrades need to be
-	// considered
 	template <class Ar>
 	void serialize(Ar& ar) {
 		serializer(ar, readGen, writeGen, val);
 	}
 };
 
-class LocalGenerationReg {
+class LocalPaxosAcceptor {
 public:
-	LocalGenerationReg(GenerationRegInterface interf, OnDemandStore* pstore)
-	  : readReqs(interf.read.getFuture()), writeReqs(interf.write.getFuture()), pStore(pstore),
+	LocalPaxosAcceptor(PaxosAcceptorInterface interf, OnDemandStore* pstore)
+	  : prepareReqs(interf.prepare.getFuture()), acceptReqs(interf.accept.getFuture()), pStore(pstore),
 	    storeLock(new FlowLock(1)) {}
 
 	Future<Void> run() {
-		return serveReadReqs(readReqs, pStore, storeLock) || serveWriteReqs(writeReqs, pStore, storeLock);
+		return servePrepareReqs(prepareReqs, pStore, storeLock) || serveAcceptReqs(acceptReqs, pStore, storeLock);
 	}
 
 private:
-	static Future<Void> serveReadReqs(FutureStream<GenerationRegReadRequest> readReqs,
-	                                  OnDemandStore* pstore,
-	                                  Reference<FlowLock> storeLock) {
+	static Key storageKey(KeyRef logicalKey) { return logicalKey.withPrefix(paxosStatePrefix); }
+
+	static Future<Void> servePrepareReqs(FutureStream<PaxosPrepareRequest> prepareReqs,
+	                                     OnDemandStore* pstore,
+	                                     Reference<FlowLock> storeLock) {
 		OnDemandStore& store = *pstore;
 		while (true) {
-			GenerationRegReadRequest req = co_await readReqs;
-			TraceEvent("GenerationRegReadRequest")
+			PaxosPrepareRequest req = co_await prepareReqs;
+			TraceEvent("PaxosPrepareRequest")
 			    .detail("From", req.reply.getEndpoint().getPrimaryAddress())
-			    .detail("K", req.key);
+			    .detail("Key", printable(req.key))
+			    .detail("Instance", req.instance)
+			    .detail("Round", req.ballot.round)
+			    .detail("ObserveOnly", req.observeOnly);
 			// SOMEDAY: concurrent access to different keys?
 			co_await storeLock->take();
 			FlowLock::Releaser storeLockReleaser(*storeLock);
-			Optional<Value> rawV = co_await store->readValue(req.key);
-			GenerationRegVal v = rawV.present()
-			                         ? BinaryReader::fromStringRef<GenerationRegVal>(rawV.get(), IncludeVersion())
-			                         : GenerationRegVal();
-			TraceEvent("GenerationRegReadReply")
-			    .detail("RVSize", rawV.present() ? rawV.get().size() : -1)
-			    .detail("VWG", v.writeGen.generation);
-			if (v.readGen < req.gen) {
-				v.readGen = req.gen;
+			Key persistentKey = storageKey(req.key);
+			Optional<Value> rawValue = co_await store->readValue(persistentKey);
+			PaxosPersistentState persistent =
+			    rawValue.present() ? BinaryReader::fromStringRef<PaxosPersistentState>(rawValue.get(), IncludeVersion())
+			                       : PaxosPersistentState();
+			PaxosPrepareTransition transition =
+			    paxosPrepare(persistent.instances[req.instance], req.ballot, req.observeOnly);
+			if (transition.stateChanged) {
 				store->set(KeyValueRef(
-				    req.key, BinaryWriter::toValue(v, IncludeVersion(ProtocolVersion::withGenerationRegVal()))));
+				    persistentKey,
+				    BinaryWriter::toValue(persistent, IncludeVersion(ProtocolVersion::withGenerationRegVal()))));
 				co_await store->commit();
 			}
-			req.reply.send(GenerationRegReadReply(v.val, v.writeGen, v.readGen));
+			req.reply.send(transition.reply);
 		}
 	}
 
-	static Future<Void> serveWriteReqs(FutureStream<GenerationRegWriteRequest> writeReqs,
-	                                   OnDemandStore* pstore,
-	                                   Reference<FlowLock> storeLock) {
+	static Future<Void> serveAcceptReqs(FutureStream<PaxosAcceptRequest> acceptReqs,
+	                                    OnDemandStore* pstore,
+	                                    Reference<FlowLock> storeLock) {
 		OnDemandStore& store = *pstore;
 		while (true) {
-			GenerationRegWriteRequest wrq = co_await writeReqs;
+			PaxosAcceptRequest req = co_await acceptReqs;
 			// SOMEDAY: concurrent access to different keys?
 			co_await storeLock->take();
 			FlowLock::Releaser storeLockReleaser(*storeLock);
-			Optional<Value> rawV = co_await store->readValue(wrq.kv.key);
-			GenerationRegVal v = rawV.present()
-			                         ? BinaryReader::fromStringRef<GenerationRegVal>(rawV.get(), IncludeVersion())
-			                         : GenerationRegVal();
-			if (v.readGen <= wrq.gen && v.writeGen < wrq.gen) {
-				v.writeGen = wrq.gen;
-				v.val = wrq.kv.value;
+			Key persistentKey = storageKey(req.key);
+			Optional<Value> rawValue = co_await store->readValue(persistentKey);
+			PaxosPersistentState persistent =
+			    rawValue.present() ? BinaryReader::fromStringRef<PaxosPersistentState>(rawValue.get(), IncludeVersion())
+			                       : PaxosPersistentState();
+			PaxosAcceptTransition transition = paxosAccept(persistent.instances[req.instance], req.ballot, req.value);
+			if (transition.stateChanged) {
 				store->set(KeyValueRef(
-				    wrq.kv.key, BinaryWriter::toValue(v, IncludeVersion(ProtocolVersion::withGenerationRegVal()))));
+				    persistentKey,
+				    BinaryWriter::toValue(persistent, IncludeVersion(ProtocolVersion::withGenerationRegVal()))));
 				co_await store->commit();
-				TraceEvent("GenerationRegWrote")
-				    .detail("From", wrq.reply.getEndpoint().getPrimaryAddress())
-				    .detail("Key", wrq.kv.key)
-				    .detail("ReqGen", wrq.gen.generation)
-				    .detail("Returning", v.writeGen.generation);
-				wrq.reply.send(v.writeGen);
-			} else {
-				TraceEvent("GenerationRegWriteFail")
-				    .detail("From", wrq.reply.getEndpoint().getPrimaryAddress())
-				    .detail("Key", wrq.kv.key)
-				    .detail("ReqGen", wrq.gen.generation)
-				    .detail("ReadGen", v.readGen.generation)
-				    .detail("WriteGen", v.writeGen.generation);
-				wrq.reply.send(std::max(v.readGen, v.writeGen));
 			}
+			TraceEvent(transition.reply.accepted ? SevInfo : SevWarn, "PaxosAcceptReply")
+			    .detail("From", req.reply.getEndpoint().getPrimaryAddress())
+			    .detail("Key", printable(req.key))
+			    .detail("Instance", req.instance)
+			    .detail("Round", req.ballot.round)
+			    .detail("Accepted", transition.reply.accepted)
+			    .detail("PromisedRound", transition.reply.promisedBallot.round);
+			req.reply.send(transition.reply);
 		}
 	}
 
-	FutureStream<GenerationRegReadRequest> readReqs;
-	FutureStream<GenerationRegWriteRequest> writeReqs;
+	FutureStream<PaxosPrepareRequest> prepareReqs;
+	FutureStream<PaxosAcceptRequest> acceptReqs;
 	OnDemandStore* pStore;
 	Reference<FlowLock> storeLock;
 };
 
-TEST_CASE("/fdbserver/Coordination/localGenerationReg/simple") {
-	GenerationRegInterface reg;
+TEST_CASE("/fdbserver/Coordination/localPaxosAcceptor/persistence") {
+	PaxosAcceptorInterface reg;
 	OnDemandStore store(params.getDataDir(), deterministicRandom()->randomUniqueID(), fileCoordinatorPrefix);
-	LocalGenerationReg generationReg(reg, &store);
-	Future<Void> actor = generationReg.run();
+	LocalPaxosAcceptor acceptor(reg, &store);
+	Future<Void> actor = acceptor.run();
 	Key the_key(deterministicRandom()->randomAlphaNumeric(deterministicRandom()->randomInt(0, 10)));
-
-	UniqueGeneration firstGen(0, deterministicRandom()->randomUniqueID());
-
-	{
-		GenerationRegReadReply r = co_await reg.read.getReply(GenerationRegReadRequest(the_key, firstGen));
-		//   If there was no prior write(_,_,0) or a data loss fault,
-		//     returns (Optional(),0,gen2)
-		ASSERT(!r.value.present());
-		ASSERT(r.gen == UniqueGeneration());
-		ASSERT(r.rgen == firstGen);
-	}
-
-	{
-		UniqueGeneration g =
-		    co_await reg.write.getReply(GenerationRegWriteRequest(KeyValueRef(the_key, "Value1"_sr), firstGen));
-		//   (gen1==gen is considered a "successful" write)
-		ASSERT(g == firstGen);
-	}
-
-	{
-		GenerationRegReadReply r = co_await reg.read.getReply(GenerationRegReadRequest(the_key, UniqueGeneration()));
-		// read(key,gen2) returns (value,gen,rgen).
-		//     There was some earlier or concurrent write(key,value,gen).
-		ASSERT(r.value == "Value1"_sr);
-		ASSERT(r.gen == firstGen);
-		//     There was some earlier or concurrent read(key,rgen).
-		ASSERT(r.rgen == firstGen);
-		//     If there is a write(key,_,gen1)=>gen1 s.t. gen1 < gen2 OR the write completed before this read started,
-		//     then gen >= gen1.
-		ASSERT(r.gen >= firstGen);
-		//     If there is a read(key,gen1) that completed before this read started, then rgen >= gen1
-		ASSERT(r.rgen >= firstGen);
-
-		ASSERT(!actor.isReady());
-	}
+	PaxosBallot ballot(1, deterministicRandom()->randomUniqueID());
+	PaxosPrepareReply prepared = co_await reg.prepare.getReply(PaxosPrepareRequest(the_key, 7, ballot));
+	ASSERT(prepared.promised && !prepared.accepted.present());
+	PaxosAcceptReply accepted = co_await reg.accept.getReply(PaxosAcceptRequest(the_key, 7, ballot, "Value1"_sr));
+	ASSERT(accepted.accepted);
+	PaxosPrepareReply observed =
+	    co_await reg.prepare.getReply(PaxosPrepareRequest(the_key, 7, PaxosBallot(2, ballot.proposer)));
+	ASSERT(observed.promised);
+	ASSERT(observed.accepted.present() && observed.accepted.get().value == "Value1"_sr);
+	ASSERT(!actor.isReady());
+	actor.cancel();
+	Future<Void> closed = store.onClosed();
+	store.close();
+	co_await closed;
+	OnDemandStore reopened(params.getDataDir(), deterministicRandom()->randomUniqueID(), fileCoordinatorPrefix);
+	PaxosAcceptorInterface recoveredInterface;
+	LocalPaxosAcceptor recovered(recoveredInterface, &reopened);
+	Future<Void> recoveredActor = recovered.run();
+	PaxosPrepareReply recoveredState = co_await recoveredInterface.prepare.getReply(
+	    PaxosPrepareRequest(the_key, 7, ballot, true));
+	ASSERT(recoveredState.promisedBallot == PaxosBallot(2, ballot.proposer));
+	ASSERT(recoveredState.accepted.present());
+	ASSERT(recoveredState.accepted.get().value == "Value1"_sr);
+	PaxosAcceptReply stale = co_await recoveredInterface.accept.getReply(
+	    PaxosAcceptRequest(the_key, 7, ballot, "stale"_sr));
+	ASSERT(!stale.accepted);
+	ASSERT(!recoveredActor.isReady());
+	co_return;
 }
 
 Future<Void> openDatabase(ClientData* db,
@@ -873,16 +879,16 @@ static Future<Void> coordinationServerOnce(std::string dataFolder,
                                            bool* repairedIncompleteQueue) {
 	UID myID = deterministicRandom()->randomUniqueID();
 	LeaderElectionRegInterface myLeaderInterface(g_network);
-	GenerationRegInterface myInterface(g_network);
+	PaxosAcceptorInterface myInterface(g_network);
 	OnDemandStore store(dataFolder, myID, fileCoordinatorPrefix);
 	TraceEvent("CoordinationServer", myID)
-	    .detail("MyInterfaceAddr", myInterface.read.getEndpoint().getPrimaryAddress())
+	    .detail("MyInterfaceAddr", myInterface.prepare.getEndpoint().getPrimaryAddress())
 	    .detail("Folder", dataFolder);
 
 	Error err;
 	try {
-		LocalGenerationReg generationReg(myInterface, &store);
-		co_await (generationReg.run() || leaderServer(myLeaderInterface, &store, myID, ccr) || store.getError());
+		LocalPaxosAcceptor paxosAcceptor(myInterface, &store);
+		co_await (paxosAcceptor.run() || leaderServer(myLeaderInterface, &store, myID, ccr) || store.getError());
 		throw internal_error();
 	} catch (Error& e) {
 		err = e;
@@ -992,14 +998,14 @@ Future<Void> changeClusterDescription(std::string datafolder, KeyRef newClusterK
 	// Context, in coordinators' kv-store
 	// cluster description and the random id are always appear together as the clusterKey
 	// The old cluster key, (call it oldCKey) below can appear in the following scenarios:
-	// 1. oldCKey is a key in the store: the value is a binary format of _GenerationRegVal_ which contains a different
-	// clusterKey(either movedFrom or moveTo)
+	// 1. oldCKey is a key in the store: the value is a binary format of _LegacyGenerationRegVal_ which contains a
+	// different clusterKey(either movedFrom or moveTo)
 	// 2. oldCKey appears in a key for forwarding message:
 	// 		2.1: the prefix is _fwdKeys.begin_: the value is the new connection string
 	//		2.2: the prefix is _fwdTimeKeys.begin_: the value is the time
 	// 3. oldCKey does not appear in any keys but in a value:
 	// 		3.1: it's in the value of a forwarding message(see 2.1)
-	//		3.2: it's inside the value of _GenerationRegVal_ (see 1), which is a cluster connection string.
+	//		3.2: it's inside a coordinated-state value (see 1), which is a cluster connection string.
 	//		it seems that even we do not change it the cluster should still be good, but to be safe we still update it.
 	for (auto& [key, value] : res) {
 		if (key.startsWith(fwdKeys.begin)) {
@@ -1012,12 +1018,31 @@ Future<Void> changeClusterDescription(std::string datafolder, KeyRef newClusterK
 		} else if (key.startsWith(fwdTimeKeys.begin) && key.removePrefix(fwdTimeKeys.begin) == oldClusterKey) {
 			store->clear(singleKeyRange(key));
 			store->set(KeyValueRef(newClusterKey.withPrefix(fwdTimeKeys.begin), value));
+		} else if (key.startsWith(paxosStatePrefix)) {
+			PaxosPersistentState persistent =
+			    BinaryReader::fromStringRef<PaxosPersistentState>(value, IncludeVersion());
+			for (auto& [instance, state] : persistent.instances) {
+				if (state.accepted.present()) {
+					Optional<Value> newValue =
+					    updateCCSInMovableValue(state.accepted.get().value, oldClusterKey, newClusterKey);
+					if (newValue.present()) {
+						state.accepted.get().value = newValue.get();
+					}
+				}
+			}
+			Key newKey = key;
+			if (key.removePrefix(paxosStatePrefix) == oldClusterKey) {
+				store->clear(singleKeyRange(key));
+				newKey = newClusterKey.withPrefix(paxosStatePrefix);
+			}
+			store->set(KeyValueRef(
+			    newKey, BinaryWriter::toValue(persistent, IncludeVersion(ProtocolVersion::withGenerationRegVal()))));
 		} else if (key == oldClusterKey) {
 			store->clear(singleKeyRange(key));
 			store->set(KeyValueRef(newClusterKey, value));
 		} else {
 			// parse the value part
-			auto regVal = BinaryReader::fromStringRef<GenerationRegVal>(value, IncludeVersion());
+			auto regVal = BinaryReader::fromStringRef<LegacyGenerationRegVal>(value, IncludeVersion());
 			if (regVal.val.present()) {
 				Optional<Value> newVal = updateCCSInMovableValue(regVal.val.get(), oldClusterKey, newClusterKey);
 				if (newVal.present()) {
